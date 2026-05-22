@@ -80,7 +80,7 @@ def create_server():
         Tool(name="search_wiki", description="Search the trading wiki for past analyses by ticker, tag, or signal.", inputSchema={"type": "object", "properties": {"query": {"type": "string"}, "limit": {"type": "integer", "default": 10}}, "required": ["query"]}),
         Tool(name="get_wiki_page", description="Read a specific wiki page by path.", inputSchema={"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}),
         # Council scoring (deterministic — runs as code, not prompt)
-        Tool(name="score_council", description="Deterministic council scoring. Pass the 4 analyst scores and it returns the final signal via weighted average with hard-coded veto conditions and tiebreaker rules. This is CODE, not LLM reasoning — the model cannot override the math. Always call this instead of computing the score yourself.", inputSchema={"type": "object", "properties": {"ticker": {"type": "string"}, "technical_score": {"type": "number", "description": "Technical analyst score 1-5"}, "fundamental_score": {"type": "number", "description": "Fundamental analyst score 1-5"}, "sentiment_score": {"type": "number", "description": "Sentiment analyst score 1-5"}, "news_score": {"type": "number", "description": "News/macro analyst score 1-5"}, "is_held": {"type": "boolean", "description": "True if you currently hold this ticker", "default": false}}, "required": ["ticker", "technical_score", "fundamental_score", "sentiment_score", "news_score"]}),
+        Tool(name="score_council", description="Deterministic council scoring. Pass the 4 analyst scores and it returns the final signal via weighted average with hard-coded veto conditions and tiebreaker rules. This is CODE, not LLM reasoning — the model cannot override the math. Always call this instead of computing the score yourself.", inputSchema={"type": "object", "properties": {"ticker": {"type": "string"}, "technical_score": {"type": "number", "description": "Technical analyst score 1-5"}, "fundamental_score": {"type": "number", "description": "Fundamental analyst score 1-5"}, "sentiment_score": {"type": "number", "description": "Sentiment analyst score 1-5"}, "news_score": {"type": "number", "description": "News/macro analyst score 1-5"}, "is_held": {"type": "boolean", "description": "True if you currently hold this ticker", "default": False}}, "required": ["ticker", "technical_score", "fundamental_score", "sentiment_score", "news_score"]}),
         # Wiki maintenance
         Tool(name="prune_wiki", description="Archive wiki pages older than N days. Keeps the injected context sharp by removing stale analyses. Returns count of archived pages.", inputSchema={"type": "object", "properties": {"max_age_days": {"type": "integer", "default": 30, "description": "Archive pages older than this (default 30)"}}}),
         # Analytics
@@ -844,9 +844,14 @@ async def main():
     """Run the MCP server on stdio."""
     from mcp.server.stdio import stdio_server
 
+    # Log startup to stderr (MCP uses stdout for JSON-RPC, stderr for diagnostics)
+    import sys as _sys
+    print("tradingagents: MCP server starting", file=_sys.stderr, flush=True)
+
     server = create_server()
 
     async with stdio_server() as (read_stream, write_stream):
+        print("tradingagents: MCP server ready (stdio)", file=_sys.stderr, flush=True)
         await server.run(read_stream, write_stream, server.create_initialization_options())
 
 

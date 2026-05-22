@@ -40,7 +40,7 @@ class DashboardState(rx.State):
     total_trades: int = 0
     wins: int = 0
     losses: int = 0
-    starting_balance: float = 100_000.0
+    starting_balance: float = 0.0  # set from config in _refresh()
 
     # ── KPIs (formatted for display) ──
     portfolio_display: str = "$0"

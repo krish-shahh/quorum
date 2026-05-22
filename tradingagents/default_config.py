@@ -170,7 +170,7 @@ DEFAULT_CONFIG = _apply_env_overrides({
     # Mode: "paper" (in-memory simulation) or "schwab" (live Schwab API)
     "execution_mode": "paper",
     # Paper-trading starting cash balance
-    "paper_starting_balance": 100000.0,
+    "paper_starting_balance": 5000.0,
     # Position sizing
     "max_position_pct": 0.05,           # 5% of portfolio per new trade
     "max_single_ticker_pct": 0.25,      # 25% cap in any single ticker

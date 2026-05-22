@@ -69,9 +69,19 @@ pytest tests/ -m unit
 
 ```bash
 tradingagents                  # open dashboard
+tradingagents health           # run 13-point system health check
+tradingagents reset -b 5000    # reset paper account to $5,000
 tradingagents regime           # market regime
 tradingagents wiki search X    # search wiki
 tradingagents mcp-server       # start MCP server manually
 tradingagents reset-kill-switch
 tradingagents db-status
 ```
+
+## Troubleshooting
+
+If MCP tools aren't loading in Claude Code:
+1. Run `tradingagents health` to validate the full stack
+2. Check `.claude/settings.json` has the `tradingagents` MCP server configured
+3. Restart the Claude Code session (MCP connections are established at session init)
+4. The MCP stdio protocol test in `health` proves the server works end-to-end

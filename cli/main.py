@@ -214,5 +214,78 @@ def mcp_server():
     asyncio.run(mcp_main())
 
 
+@app.command()
+def health():
+    """Run system health checks — validates MCP server, data files, dependencies, and market connectivity."""
+    from tradingagents.mcp.health import run_all_checks, print_results
+    results = run_all_checks()
+    all_pass = print_results(results)
+    if not all_pass:
+        raise typer.Exit(code=1)
+
+
+@app.command()
+def reset(
+    balance: float = typer.Option(5000.0, "--balance", "-b", help="Starting cash balance"),
+    confirm: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt"),
+):
+    """Reset paper trading account — clears all positions, trades, and history."""
+    import json
+    import sqlite3
+
+    home = Path.home() / ".tradingagents"
+
+    if not confirm:
+        typer.confirm(
+            f"This will reset your paper account to ${balance:,.2f} and delete ALL trade history. Continue?",
+            abort=True,
+        )
+
+    # Reset portfolio
+    portfolio_path = home / "paper_portfolio.json"
+    portfolio_path.write_text(json.dumps({"cash": balance, "positions": {}}, indent=2))
+
+    # Reset safety state
+    safety_path = home / "safety_state.json"
+    safety_path.write_text(json.dumps({"kill_switch_active": False, "peak_value": balance}, indent=2))
+
+    # Reset stop losses
+    stop_path = home / "stop_losses.json"
+    if stop_path.exists():
+        stop_path.write_text("{}")
+
+    # Clear trade log
+    trades_path = home / "execution" / "trades.jsonl"
+    if trades_path.exists():
+        trades_path.write_text("")
+
+    # Clear learning data
+    learning_path = home / "learning.json"
+    if learning_path.exists():
+        learning_path.write_text(json.dumps({"outcomes": [], "signal_weights": {}, "ticker_weights": {}}))
+
+    # Clear database tables
+    db_path = home / "tradingagents.db"
+    if db_path.exists():
+        conn = sqlite3.connect(str(db_path))
+        for table in ["trades", "trade_reports", "paper_positions", "paper_account",
+                       "backtest_runs", "backtest_trades"]:
+            try:
+                conn.execute(f"DELETE FROM {table}")
+            except sqlite3.OperationalError:
+                pass
+        # Reset safety_state peak_value in DB
+        try:
+            conn.execute("UPDATE safety_state SET value = ? WHERE key = 'peak_value'",
+                         (str(balance),))
+        except sqlite3.OperationalError:
+            pass
+        conn.commit()
+        conn.close()
+
+    console.print(f"[green]Paper account reset to ${balance:,.2f}[/green]")
+    console.print("[dim]All positions, trades, and history cleared.[/dim]")
+
+
 if __name__ == "__main__":
     app()
