@@ -6,7 +6,7 @@
     }
   },
   "hooks": {
-    "PreToolCall": [
+    "PreToolUse": [
       {
         "matcher": "mcp__tradingagents__execute_paper_trade",
         "hooks": [
@@ -17,7 +17,7 @@
         ]
       }
     ],
-    "PostToolCall": [
+    "PostToolUse": [
       {
         "matcher": "mcp__tradingagents__*",
         "hooks": [
