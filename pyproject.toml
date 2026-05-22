@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tradingagents"
+version = "1.0.0"
+description = "TradingAgents: Autonomous trading via Claude Code MCP tools"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "pandas>=2.3.0",
+    "pydantic>=2.0",
+    "requests>=2.32.4",
+    "rich>=14.0.0",
+    "typer>=0.21.0",
+    "stockstats>=0.6.5",
+    "yfinance>=0.2.63",
+    "exchange_calendars>=4.5",
+    "numpy>=1.24",
+]
+
+[project.optional-dependencies]
+mcp = ["mcp>=1.0"]
+push = ["pywebpush>=2.0"]
+schwab = ["schwab-py>=1.4.0"]
+
+[project.scripts]
+tradingagents = "cli.main:app"
+
+[tool.setuptools.packages.find]
+include = ["tradingagents*", "cli*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+markers = [
+    "unit: fast isolated unit tests",
+    "integration: tests requiring external services",
+    "smoke: quick sanity-check tests",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+]

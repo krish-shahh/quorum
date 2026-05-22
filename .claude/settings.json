@@ -1,0 +1,45 @@
+{
+  "mcpServers": {
+    "tradingagents": {
+      "command": "python",
+      "args": ["-m", "tradingagents.mcp.server"]
+    }
+  },
+  "hooks": {
+    "PreToolCall": [
+      {
+        "matcher": "mcp__tradingagents__execute_paper_trade",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python .claude/hooks/pre_trade_validate.py"
+          }
+        ]
+      }
+    ],
+    "PostToolCall": [
+      {
+        "matcher": "mcp__tradingagents__*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python .claude/hooks/post_tool_audit.py"
+          }
+        ]
+      }
+    ]
+  },
+  "permissions": {
+    "allow": [
+      "mcp__tradingagents__*",
+      "WebSearch"
+    ]
+  },
+  "disabledMcpjsonServers": [
+    "code-review-graph",
+    "shadcn",
+    "claude.ai Google Calendar",
+    "claude.ai Gmail",
+    "claude.ai Google Drive"
+  ]
+}
