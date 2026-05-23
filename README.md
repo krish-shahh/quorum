@@ -9,6 +9,7 @@ Based on [TauricResearch/TradingAgents](https://github.com/TauricResearch/Tradin
 ## How It Works
 
 ```mermaid
+%%{init: {'theme': 'default', 'themeVariables': {'lineColor': '#9ca3af', 'primaryColor': '#ffffff', 'primaryBorderColor': '#d1d5db', 'primaryTextColor': '#1f2937'}}}%%
 graph LR
     subgraph "Chairman (Opus)"
         START["Portfolio State\n+ Delta Check"] --> TRIAGE{"What changed?"}
@@ -38,15 +39,21 @@ graph LR
     CARRY --> WAKE["ScheduleWakeup\n(30 min)"]
     WIKI --> WAKE
 
-    style TECH fill:#e0f2fe,stroke:#0284c7
-    style FUND fill:#e0f2fe,stroke:#0284c7
-    style SENT fill:#e0f2fe,stroke:#0284c7
-    style NEWS fill:#e0f2fe,stroke:#0284c7
-    style SCORE fill:#fef9c3,stroke:#ca8a04,stroke-width:2px
-    style TRADE fill:#dcfce7,stroke:#16a34a
-    style HOOK fill:#fee2e2,stroke:#dc2626
-    style CARRY fill:#f3f4f6,stroke:#6b7280
-    style WAKE fill:#faf5ff,stroke:#7c3aed
+    style START fill:#ffffff,stroke:#d1d5db,color:#374151
+    style TRIAGE fill:#f9fafb,stroke:#9ca3af,color:#374151
+    style TECH fill:#eff6ff,stroke:#93c5fd,color:#1e40af
+    style FUND fill:#eff6ff,stroke:#93c5fd,color:#1e40af
+    style SENT fill:#eff6ff,stroke:#93c5fd,color:#1e40af
+    style NEWS fill:#eff6ff,stroke:#93c5fd,color:#1e40af
+    style SCORE fill:#fefce8,stroke:#fde047,stroke-width:2px,color:#854d0e
+    style DECIDE fill:#f9fafb,stroke:#9ca3af,color:#374151
+    style TRADE fill:#f0fdf4,stroke:#86efac,color:#166534
+    style HOOK fill:#fef2f2,stroke:#fca5a5,color:#991b1b
+    style LOG1 fill:#fef2f2,stroke:#fca5a5,color:#991b1b
+    style LOG2 fill:#f9fafb,stroke:#d1d5db,color:#6b7280
+    style CARRY fill:#f9fafb,stroke:#d1d5db,color:#6b7280
+    style WIKI fill:#f0fdf4,stroke:#86efac,color:#166534
+    style WAKE fill:#faf5ff,stroke:#d8b4fe,color:#6b21a8
 ```
 
 ### Key Design Decisions
