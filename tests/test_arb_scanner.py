@@ -7,6 +7,8 @@ and fee-aware profit estimation.
 import pytest
 from unittest.mock import patch, MagicMock
 
+pytestmark = pytest.mark.unit
+
 from tradingagents.dataflows.arb_scanner import (
     scan_overround,
     scan_bias,

@@ -6,6 +6,8 @@ import importlib
 
 import pytest
 
+pytestmark = pytest.mark.unit
+
 import tradingagents.default_config as default_config_module
 
 
