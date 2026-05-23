@@ -51,7 +51,24 @@ After the final trading cycle each day (or when asked for a summary), produce:
 
 ## Scheduling
 
-Sessions are ephemeral. If Claude Code restarts, re-run `/trading-day` to reschedule remaining cycles. CronCreate jobs only fire while the REPL is idle. Kalshi position monitoring runs weekday mornings (8:47 AM) — checks prices, news, and resolution triggers for open prediction market positions.
+### Headless Mode (default)
+
+The system runs fully unattended via macOS launchd + `claude -p` (uses subscription, not API):
+
+```
+9:30 AM  — Market open council + Kalshi position check
+1:30 PM  — Midday rebalance
+3:30 PM  — Late afternoon
+4:15 PM  — EOD report + memory update
+```
+
+Each cycle is an independent `claude -p` invocation. State persists via MCP (SQLite + wiki + memory files). Logs go to `~/.tradingagents/logs/trading-YYYY-MM-DD.log`.
+
+Manage: `launchctl list | grep tradingagents` / `launchctl unload ~/Library/LaunchAgents/com.tradingagents.daily.plist`
+
+### Interactive Mode
+
+For manual sessions, use `/trading-day` to schedule cycles via CronCreate (session-scoped). Kalshi position monitoring runs weekday mornings (8:47 AM) when using this mode.
 
 ## Architecture
 
