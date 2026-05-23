@@ -80,11 +80,29 @@ def create_server():
         Tool(name="search_wiki", description="Search the trading wiki for past analyses by ticker, tag, or signal.", inputSchema={"type": "object", "properties": {"query": {"type": "string"}, "limit": {"type": "integer", "default": 10}}, "required": ["query"]}),
         Tool(name="get_wiki_page", description="Read a specific wiki page by path.", inputSchema={"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}),
         # Council scoring (deterministic — runs as code, not prompt)
-        Tool(name="score_council", description="Deterministic council scoring. Pass the 4 analyst scores and it returns the final signal via weighted average with hard-coded veto conditions and tiebreaker rules. This is CODE, not LLM reasoning — the model cannot override the math. Always call this instead of computing the score yourself.", inputSchema={"type": "object", "properties": {"ticker": {"type": "string"}, "technical_score": {"type": "number", "description": "Technical analyst score 1-5"}, "fundamental_score": {"type": "number", "description": "Fundamental analyst score 1-5"}, "sentiment_score": {"type": "number", "description": "Sentiment analyst score 1-5"}, "news_score": {"type": "number", "description": "News/macro analyst score 1-5"}, "is_held": {"type": "boolean", "description": "True if you currently hold this ticker", "default": False}}, "required": ["ticker", "technical_score", "fundamental_score", "sentiment_score", "news_score"]}),
+        Tool(name="score_council", description="Deterministic council scoring. Pass the 4 analyst scores (and optional quant scores from get_quant_scores) and it returns the final signal. When quant scores are provided, they are blended with analyst scores based on data quality. Hard veto conditions and tiebreaker rules cannot be overridden.", inputSchema={"type": "object", "properties": {"ticker": {"type": "string"}, "technical_score": {"type": "number", "description": "Technical analyst score 1-5"}, "fundamental_score": {"type": "number", "description": "Domain analyst score 1-5"}, "sentiment_score": {"type": "number", "description": "Sentiment analyst score 1-5"}, "news_score": {"type": "number", "description": "News/macro analyst score 1-5"}, "is_held": {"type": "boolean", "description": "True if you currently hold this ticker", "default": False}, "quant_fundamental_score": {"type": "number", "description": "Quant fundamental score from get_quant_scores (optional)"}, "quant_technical_score": {"type": "number", "description": "Quant technical score from get_quant_scores (optional)"}, "quant_data_quality": {"type": "number", "description": "Data quality 0-1 from get_quant_scores (optional)"}}, "required": ["ticker", "technical_score", "fundamental_score", "sentiment_score", "news_score"]}),
         # Wiki maintenance
         Tool(name="prune_wiki", description="Archive wiki pages older than N days. Keeps the injected context sharp by removing stale analyses. Returns count of archived pages.", inputSchema={"type": "object", "properties": {"max_age_days": {"type": "integer", "default": 30, "description": "Archive pages older than this (default 30)"}}}),
         # Analytics
         Tool(name="get_analytics_summary", description="Get portfolio analytics: Sharpe ratio, Sortino ratio, drawdown, win rate, alpha vs SPY.", inputSchema={"type": "object", "properties": {}}),
+        # Cache stats
+        Tool(name="get_cache_stats", description="Get data cache hit/miss stats per function and active entry counts. Use to verify caching is working and identify expensive fetches.", inputSchema={"type": "object", "properties": {}}),
+        # Ticker state (delta-aware cycles)
+        Tool(name="get_ticker_state", description="Get stored council state for a ticker: last 4 analyst scores, signals, confidence, price at analysis time. Use to check if re-analysis is needed.", inputSchema={"type": "object", "properties": {"ticker": {"type": "string"}}, "required": ["ticker"]}),
+        Tool(name="get_ticker_deltas", description="Get what changed since last analysis for all tickers: price movement, news staleness, regime shift. Returns which tickers need re-analysis vs carry-forward.", inputSchema={"type": "object", "properties": {}}),
+        # Asset info (sector-aware routing)
+        Tool(name="get_asset_info", description="Detect asset class and sector for a ticker. Returns asset_class (stock, etf_bond, etf_commodity, etf_equity) and sector (tech, financials, healthcare, consumer, cyclical). Used by the council to pick the right domain analyst.", inputSchema={"type": "object", "properties": {"ticker": {"type": "string", "description": "Ticker symbol"}}, "required": ["ticker"]}),
+        # Kalshi prediction markets
+        Tool(name="get_kalshi_markets", description="List open prediction markets from Kalshi. Returns title, yes/no prices, volume, implied probability, time to close. Use to discover tradeable events.", inputSchema={"type": "object", "properties": {"limit": {"type": "integer", "default": 20, "description": "Max markets (1-200)"}, "event_ticker": {"type": "string", "description": "Filter by event ticker"}, "series_ticker": {"type": "string", "description": "Filter by series ticker"}}}),
+        Tool(name="get_kalshi_market", description="Get detailed data for a single Kalshi market: prices, volume, open interest, orderbook depth, rules, close time.", inputSchema={"type": "object", "properties": {"ticker": {"type": "string", "description": "Kalshi market ticker"}}, "required": ["ticker"]}),
+        Tool(name="get_kalshi_orderbook", description="Get the orderbook for a Kalshi market. Shows yes bids and no bids at each price level. In binary markets, YES bid at $X = NO ask at $(1-X).", inputSchema={"type": "object", "properties": {"ticker": {"type": "string", "description": "Kalshi market ticker"}, "depth": {"type": "integer", "default": 10, "description": "Number of price levels"}}, "required": ["ticker"]}),
+        Tool(name="get_kalshi_events", description="List prediction market events from Kalshi. Events group related markets (e.g., 'Who will be next PM?' has one market per candidate). Returns title, category, sub_title.", inputSchema={"type": "object", "properties": {"limit": {"type": "integer", "default": 20}, "series_ticker": {"type": "string", "description": "Filter by series"}, "with_nested_markets": {"type": "boolean", "default": false, "description": "Include market data in each event"}}}),
+        Tool(name="get_kalshi_event", description="Get a single Kalshi event with all its markets. Use for multi-market events (e.g., 'Who will be next Pope?' with 7 candidate markets).", inputSchema={"type": "object", "properties": {"event_ticker": {"type": "string", "description": "Event ticker"}}, "required": ["event_ticker"]}),
+        Tool(name="execute_kalshi_paper_trade", description="Execute a paper trade on a Kalshi prediction market. Buys YES or NO contracts at the current market price. Uses the local paper broker (no Kalshi auth needed).", inputSchema={"type": "object", "properties": {"ticker": {"type": "string", "description": "Kalshi market ticker"}, "side": {"type": "string", "enum": ["yes", "no"], "description": "Buy YES or NO contracts"}, "contracts": {"type": "integer", "description": "Number of contracts to buy"}, "reasoning": {"type": "string", "description": "Why you're taking this position"}}, "required": ["ticker", "side", "contracts"]}),
+        Tool(name="get_kalshi_positions", description="Get all open Kalshi prediction market paper positions.", inputSchema={"type": "object", "properties": {}}),
+        # Quantitative scoring
+        Tool(name="get_quant_scores", description="Compute deterministic quantitative scores for a ticker. Returns fundamental and technical quant scores (1-5), data quality (0-1), component breakdowns, and hard vetoes. Asset-type aware: uses sector-specific scoring (banks, healthcare, tech, bonds, commodities). These are auditable, math-based scores — not LLM judgment.", inputSchema={"type": "object", "properties": {"ticker": {"type": "string", "description": "Stock/ETF/futures ticker"}, "regime": {"type": "string", "description": "Current regime (risk_on/risk_off/volatile/transition). Auto-detected if omitted.", "default": ""}}, "required": ["ticker"]}),
+        Tool(name="get_portfolio_risk", description="Compute portfolio-level risk metrics: historical VaR (95%, 1-day), total notional exposure, position correlation, sector concentration. Use before new buys to check portfolio health.", inputSchema={"type": "object", "properties": {}}),
     ]
 
     @server.list_tools()
@@ -325,6 +343,15 @@ def _handle_tool(name: str, args: dict) -> str:
         safety = SafetyMonitor(config)
         if not safety.check_drawdown(account):
             rejections.append("BLOCKED: Kill switch is active. Reset with `tradingagents reset-kill-switch`.")
+
+        # Rule 6: Notional exposure check for futures
+        if signal in ("Buy", "Overweight"):
+            exposure = safety.check_notional_exposure(account, positions)
+            if not exposure["within_limits"]:
+                rejections.append(
+                    f"BLOCKED: Notional exposure ${exposure['total_notional']:,.0f} "
+                    f"({exposure['leverage']:.1f}x leverage) exceeds max {exposure['max_leverage']:.1f}x"
+                )
 
         if rejections:
             return "ORDER REJECTED (pre-trade validation):\n" + "\n".join(rejections)
@@ -650,12 +677,71 @@ def _handle_tool(name: str, args: dict) -> str:
             compute_sharpe_ratio, compute_sortino_ratio,
             compute_alpha_vs_benchmark, compute_win_rate_by_ticker,
         )
+        import pandas as pd
+
         starting = float(config.get("paper_starting_balance", 100000))
         trades = load_recent_trades(config, limit=500)
         if not trades:
             return "No trades to analyze."
 
         stats = compute_trade_stats(trades, starting)
+
+        # --- Empyrical-powered analytics (with fallback) ---
+        # Build a returns Series from executed trades
+        executed = sorted(
+            [t for t in trades
+             if t.get("action_taken") == "executed"
+             and t.get("account_value_before") is not None
+             and t.get("account_value_after") is not None],
+            key=lambda t: t.get("timestamp", ""),
+        )
+        returns_list = []
+        for t in executed:
+            bv = t["account_value_before"]
+            if bv and bv > 0:
+                returns_list.append((t["account_value_after"] - bv) / bv)
+        returns_series = pd.Series(returns_list, dtype=float)
+
+        empyrical_section = ""
+        if len(returns_series) >= 2:
+            try:
+                from tradingagents.quant.analytics import compute_portfolio_analytics
+                metrics = compute_portfolio_analytics(returns_series)
+                engine = metrics.get("engine", "unknown")
+
+                def _fmt(val, pct=False, prefix="", suffix=""):
+                    if val is None:
+                        return "N/A"
+                    if pct:
+                        return f"{prefix}{val * 100:+.2f}%{suffix}"
+                    return f"{prefix}{val:.4f}{suffix}"
+
+                empyrical_lines = [
+                    "",
+                    f"Advanced Risk Metrics (engine: {engine})",
+                    "-" * 40,
+                    f"Annual Return: {_fmt(metrics.get('annual_return'), pct=True)}",
+                    f"Annual Volatility: {_fmt(metrics.get('annual_volatility'), pct=True)}",
+                    f"Sharpe Ratio: {_fmt(metrics.get('sharpe_ratio'))}",
+                    f"Sortino Ratio: {_fmt(metrics.get('sortino_ratio'))}",
+                    f"Calmar Ratio: {_fmt(metrics.get('calmar_ratio'))}",
+                    f"Max Drawdown: {_fmt(metrics.get('max_drawdown'), pct=True)}",
+                    f"Omega Ratio: {_fmt(metrics.get('omega_ratio'))}",
+                    f"Tail Ratio: {_fmt(metrics.get('tail_ratio'))}",
+                    f"Value at Risk (5%): {_fmt(metrics.get('value_at_risk'), pct=True)}",
+                    f"Conditional VaR (5%): {_fmt(metrics.get('conditional_value_at_risk'), pct=True)}",
+                    f"Stability: {_fmt(metrics.get('stability_of_timeseries'))}",
+                ]
+                if metrics.get("alpha") is not None:
+                    empyrical_lines.append(f"Alpha: {_fmt(metrics.get('alpha'))}")
+                if metrics.get("beta") is not None:
+                    empyrical_lines.append(f"Beta: {_fmt(metrics.get('beta'))}")
+                empyrical_section = "\n".join(empyrical_lines)
+            except Exception:
+                import traceback
+                logger.warning("empyrical analytics failed: %s", traceback.format_exc())
+
+        # --- Legacy hand-rolled metrics (always shown) ---
         sharpe = compute_sharpe_ratio(trades, starting)
         sortino = compute_sortino_ratio(trades, starting)
         alpha = compute_alpha_vs_benchmark(trades, starting)
@@ -670,6 +756,8 @@ def _handle_tool(name: str, args: dict) -> str:
             f"Alpha vs SPY: {alpha.get('alpha', 0):+.2f}%",
             f"Total P&L: ${stats.get('total_realized_pnl', 0):,.2f}",
         ]
+        if empyrical_section:
+            lines.append(empyrical_section)
         return "\n".join(lines)
 
     # ── Council Scoring (deterministic) ──────────────────────────
@@ -681,6 +769,38 @@ def _handle_tool(name: str, args: dict) -> str:
         n = float(args["news_score"])
         is_held = bool(args.get("is_held", False))
 
+        # Quant blending (optional, backward-compatible)
+        qf = args.get("quant_fundamental_score")
+        qt = args.get("quant_technical_score")
+        qdq = float(args.get("quant_data_quality", 1.0))
+        if qf is not None or qt is not None:
+            from tradingagents.quant.integration import blend_quant_and_analyst
+            if qf is not None:
+                f = blend_quant_and_analyst(float(qf), f, qdq)
+            if qt is not None:
+                t = blend_quant_and_analyst(float(qt), t, qdq)
+
+        # Detect asset type for domain-aware labels and adjustments
+        from tradingagents.execution.ticker_utils import detect_asset_type
+        asset_info = detect_asset_type(ticker)
+        asset_class = asset_info["asset_class"]
+        sector = asset_info["sector"]
+
+        # Domain analyst label (displayed in output table)
+        domain_labels = {
+            "etf_bond": "Bond",
+            "etf_commodity": "Commodity",
+        }
+        sector_labels = {
+            "tech": "Tech",
+            "financials": "Financials",
+            "healthcare": "Healthcare",
+            "consumer": "Consumer",
+            "cyclical": "Cyclical",
+        }
+        domain_label = domain_labels.get(asset_class) or sector_labels.get(sector or "") or "Fundamental"
+        is_equity = asset_class in ("stock", "etf_equity")
+
         scores = {"technical": t, "fundamental": f, "sentiment": s, "news": n}
 
         # ── Veto conditions (hard blocks, no override) ──
@@ -688,7 +808,10 @@ def _handle_tool(name: str, args: dict) -> str:
         if t <= 1.0 and n <= 2.0:
             vetoes.append("VETO: Technical collapse (1) + negative news (<=2) = forced Hold/Sell")
         if f <= 1.0:
-            vetoes.append("VETO: Fundamental score 1 = serious financial concern, no new buys")
+            if is_equity:
+                vetoes.append("VETO: Domain score 1 = serious financial concern, no new buys")
+            else:
+                vetoes.append("VETO: Domain score 1 = strong headwinds, no new buys")
         if all(v <= 2.0 for v in scores.values()):
             vetoes.append("VETO: All 4 analysts scored <=2 = unanimous bearish, forced Sell if held")
 
@@ -708,13 +831,14 @@ def _handle_tool(name: str, args: dict) -> str:
         except Exception:
             regime = "unknown"
 
-        # Earnings proximity
-        try:
-            from tradingagents.dataflows.earnings_calendar import EarningsCalendar
-            if EarningsCalendar().should_reduce_size(ticker, 3):
-                risk_adj -= 0.5
-        except Exception:
-            pass
+        # Earnings proximity (equities only — bonds/commodities don't have earnings)
+        if is_equity:
+            try:
+                from tradingagents.dataflows.earnings_calendar import EarningsCalendar
+                if EarningsCalendar().should_reduce_size(ticker, 3):
+                    risk_adj -= 0.5
+            except Exception:
+                pass
 
         # Position count penalty for new buys
         if not is_held:
@@ -742,8 +866,9 @@ def _handle_tool(name: str, args: dict) -> str:
         mean_score = sum(scores.values()) / 4
         outlier_notes = []
         for name_k, v in scores.items():
+            label = domain_label if name_k == "fundamental" else name_k
             if abs(v - mean_score) >= 2.0:
-                outlier_notes.append(f"{name_k} is an outlier ({v:.1f} vs mean {mean_score:.1f})")
+                outlier_notes.append(f"{label} is an outlier ({v:.1f} vs mean {mean_score:.1f})")
 
         # ── Determine signal ──
         if vetoes:
@@ -765,13 +890,14 @@ def _handle_tool(name: str, args: dict) -> str:
             signal = "Hold"
             confidence = 0.4
 
+        asset_tag = f" [{domain_label}]" if domain_label != "Fundamental" else ""
         lines = [
-            f"# Council Score: {ticker}",
+            f"# Council Score: {ticker}{asset_tag}",
             f"",
             f"| Analyst | Score | Weight |",
             f"|---------|-------|--------|",
             f"| Technical | {t:.1f}/5 | 25% |",
-            f"| Fundamental | {f:.1f}/5 | 25% |",
+            f"| {domain_label} | {f:.1f}/5 | 25% |",
             f"| Sentiment | {s:.1f}/5 | 20% |",
             f"| News/Macro | {n:.1f}/5 | 20% |",
             f"| Risk Adjustment | {risk_adj:+.1f} | 10% |",
@@ -791,7 +917,122 @@ def _handle_tool(name: str, args: dict) -> str:
             lines.append(f"")
             lines.append(f"**Outliers:** {'; '.join(outlier_notes)}")
 
+        # Persist ticker state for delta-aware cycles
+        try:
+            from tradingagents.execution.db import save_ticker_state
+            from tradingagents.execution.broker.paper_client import PaperBrokerClient
+            price = PaperBrokerClient(config).get_quote(ticker).last
+            save_ticker_state(config, ticker, scores, signal, confidence, final_score, price, regime)
+        except Exception as exc:
+            logger.warning("Failed to save ticker state: %s", exc)
+
         return "\n".join(lines)
+
+    # ── Cache Stats ─────────────────────────────────────────────────
+    if name == "get_cache_stats":
+        from tradingagents.dataflows.cache import cache_stats
+        stats = cache_stats()
+        lines = ["# Data Cache Stats", ""]
+        lines.append(f"**Active entries:** {stats['active']} | **Expired:** {stats['expired']} | **Total:** {stats['total_entries']}")
+        lines.append("")
+        per_func = stats.get("per_function", {})
+        if per_func:
+            lines.append("| Function | Hits | Misses | Hit Rate |")
+            lines.append("|----------|------|--------|----------|")
+            for func_name, counts in sorted(per_func.items()):
+                total = counts["hits"] + counts["misses"]
+                rate = f"{counts['hits'] / total:.0%}" if total > 0 else "---"
+                lines.append(f"| {func_name} | {counts['hits']} | {counts['misses']} | {rate} |")
+        else:
+            lines.append("No cache activity yet.")
+        return "\n".join(lines)
+
+    # ── Ticker State ────────────────────────────────────────────────
+    if name == "get_ticker_state":
+        from tradingagents.execution.db import get_ticker_state as _get_ts
+        ticker = args["ticker"].upper()
+        states = _get_ts(config, ticker)
+        if not states:
+            return f"No stored state for {ticker}. Run score_council first."
+        lines = [f"# Ticker State: {ticker}", "", "| Analyzed | Signal | Score | Tech | Fund | Sent | News | Price | Regime |"]
+        lines.append("|----------|--------|-------|------|------|------|------|-------|--------|")
+        for s in states:
+            lines.append(
+                f"| {s['analyzed_at'][:16]} | {s['council_signal']} | {s['weighted_score']:.2f} | "
+                f"{s['technical_score']:.1f} | {s['fundamental_score']:.1f} | "
+                f"{s['sentiment_score']:.1f} | {s['news_score']:.1f} | "
+                f"${s['price_at_analysis']:,.2f} | {s['regime_at_analysis']} |"
+            )
+        return "\n".join(lines)
+
+    if name == "get_ticker_deltas":
+        from tradingagents.execution.db import get_all_latest_states
+        from tradingagents.execution.broker.paper_client import PaperBrokerClient
+        from tradingagents.dataflows.regime import CrossAssetRegimeDetector
+
+        states = get_all_latest_states(config)
+        if not states:
+            return "No prior ticker states. All tickers need full analysis."
+
+        # Current regime
+        try:
+            current_regime = CrossAssetRegimeDetector().detect(today).get("regime", "unknown")
+        except Exception:
+            current_regime = "unknown"
+
+        # News TTL from config
+        news_ttl = config.get("cache_ttls", {}).get("news", 3600)
+
+        lines = ["# Ticker Deltas (since last analysis)", ""]
+        lines.append("| Ticker | Last Signal | Price Then | Price Now | Change | News Stale | Regime Changed | Action |")
+        lines.append("|--------|------------|-----------|----------|--------|-----------|----------------|--------|")
+
+        full_analysis = []
+        carry_forward = []
+
+        broker = PaperBrokerClient(config)
+        for s in states:
+            ticker = s["ticker"]
+            try:
+                current_price = broker.get_quote(ticker).last
+            except Exception:
+                current_price = s["price_at_analysis"] or 0
+
+            old_price = s["price_at_analysis"] or current_price
+            price_change = ((current_price - old_price) / old_price * 100) if old_price else 0
+
+            # Check news staleness
+            analyzed = datetime.fromisoformat(s["analyzed_at"])
+            news_stale = (datetime.now() - analyzed).total_seconds() > news_ttl
+
+            # Check regime change
+            regime_changed = s["regime_at_analysis"] != current_regime
+
+            # Classify
+            material = abs(price_change) > 1.0 or news_stale or regime_changed
+            action = "RE-ANALYZE" if material else "CARRY FORWARD"
+
+            if material:
+                full_analysis.append(ticker)
+            else:
+                carry_forward.append(ticker)
+
+            lines.append(
+                f"| {ticker} | {s['council_signal']} | ${old_price:,.2f} | ${current_price:,.2f} | "
+                f"{price_change:+.1f}% | {'YES' if news_stale else 'no'} | "
+                f"{'YES' if regime_changed else 'no'} | **{action}** |"
+            )
+
+        lines.append("")
+        lines.append(f"**Re-analyze ({len(full_analysis)}):** {', '.join(full_analysis) or 'none'}")
+        lines.append(f"**Carry forward ({len(carry_forward)}):** {', '.join(carry_forward) or 'none'}")
+        return "\n".join(lines)
+
+    # ── Asset Info ──────────────────────────────────────────────
+    if name == "get_asset_info":
+        from tradingagents.execution.ticker_utils import detect_asset_type
+        info = detect_asset_type(args["ticker"])
+        return json.dumps(info)
 
     # ── Wiki Pruning ─────────────────────────────────────────────
     if name == "prune_wiki":
@@ -836,6 +1077,310 @@ def _handle_tool(name: str, args: dict) -> str:
             f"Moved to: {archive_dir}\n"
             f"Remaining in index: {conn.execute('SELECT COUNT(*) FROM wiki_pages WHERE page_type = %s' % repr('run')).fetchone()[0]} run pages"
         )
+
+    # ── Quantitative Scoring ──────────────────────────────────────
+    if name == "get_quant_scores":
+        from tradingagents.quant import get_quant_scores as _quant_scores
+        result = _quant_scores(args["ticker"], regime=args.get("regime", ""))
+        d = result.to_dict()
+        lines = [
+            f"# Quant Scores: {result.ticker} [{result.asset_class}{('/' + result.sector) if result.sector else ''}]",
+            f"",
+            f"## Fundamental (Domain) Score: {result.fundamental.score:.2f}/5 (data quality: {result.fundamental.data_quality:.0%})",
+            f"| Component | Score |",
+            f"|-----------|-------|",
+        ]
+        for k, v in result.fundamental.components.items():
+            lines.append(f"| {k} | {v:.3f} |")
+        if result.fundamental.flags:
+            lines.append(f"\n**Flags:** {', '.join(result.fundamental.flags)}")
+
+        lines.extend([
+            f"",
+            f"## Technical Score: {result.technical.score:.2f}/5 (data quality: {result.technical.data_quality:.0%})",
+            f"| Component | Score |",
+            f"|-----------|-------|",
+        ])
+        for k, v in result.technical.components.items():
+            lines.append(f"| {k} | {v:.3f} |")
+
+        if result.vetoes:
+            lines.extend([f"", f"## HARD VETOES ({len(result.vetoes)})"])
+            for v in result.vetoes:
+                lines.append(f"- **{v.rule_name}**: {v.description} (blocks: {v.blocks})")
+
+        # Persist to DB
+        try:
+            from tradingagents.execution.db import get_db
+            conn = get_db(config)
+            conn.execute(
+                "INSERT INTO quant_scores (ticker, fundamental_score, technical_score, data_quality, "
+                "asset_class, sector, components_json, flags_json, vetoes_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (result.ticker, result.fundamental.score, result.technical.score,
+                 result.data_quality, result.asset_class, result.sector,
+                 json.dumps({**result.fundamental.components, **{"tech_" + k: v for k, v in result.technical.components.items()}}),
+                 json.dumps(result.fundamental.flags + [f"tech:{f}" for f in result.technical.flags]),
+                 json.dumps([v.to_dict() for v in result.vetoes])),
+            )
+            conn.commit()
+        except Exception as exc:
+            logger.warning("Failed to save quant scores: %s", exc)
+
+        return "\n".join(lines)
+
+    if name == "get_portfolio_risk":
+        import numpy as np
+
+        from tradingagents.execution.broker.paper_client import PaperBrokerClient
+        from tradingagents.execution.safety import SafetyMonitor
+        broker = PaperBrokerClient(config)
+        account = broker.get_account_info()
+        positions = broker.get_positions()
+        safety = SafetyMonitor(config)
+
+        # Notional exposure
+        exposure = safety.check_notional_exposure(account, positions)
+
+        # Portfolio VaR (historical, 95%, 1-day)
+        var_data = {"var_95_pct": 0, "var_95_dollars": 0}
+        held_tickers = [p.ticker for p in positions if p.quantity > 0]
+        if held_tickers and account.account_value > 0:
+            try:
+                import yfinance as yf
+                data = yf.download(held_tickers, period="252d", progress=False)
+                if not data.empty:
+                    returns = data["Close"].pct_change().dropna()
+                    if len(returns.shape) == 1:
+                        port_returns = returns
+                    else:
+                        port_returns = returns.mean(axis=1)
+                    var_95 = abs(float(np.percentile(port_returns, 5)))
+                    var_data = {
+                        "var_95_pct": round(var_95 * 100, 2),
+                        "var_95_dollars": round(var_95 * account.account_value, 2),
+                    }
+            except Exception:
+                pass
+
+        lines = [
+            f"# Portfolio Risk Summary",
+            f"",
+            f"**Account Value:** ${account.account_value:,.2f}",
+            f"**Cash:** ${account.cash_balance:,.2f}",
+            f"**Positions:** {len(held_tickers)}",
+            f"",
+            f"## Notional Exposure",
+            f"- Total: ${exposure['total_notional']:,.2f}",
+            f"- Leverage: {exposure['leverage']:.2f}x (max {exposure['max_leverage']:.1f}x)",
+            f"- Within limits: {'YES' if exposure['within_limits'] else '**NO**'}",
+            f"",
+            f"## Value at Risk (1-day, 95%)",
+            f"- VaR: {var_data['var_95_pct']:.2f}% (${var_data['var_95_dollars']:,.2f})",
+            f"- Threshold: 3.0% (${account.account_value * 0.03:,.2f})",
+            f"- Within limits: {'YES' if var_data['var_95_pct'] <= 3.0 else '**NO**'}",
+        ]
+        return "\n".join(lines)
+
+    # ── Kalshi Prediction Markets ──────────────────────────────────
+    if name == "get_kalshi_markets":
+        from tradingagents.dataflows.kalshi import get_markets
+        markets = get_markets(
+            limit=int(args.get("limit", 20)),
+            event_ticker=args.get("event_ticker"),
+            series_ticker=args.get("series_ticker"),
+        )
+        if not markets:
+            return "No open Kalshi markets found."
+        lines = ["# Kalshi Markets", ""]
+        lines.append("| Market | Yes Bid/Ask | Implied Prob | Volume | Close |")
+        lines.append("|--------|-----------|-------------|--------|-------|")
+        for m in markets:
+            prob = f"{m.implied_probability:.0%}" if m.implied_probability > 0 else "---"
+            lines.append(
+                f"| {m.ticker} | ${m.yes_bid:.2f}/${m.yes_ask:.2f} | {prob} | "
+                f"{m.volume:,.0f} | {m.time_to_close or '---'} |"
+            )
+            lines.append(f"|  *{m.title[:80]}* ||||")
+        return "\n".join(lines)
+
+    if name == "get_kalshi_market":
+        from tradingagents.dataflows.kalshi import get_market
+        m = get_market(args["ticker"])
+        lines = [
+            f"# {m.title}",
+            f"**Ticker:** {m.ticker}",
+            f"**Event:** {m.event_ticker}",
+            f"**Status:** {m.status}",
+            f"",
+            f"## Pricing",
+            f"- YES: bid ${m.yes_bid:.4f} / ask ${m.yes_ask:.4f}",
+            f"- NO: bid ${m.no_bid:.4f} / ask ${m.no_ask:.4f}",
+            f"- Last price: ${m.last_price:.4f}",
+            f"- Implied probability: {m.implied_probability:.1%}",
+            f"- Spread: ${m.spread:.4f}",
+            f"",
+            f"## Volume & Liquidity",
+            f"- Volume: {m.volume:,.0f}",
+            f"- 24h Volume: {m.volume_24h:,.0f}",
+            f"- Open Interest: {m.open_interest:,.0f}",
+            f"",
+            f"## Timing",
+            f"- Close: {m.close_time}",
+            f"- Time to close: {m.time_to_close or 'N/A'}",
+            f"- Can close early: {m.can_close_early}",
+        ]
+        if m.rules:
+            lines.extend([f"", f"## Resolution Rules", m.rules])
+        if m.result:
+            lines.extend([f"", f"**Result:** {m.result}"])
+        return "\n".join(lines)
+
+    if name == "get_kalshi_orderbook":
+        from tradingagents.dataflows.kalshi import get_orderbook
+        ob = get_orderbook(args["ticker"], depth=int(args.get("depth", 10)))
+        lines = [f"# Orderbook: {ob.ticker}", ""]
+        lines.append("## YES Bids (buy YES at these prices)")
+        if ob.yes_bids:
+            lines.append("| Price | Quantity |")
+            lines.append("|-------|----------|")
+            for level in reversed(ob.yes_bids):
+                lines.append(f"| ${level.price:.4f} | {level.quantity:,.0f} |")
+        else:
+            lines.append("No YES bids.")
+        lines.append("")
+        lines.append("## NO Bids (buy NO at these prices)")
+        if ob.no_bids:
+            lines.append("| Price | Quantity |")
+            lines.append("|-------|----------|")
+            for level in reversed(ob.no_bids):
+                lines.append(f"| ${level.price:.4f} | {level.quantity:,.0f} |")
+        else:
+            lines.append("No NO bids.")
+        return "\n".join(lines)
+
+    if name == "get_kalshi_events":
+        from tradingagents.dataflows.kalshi import get_events
+        events = get_events(
+            limit=int(args.get("limit", 20)),
+            series_ticker=args.get("series_ticker"),
+            with_nested_markets=bool(args.get("with_nested_markets", False)),
+        )
+        if not events:
+            return "No open Kalshi events found."
+        lines = ["# Kalshi Events", ""]
+        for e in events:
+            lines.append(f"### {e.title}")
+            lines.append(f"- Ticker: `{e.event_ticker}`")
+            lines.append(f"- Category: {e.category}")
+            lines.append(f"- Sub-title: {e.sub_title}")
+            lines.append(f"- Mutually exclusive: {e.mutually_exclusive}")
+            if e.markets:
+                lines.append(f"- Markets ({len(e.markets)}):")
+                for m in e.markets[:10]:
+                    prob = f"{m.implied_probability:.0%}" if m.implied_probability > 0 else "---"
+                    lines.append(f"  - `{m.ticker}`: {prob} (vol {m.volume:,.0f})")
+            lines.append("")
+        return "\n".join(lines)
+
+    if name == "get_kalshi_event":
+        from tradingagents.dataflows.kalshi import get_event
+        e = get_event(args["event_ticker"])
+        lines = [
+            f"# {e.title}",
+            f"**Event Ticker:** {e.event_ticker}",
+            f"**Series:** {e.series_ticker}",
+            f"**Category:** {e.category}",
+            f"**Sub-title:** {e.sub_title}",
+            f"**Mutually exclusive:** {e.mutually_exclusive}",
+            f"",
+        ]
+        if e.markets:
+            lines.append(f"## Markets ({len(e.markets)})")
+            lines.append("| Ticker | Last Price | Implied Prob | Volume | Close |")
+            lines.append("|--------|-----------|-------------|--------|-------|")
+            for m in e.markets:
+                prob = f"{m.implied_probability:.0%}" if m.implied_probability > 0 else "---"
+                lines.append(
+                    f"| {m.ticker} | ${m.last_price:.4f} | {prob} | "
+                    f"{m.volume:,.0f} | {m.time_to_close or '---'} |"
+                )
+        return "\n".join(lines)
+
+    if name == "execute_kalshi_paper_trade":
+        from tradingagents.dataflows.kalshi import get_market
+        ticker = args["ticker"]
+        side = args["side"].lower()
+        contracts = int(args["contracts"])
+        reasoning = args.get("reasoning", "")
+
+        m = get_market(ticker)
+        if side == "yes":
+            price = m.yes_ask if m.yes_ask > 0 else m.last_price
+        else:
+            price = m.no_ask if m.no_ask > 0 else (1.0 - m.last_price)
+
+        if price <= 0:
+            return f"Cannot execute: no valid price for {side.upper()} on {ticker}"
+
+        cost = price * contracts
+
+        # Use the existing paper broker to track as a special position
+        from tradingagents.execution.broker.paper_client import PaperBrokerClient
+        broker = PaperBrokerClient(config)
+        account = broker.get_account_info()
+
+        if cost > account.cash_balance:
+            return f"Insufficient cash: need ${cost:.2f} but have ${account.cash_balance:.2f}"
+
+        # Store prediction market position in DB
+        from tradingagents.execution.db import get_db
+        conn = get_db(config)
+        conn.execute(
+            "INSERT INTO kalshi_positions "
+            "(ticker, title, side, contracts, entry_price, cost, reasoning, status) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, 'open')",
+            (ticker, m.title[:200], side, contracts, price, cost, reasoning),
+        )
+        conn.commit()
+
+        # Deduct from paper cash
+        broker._cash -= cost
+        broker._save_state()
+
+        return (
+            f"Kalshi paper trade executed:\n"
+            f"  {side.upper()} {contracts} contracts on: {m.title[:80]}\n"
+            f"  Entry price: ${price:.4f} per contract\n"
+            f"  Total cost: ${cost:.2f}\n"
+            f"  Implied probability: {price:.1%}\n"
+            f"  Reasoning: {reasoning}\n"
+            f"  Cash remaining: ${broker._cash:.2f}"
+        )
+
+    if name == "get_kalshi_positions":
+        from tradingagents.execution.db import get_db
+        conn = get_db(config)
+        try:
+            rows = conn.execute(
+                "SELECT * FROM kalshi_positions WHERE status = 'open' ORDER BY created_at DESC"
+            ).fetchall()
+        except Exception:
+            return "No Kalshi positions table yet. Execute a trade first."
+
+        if not rows:
+            return "No open Kalshi positions."
+
+        lines = ["# Kalshi Positions", ""]
+        lines.append("| Ticker | Side | Contracts | Entry | Cost | Title |")
+        lines.append("|--------|------|----------|-------|------|-------|")
+        for r in rows:
+            lines.append(
+                f"| {r['ticker'][:30]} | {r['side'].upper()} | {r['contracts']} | "
+                f"${r['entry_price']:.4f} | ${r['cost']:.2f} | {r['title'][:40]} |"
+            )
+        total_cost = sum(r['cost'] for r in rows)
+        lines.append(f"\n**Total invested:** ${total_cost:.2f}")
+        return "\n".join(lines)
 
     return f"Unknown tool: {name}"
 

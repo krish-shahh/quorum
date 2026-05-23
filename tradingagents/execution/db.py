@@ -47,6 +47,7 @@ CREATE TABLE IF NOT EXISTS paper_positions (
     ticker      TEXT    NOT NULL UNIQUE,
     quantity    INTEGER NOT NULL DEFAULT 0,
     avg_cost    REAL    NOT NULL DEFAULT 0.0,
+    multiplier  INTEGER NOT NULL DEFAULT 1,
     updated_at  TEXT    NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -146,6 +147,24 @@ CREATE TABLE IF NOT EXISTS trade_reports (
 CREATE INDEX IF NOT EXISTS idx_reports_ticker ON trade_reports(ticker);
 CREATE INDEX IF NOT EXISTS idx_reports_date ON trade_reports(trade_date);
 
+CREATE TABLE IF NOT EXISTS ticker_state (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    ticker            TEXT    NOT NULL,
+    technical_score   REAL    NOT NULL,
+    fundamental_score REAL    NOT NULL,
+    sentiment_score   REAL    NOT NULL,
+    news_score        REAL    NOT NULL,
+    council_signal    TEXT    NOT NULL DEFAULT 'Hold',
+    confidence        REAL    NOT NULL DEFAULT 0.0,
+    weighted_score    REAL    NOT NULL DEFAULT 3.0,
+    price_at_analysis REAL,
+    regime_at_analysis TEXT   NOT NULL DEFAULT '',
+    analyzed_at       TEXT    NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(ticker, analyzed_at)
+);
+CREATE INDEX IF NOT EXISTS idx_ts_ticker ON ticker_state(ticker);
+CREATE INDEX IF NOT EXISTS idx_ts_analyzed ON ticker_state(analyzed_at);
+
 CREATE TABLE IF NOT EXISTS push_subscriptions (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     endpoint    TEXT    NOT NULL UNIQUE,
@@ -161,6 +180,38 @@ CREATE TABLE IF NOT EXISTS notification_preferences (
     on_discovery   INTEGER NOT NULL DEFAULT 0,
     on_stop_loss   INTEGER NOT NULL DEFAULT 1
 );
+
+CREATE TABLE IF NOT EXISTS kalshi_positions (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    ticker      TEXT    NOT NULL,
+    title       TEXT    NOT NULL DEFAULT '',
+    side        TEXT    NOT NULL DEFAULT 'yes',
+    contracts   INTEGER NOT NULL DEFAULT 1,
+    entry_price REAL    NOT NULL DEFAULT 0.0,
+    cost        REAL    NOT NULL DEFAULT 0.0,
+    reasoning   TEXT    NOT NULL DEFAULT '',
+    status      TEXT    NOT NULL DEFAULT 'open',
+    result      TEXT    NOT NULL DEFAULT '',
+    settlement  REAL,
+    pnl         REAL,
+    created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+    settled_at  TEXT
+);
+
+CREATE TABLE IF NOT EXISTS quant_scores (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    ticker          TEXT    NOT NULL,
+    fundamental_score REAL  NOT NULL DEFAULT 3.0,
+    technical_score REAL    NOT NULL DEFAULT 3.0,
+    data_quality    REAL    NOT NULL DEFAULT 1.0,
+    asset_class     TEXT    NOT NULL DEFAULT 'stock',
+    sector          TEXT,
+    components_json TEXT    NOT NULL DEFAULT '{}',
+    flags_json      TEXT    NOT NULL DEFAULT '[]',
+    vetoes_json     TEXT    NOT NULL DEFAULT '[]',
+    scored_at       TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_qs_ticker ON quant_scores(ticker);
 """
 
 # ──────────────────────────────────────────────────────────────────────
@@ -443,9 +494,74 @@ def db_table_counts(config: Optional[Dict[str, Any]] = None) -> Dict[str, int]:
     """Return a mapping of table name -> row count for every execution table."""
     conn = get_db(config)
     tables = ["watchlist", "paper_positions", "paper_account", "trades",
-              "safety_state", "config_overrides"]
+              "safety_state", "config_overrides", "ticker_state"]
     counts: Dict[str, int] = {}
     for tbl in tables:
         row = conn.execute(f"SELECT COUNT(*) FROM {tbl}").fetchone()  # noqa: S608
         counts[tbl] = row[0]
     return counts
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Ticker state helpers
+# ──────────────────────────────────────────────────────────────────────
+
+def save_ticker_state(
+    config: Optional[Dict[str, Any]],
+    ticker: str,
+    scores: Dict[str, float],
+    signal: str,
+    confidence: float,
+    weighted_score: float,
+    price: Optional[float],
+    regime: str,
+) -> None:
+    """Insert a ticker_state row after each score_council call."""
+    conn = get_db(config)
+    conn.execute(
+        "INSERT INTO ticker_state "
+        "(ticker, technical_score, fundamental_score, sentiment_score, news_score, "
+        " council_signal, confidence, weighted_score, price_at_analysis, regime_at_analysis) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            ticker,
+            scores.get("technical", 3.0),
+            scores.get("fundamental", 3.0),
+            scores.get("sentiment", 3.0),
+            scores.get("news", 3.0),
+            signal,
+            confidence,
+            weighted_score,
+            price,
+            regime,
+        ),
+    )
+    conn.commit()
+
+
+def get_ticker_state(
+    config: Optional[Dict[str, Any]], ticker: str, limit: int = 4
+) -> List[Dict[str, Any]]:
+    """Return last N analyses for a ticker, most recent first."""
+    conn = get_db(config)
+    rows = conn.execute(
+        "SELECT * FROM ticker_state WHERE ticker = ? ORDER BY analyzed_at DESC LIMIT ?",
+        (ticker, limit),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_all_latest_states(
+    config: Optional[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Return the most recent state for each analyzed ticker."""
+    conn = get_db(config)
+    rows = conn.execute(
+        "SELECT ts.* FROM ticker_state ts "
+        "INNER JOIN ("
+        "  SELECT ticker, MAX(analyzed_at) as max_at "
+        "  FROM ticker_state GROUP BY ticker"
+        ") latest ON ts.ticker = latest.ticker AND ts.analyzed_at = latest.max_at "
+        "ORDER BY ts.weighted_score DESC",
+    ).fetchall()
+    return [dict(r) for r in rows]

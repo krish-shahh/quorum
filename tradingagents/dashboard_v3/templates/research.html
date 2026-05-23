@@ -5,6 +5,16 @@
 <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded {% if sig in ['Buy','Overweight'] %}bg-green-50 text-green-700{% elif sig in ['Sell','Underweight'] %}bg-red-50 text-red-700{% else %}bg-gray-100 text-gray-600{% endif %}">{{ sig }}</span>
 {% endmacro %}
 
+{% macro asset_badge(item) %}
+{% set ac = item.asset_class | default('stock') %}
+{% set sec = item.sector | default('') %}
+{% if ac == 'future' %}<span class="text-[9px] font-semibold px-1 py-0.5 rounded bg-indigo-50 text-indigo-600">FUT</span>
+{% elif ac == 'etf_bond' %}<span class="text-[9px] font-semibold px-1 py-0.5 rounded bg-blue-50 text-blue-600">BOND</span>
+{% elif ac == 'etf_commodity' %}<span class="text-[9px] font-semibold px-1 py-0.5 rounded bg-amber-50 text-amber-700">CMDTY</span>
+{% elif sec %}<span class="text-[9px] font-semibold px-1 py-0.5 rounded {% if sec == 'tech' %}bg-purple-50 text-purple-600{% elif sec == 'financials' %}bg-cyan-50 text-cyan-700{% elif sec == 'healthcare' %}bg-emerald-50 text-emerald-600{% elif sec == 'consumer' %}bg-orange-50 text-orange-600{% elif sec == 'cyclical' %}bg-stone-100 text-stone-600{% else %}bg-gray-100 text-gray-500{% endif %}">{{ sec | upper }}</span>
+{% endif %}
+{% endmacro %}
+
 {% macro page_type_dot(pt) %}
 {% if pt == 'run' %}<span class="inline-block w-2 h-2 rounded-full bg-blue-500"></span>
 {% elif pt == 'daily' %}<span class="inline-block w-2 h-2 rounded-full bg-purple-500"></span>
@@ -73,6 +83,7 @@
        class="flex items-center gap-3 px-3 py-2 rounded hover:bg-gray-50 transition-colors group">
       {{ page_type_badge(r.page_type) }}
       <span class="text-sm font-semibold text-gray-900 group-hover:text-blue-700">{{ r.ticker or '—' }}</span>
+      {{ asset_badge(r) }}
       {{ signal_badge(r.signal) }}
       <span class="text-xs text-gray-400 font-mono">{{ r.trade_date or '' }}</span>
       {% if r.confidence %}
@@ -175,6 +186,7 @@
         <span class="text-xs text-gray-400 font-mono w-20">{{ r.trade_date or r.created_at[:10] }}</span>
         {{ report_type_badge(r.report_type) }}
         <span class="text-sm font-semibold text-gray-900">{{ r.ticker }}</span>
+        {{ asset_badge(r) }}
         {{ signal_badge(r.signal) }}
         {% if r.side %}
         <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded

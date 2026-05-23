@@ -7,6 +7,7 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/htmx.org@2.0.4"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-treemap@3.1.0/dist/chartjs-chart-treemap.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -51,7 +52,7 @@
 
       <!-- Links -->
       <div class="flex items-center gap-1 ml-2">
-        {% set nav_items = [('/', 'Trading', 'trading'), ('/council', 'Council', 'council'), ('/performance', 'Performance', 'performance'), ('/research', 'Research', 'research'), ('/pipeline', 'Pipeline', 'pipeline')] %}
+        {% set nav_items = [('/', 'Trading', 'trading'), ('/council', 'Council', 'council'), ('/predictions', 'Predictions', 'predictions'), ('/performance', 'Performance', 'performance'), ('/research', 'Research', 'research'), ('/pipeline', 'Pipeline', 'pipeline')] %}
         {% for href, label, key in nav_items %}
         <a href="{{ href }}"
            class="px-3 py-1 text-xs font-medium rounded transition-colors

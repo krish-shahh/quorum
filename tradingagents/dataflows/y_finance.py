@@ -4,10 +4,10 @@ from dateutil.relativedelta import relativedelta
 import pandas as pd
 import yfinance as yf
 import os
-from .cache import cached
+from .cache import cached, cached_config
 from .stockstats_utils import StockstatsUtils, _clean_dataframe, yf_retry, load_ohlcv, filter_financials_by_date
 
-@cached(ttl=3600)
+@cached_config("price")
 def get_YFin_data_online(
     symbol: Annotated[str, "ticker symbol of the company"],
     start_date: Annotated[str, "Start date in yyyy-mm-dd format"],
@@ -247,7 +247,7 @@ def get_stockstats_indicator(
     return str(indicator_value)
 
 
-@cached(ttl=3600)
+@cached_config("fundamentals")
 def get_fundamentals(
     ticker: Annotated[str, "ticker symbol of the company"],
     curr_date: Annotated[str, "current date (not used for yfinance)"] = None
@@ -305,7 +305,7 @@ def get_fundamentals(
         return f"Error retrieving fundamentals for {ticker}: {str(e)}"
 
 
-@cached(ttl=3600)
+@cached_config("fundamentals")
 def get_balance_sheet(
     ticker: Annotated[str, "ticker symbol of the company"],
     freq: Annotated[str, "frequency of data: 'annual' or 'quarterly'"] = "quarterly",
@@ -338,7 +338,7 @@ def get_balance_sheet(
         return f"Error retrieving balance sheet for {ticker}: {str(e)}"
 
 
-@cached(ttl=3600)
+@cached_config("fundamentals")
 def get_cashflow(
     ticker: Annotated[str, "ticker symbol of the company"],
     freq: Annotated[str, "frequency of data: 'annual' or 'quarterly'"] = "quarterly",
@@ -371,7 +371,7 @@ def get_cashflow(
         return f"Error retrieving cash flow for {ticker}: {str(e)}"
 
 
-@cached(ttl=3600)
+@cached_config("fundamentals")
 def get_income_statement(
     ticker: Annotated[str, "ticker symbol of the company"],
     freq: Annotated[str, "frequency of data: 'annual' or 'quarterly'"] = "quarterly",

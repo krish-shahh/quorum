@@ -76,17 +76,66 @@ class PaperBrokerClient(BrokerClient):
             timestamp=datetime.now(),
         )
 
-    def place_order(self, order: OrderRequest) -> OrderResult:
-        quote = self.get_quote(order.ticker)
-        fill_price = quote.last
-        order_id = str(uuid.uuid4())[:8]
+    def _apply_spread_slippage(self, quote: Quote, order: OrderRequest) -> float:
+        """Adjust fill price for bid-ask spread and market impact.
+
+        Spread tiers (half-spread applied to one side):
+            <$10:   1.0%  (penny stocks)
+            <$100:  0.3%  (mid-cap)
+            >=$100: 0.1%  (blue chips)
+
+        Market impact: 1bp per 1% of portfolio ordered, capped at 50bps.
+        Feature-flagged via paper_slippage_enabled config.
+        """
+        if not self._config.get("paper_slippage_enabled", False):
+            return quote.last
+
+        price = quote.last
+        if price <= 0:
+            return price
+
+        # Spread (half-spread)
+        config_bps = self._config.get("paper_spread_bps")
+        if config_bps:
+            half_spread_pct = float(config_bps) / 10000 / 2
+        elif price < 10:
+            half_spread_pct = 0.01
+        elif price < 100:
+            half_spread_pct = 0.003
+        else:
+            half_spread_pct = 0.001
+
+        # Market impact
+        account = self.get_account_info()
+        order_value = price * order.quantity
+        portfolio_pct = order_value / account.account_value if account.account_value > 0 else 0
+        impact_bps = float(self._config.get("paper_impact_bps_per_pct", 1))
+        impact_pct = min(0.005, portfolio_pct * impact_bps / 100)
 
         if order.side == OrderSide.BUY:
-            cost = fill_price * order.quantity
+            adjusted = price * (1 + half_spread_pct + impact_pct)
+        else:
+            adjusted = price * (1 - half_spread_pct - impact_pct)
+
+        logger.info(
+            "Slippage: %s %s base=$%.4f spread=%.1fbps impact=%.1fbps fill=$%.4f",
+            order.side.value, order.ticker, price,
+            half_spread_pct * 10000, impact_pct * 10000, adjusted,
+        )
+        return round(adjusted, 4)
+
+    def place_order(self, order: OrderRequest) -> OrderResult:
+        quote = self.get_quote(order.ticker)
+        fill_price = self._apply_spread_slippage(quote, order)
+        order_id = str(uuid.uuid4())[:8]
+        mult = order.multiplier  # 1 for stocks/ETFs, >1 for futures
+
+        if order.side == OrderSide.BUY:
+            cost = fill_price * order.quantity * mult
             if cost > self._cash:
                 logger.warning(
-                    "Paper broker: insufficient cash ($%.2f) for %s order ($%.2f)",
-                    self._cash, order.ticker, cost,
+                    "Paper broker: insufficient cash ($%.2f) for %s order ($%.2f, mult=%d)",
+                    self._cash, order.ticker, cost, mult,
                 )
                 result = OrderResult(
                     order_id=order_id,
@@ -105,6 +154,7 @@ class PaperBrokerClient(BrokerClient):
                     ticker=order.ticker,
                     quantity=order.quantity,
                     avg_cost=fill_price,
+                    multiplier=mult,
                 )
             else:
                 total_cost = pos.avg_cost * pos.quantity + fill_price * order.quantity
@@ -115,7 +165,7 @@ class PaperBrokerClient(BrokerClient):
             pos = self._positions.get(order.ticker)
             if pos is None or pos.quantity < order.quantity:
                 logger.warning(
-                    "Paper broker: cannot sell %d shares of %s (have %d)",
+                    "Paper broker: cannot sell %d contracts of %s (have %d)",
                     order.quantity, order.ticker,
                     pos.quantity if pos else 0,
                 )
@@ -129,7 +179,7 @@ class PaperBrokerClient(BrokerClient):
                 self._orders[order_id] = result
                 return result
 
-            self._cash += fill_price * order.quantity
+            self._cash += fill_price * order.quantity * (pos.multiplier or mult)
             pos.quantity -= order.quantity
             if pos.quantity == 0:
                 del self._positions[order.ticker]
@@ -144,10 +194,11 @@ class PaperBrokerClient(BrokerClient):
         self._orders[order_id] = result
         self._save_state()
 
+        label = "contracts" if mult > 1 else "shares"
         logger.info(
-            "Paper %s %d %s @ $%.2f (cash: $%.2f)",
+            "Paper %s %d %s %s @ $%.2f (mult=%d, cash: $%.2f)",
             order.side.value.upper(), order.quantity, order.ticker,
-            fill_price, self._cash,
+            label, fill_price, mult, self._cash,
         )
         return result
 
@@ -201,9 +252,9 @@ class PaperBrokerClient(BrokerClient):
                 conn.execute("DELETE FROM paper_positions")
                 for t, p in self._positions.items():
                     conn.execute(
-                        "INSERT INTO paper_positions (ticker, quantity, avg_cost, updated_at) "
-                        "VALUES (?, ?, ?, ?)",
-                        (t, p.quantity, p.avg_cost, now),
+                        "INSERT INTO paper_positions (ticker, quantity, avg_cost, multiplier, updated_at) "
+                        "VALUES (?, ?, ?, ?, ?)",
+                        (t, p.quantity, p.avg_cost, p.multiplier, now),
                     )
         except Exception as exc:  # noqa: BLE001
             logger.warning("SQLite save failed (%s); falling back to JSON only", exc)
@@ -213,7 +264,7 @@ class PaperBrokerClient(BrokerClient):
         data = {
             "cash": self._cash,
             "positions": {
-                t: {"quantity": p.quantity, "avg_cost": p.avg_cost}
+                t: {"quantity": p.quantity, "avg_cost": p.avg_cost, "multiplier": p.multiplier}
                 for t, p in self._positions.items()
             },
         }
@@ -230,12 +281,19 @@ class PaperBrokerClient(BrokerClient):
             ).fetchone()
             if row is not None:
                 self._cash = float(row[0])
-                for r in conn.execute("SELECT ticker, quantity, avg_cost FROM paper_positions"):
-                    self._positions[r[0]] = _PaperPosition(
-                        ticker=r[0],
-                        quantity=int(r[1]),
-                        avg_cost=float(r[2]),
-                    )
+                # Try reading multiplier column (may not exist in older DBs)
+                try:
+                    rows = conn.execute("SELECT ticker, quantity, avg_cost, multiplier FROM paper_positions").fetchall()
+                    for r in rows:
+                        self._positions[r[0]] = _PaperPosition(
+                            ticker=r[0], quantity=int(r[1]),
+                            avg_cost=float(r[2]), multiplier=int(r[3] or 1),
+                        )
+                except Exception:
+                    for r in conn.execute("SELECT ticker, quantity, avg_cost FROM paper_positions"):
+                        self._positions[r[0]] = _PaperPosition(
+                            ticker=r[0], quantity=int(r[1]), avg_cost=float(r[2]),
+                        )
                 loaded_from = "sqlite"
                 logger.info(
                     "Paper broker loaded state from SQLite: $%.2f cash, %d positions",
@@ -256,6 +314,7 @@ class PaperBrokerClient(BrokerClient):
                         ticker=ticker,
                         quantity=int(pdata["quantity"]),
                         avg_cost=float(pdata["avg_cost"]),
+                        multiplier=int(pdata.get("multiplier", 1)),
                     )
                 loaded_from = "json"
                 logger.info(
@@ -286,24 +345,26 @@ class PaperBrokerClient(BrokerClient):
 class _PaperPosition:
     """Internal mutable position record."""
 
-    __slots__ = ("ticker", "quantity", "avg_cost", "last_price")
+    __slots__ = ("ticker", "quantity", "avg_cost", "last_price", "multiplier")
 
-    def __init__(self, ticker: str, quantity: int, avg_cost: float):
+    def __init__(self, ticker: str, quantity: int, avg_cost: float, multiplier: int = 1):
         self.ticker = ticker
         self.quantity = quantity
         self.avg_cost = avg_cost
         self.last_price = avg_cost  # updated on refresh
+        self.multiplier = multiplier
 
     @property
     def market_value(self) -> float:
-        return self.last_price * self.quantity
+        return self.last_price * self.quantity * self.multiplier
 
     def to_position(self) -> Position:
         mv = self.market_value
+        cost_basis = self.avg_cost * self.quantity * self.multiplier
         return Position(
             ticker=self.ticker,
             quantity=self.quantity,
             avg_cost=self.avg_cost,
             market_value=mv,
-            unrealized_pnl=mv - self.avg_cost * self.quantity,
+            unrealized_pnl=mv - cost_basis,
         )

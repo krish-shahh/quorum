@@ -35,6 +35,9 @@ class PositionSizer:
 
         # Execution edge feature flags
         self._kelly_enabled = bool(config.get("kelly_sizing_enabled", False))
+        self._atr_sizing_enabled = bool(config.get("atr_sizing_enabled", False))
+        self._atr_risk_per_trade = float(config.get("atr_risk_per_trade_pct", 0.02))
+        self._atr_stop_multiplier = float(config.get("atr_stop_multiplier", 2.0))
         self._earnings_enabled = bool(config.get("earnings_avoidance_enabled", True))
         self._earnings_days = int(config.get("earnings_avoidance_days", 3))
         self._macro_enabled = bool(config.get("macro_event_adjustment_enabled", True))
@@ -120,6 +123,35 @@ class PositionSizer:
             )
             return None
 
+        multiplier = self._get_multiplier(ticker)
+
+        # ATR-based sizing: risk a fixed % of account per trade
+        if self._atr_sizing_enabled and quote.last > 0:
+            atr_shares = self._atr_position_size(ticker, account, quote, multiplier)
+            if atr_shares is not None:
+                # Cap by ticker limit
+                unit_cost = quote.last * multiplier
+                max_by_ticker = self._cap_by_ticker_limit(
+                    account.account_value * self.max_single_ticker_pct,
+                    ticker, account, existing,
+                )
+                max_shares = math.floor(max_by_ticker / unit_cost) if unit_cost > 0 else 0
+                shares = min(atr_shares, max_shares) if max_shares > 0 else atr_shares
+
+                if shares < 1:
+                    label = "contracts" if multiplier > 1 else "shares"
+                    logger.info("Buy signal for %s but ATR sizing = 0 %s — skipping", ticker, label)
+                    return None
+
+                asset_info = self._get_asset_info(ticker)
+                order_type, limit_price = self._resolve_order_type(trader_proposal, quote)
+                return OrderRequest(
+                    ticker=ticker, side=OrderSide.BUY, order_type=order_type,
+                    quantity=shares, limit_price=limit_price,
+                    multiplier=multiplier, asset_class=asset_info["asset_class"],
+                )
+
+        # Fallback: percentage-based allocation
         alloc_pct = self._extract_allocation_pct(trader_proposal) or self.max_position_pct
 
         # Kelly criterion adjustment
@@ -146,18 +178,30 @@ class PositionSizer:
                 ticker, allocation, positions,
             )
 
-        shares = math.floor(allocation / quote.last) if quote.last > 0 else 0
+        unit_cost = quote.last * multiplier
+        shares = math.floor(allocation / unit_cost) if unit_cost > 0 else 0
         if shares < 1:
-            logger.info("Buy signal for %s but calculated 0 shares — skipping", ticker)
+            label = "contracts" if multiplier > 1 else "shares"
+            logger.info("Buy signal for %s but calculated 0 %s — skipping", ticker, label)
             return None
 
+        # Futures margin check
+        if multiplier > 1:
+            margin_ok, margin_msg = self._check_margin(ticker, shares, account)
+            if not margin_ok:
+                logger.info("Buy signal for %s blocked: %s", ticker, margin_msg)
+                return None
+
         order_type, limit_price = self._resolve_order_type(trader_proposal, quote)
+        asset_info = self._get_asset_info(ticker)
         return OrderRequest(
             ticker=ticker,
             side=OrderSide.BUY,
             order_type=order_type,
             quantity=shares,
             limit_price=limit_price,
+            multiplier=multiplier,
+            asset_class=asset_info["asset_class"],
         )
 
     def _handle_overweight(
@@ -185,18 +229,24 @@ class PositionSizer:
         allocation = account.account_value * alloc_pct
         allocation = self._cap_by_ticker_limit(allocation, ticker, account, existing)
 
-        shares = math.floor(allocation / quote.last) if quote.last > 0 else 0
+        multiplier = self._get_multiplier(ticker)
+        unit_cost = quote.last * multiplier
+        shares = math.floor(allocation / unit_cost) if unit_cost > 0 else 0
         if shares < 1:
-            logger.info("Overweight signal for %s but calculated 0 shares — skipping", ticker)
+            label = "contracts" if multiplier > 1 else "shares"
+            logger.info("Overweight signal for %s but calculated 0 %s — skipping", ticker, label)
             return None
 
         order_type, limit_price = self._resolve_order_type(trader_proposal, quote)
+        asset_info = self._get_asset_info(ticker)
         return OrderRequest(
             ticker=ticker,
             side=OrderSide.BUY,
             order_type=order_type,
             quantity=shares,
             limit_price=limit_price,
+            multiplier=multiplier,
+            asset_class=asset_info["asset_class"],
         )
 
     # ------------------------------------------------------------------
@@ -276,25 +326,118 @@ class PositionSizer:
         return OrderType.MARKET, None
 
     # ------------------------------------------------------------------
+    # Futures helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _get_multiplier(ticker: str) -> int:
+        from tradingagents.execution.contracts import get_multiplier
+        return get_multiplier(ticker)
+
+    @staticmethod
+    def _get_asset_info(ticker: str) -> dict:
+        from tradingagents.execution.ticker_utils import detect_asset_type
+        return detect_asset_type(ticker)
+
+    @staticmethod
+    def _check_margin(ticker: str, quantity: int, account: AccountInfo) -> tuple:
+        """Check if there's sufficient margin for a futures position.
+
+        Returns (ok: bool, message: str).
+        """
+        from tradingagents.execution.contracts import get_contract_spec
+        spec = get_contract_spec(ticker)
+        if spec is None:
+            return True, ""
+        required = spec.margin * quantity
+        if required > account.cash_balance:
+            return False, (
+                f"Margin required ${required:,.0f} ({quantity} x ${spec.margin:,.0f}) "
+                f"exceeds cash ${account.cash_balance:,.0f}"
+            )
+        return True, ""
+
+    # ------------------------------------------------------------------
     # Execution edge adjustments
     # ------------------------------------------------------------------
 
     def _kelly_fraction(self, ticker: str) -> Optional[float]:
-        """Compute half-Kelly fraction from historical win rate.
+        """Compute half-Kelly fraction from trade history.
 
-        Uses the LearningEngine to get historical win rate and average
-        win/loss ratio.  Returns a multiplier (0.25 to 2.0) or None
-        if insufficient data.
+        Kelly% = W - (1-W)/R  where W = win rate, R = avg_win/avg_loss.
+        Half-Kelly = Kelly% * 0.5 for conservative sizing.
 
-        Half-Kelly (Kelly/2) is used as a practical conservative adjustment.
+        Requires >= 10 executed trades for statistical validity.
+        Falls back to 0.5 (50% of base allocation) if insufficient data.
         """
         try:
-            from .learning import LearningEngine
-            learner = LearningEngine(self.config)
-            multiplier = learner.get_position_multiplier(ticker, "Buy")
-            # The learning engine already returns 0.5-1.5. Convert to Kelly-style.
-            # If multiplier > 1.0, it means the signal has been profitable.
-            return max(0.25, min(2.0, multiplier))
+            from tradingagents.execution.db import get_db
+            conn = get_db(self.config)
+            rows = conn.execute(
+                "SELECT account_before, account_after FROM trades "
+                "WHERE action_taken = 'executed' AND account_before > 0 "
+                "ORDER BY timestamp DESC LIMIT 100"
+            ).fetchall()
+
+            if len(rows) < 10:
+                return 0.5  # insufficient data
+
+            wins = [r["account_after"] - r["account_before"] for r in rows if r["account_after"] > r["account_before"]]
+            losses = [r["account_before"] - r["account_after"] for r in rows if r["account_after"] < r["account_before"]]
+
+            if not wins or not losses:
+                return 0.5
+
+            W = len(wins) / (len(wins) + len(losses))
+            avg_win = sum(wins) / len(wins)
+            avg_loss = sum(losses) / len(losses)
+            R = avg_win / avg_loss if avg_loss > 0 else 1.0
+
+            kelly = W - (1 - W) / R
+            half_kelly = kelly * 0.5
+
+            logger.info(
+                "Kelly for %s: W=%.0f%%, R=%.2f, full=%.2f, half=%.2f",
+                ticker, W * 100, R, kelly, half_kelly,
+            )
+
+            return max(0.1, min(1.0, half_kelly))
+        except Exception:
+            return 0.5
+
+    def _atr_position_size(
+        self,
+        ticker: str,
+        account: AccountInfo,
+        quote: Quote,
+        multiplier: int = 1,
+    ) -> Optional[int]:
+        """Size position so max loss (ATR-based stop) = risk% of account.
+
+        risk_dollars = account_value * risk_per_trade_pct
+        stop_distance = ATR * stop_multiplier
+        shares = floor(risk_dollars / (stop_distance * multiplier))
+
+        Returns number of shares, or None if ATR can't be computed.
+        """
+        try:
+            from tradingagents.quant.integration import _fetch_indicators
+            indicators = _fetch_indicators(ticker)
+            atr = indicators.get("atr", 0)
+            if atr <= 0:
+                return None
+
+            stop_distance = atr * self._atr_stop_multiplier
+            risk_dollars = account.account_value * self._atr_risk_per_trade
+            shares = math.floor(risk_dollars / (stop_distance * multiplier))
+
+            stop_price = round(quote.last - stop_distance, 2)
+            logger.info(
+                "ATR sizing %s: ATR=$%.2f, stop=$%.2f, risk=$%.0f, %d %s",
+                ticker, atr, stop_price, risk_dollars, shares,
+                "contracts" if multiplier > 1 else "shares",
+            )
+            return max(0, shares)
         except Exception:
             return None
 

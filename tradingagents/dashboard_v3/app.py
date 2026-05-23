@@ -68,6 +68,9 @@ def get_account_data():
         else:
             dd = 0.0
 
+        from tradingagents.execution.ticker_utils import detect_asset_type
+        from tradingagents.execution.contracts import get_contract_spec, days_to_expiry
+
         acct_val = account.account_value or 1
         positions = []
         for p in positions_raw:
@@ -77,6 +80,9 @@ def get_account_data():
             upnl = round(p.unrealized_pnl, 2)
             ret = round((p.market_value / (p.avg_cost * p.quantity) - 1) * 100, 2) if p.avg_cost * p.quantity > 0 else 0
             wt = round(p.market_value / acct_val * 100, 1)
+            asset_info = detect_asset_type(p.ticker)
+            spec = get_contract_spec(p.ticker)
+            dte = days_to_expiry(p.ticker)
             positions.append({
                 "ticker": p.ticker,
                 "quantity": p.quantity,
@@ -87,6 +93,12 @@ def get_account_data():
                 "pct_return": ret,
                 "weight": wt,
                 "signal": "---",
+                "asset_class": asset_info["asset_class"],
+                "sector": asset_info["sector"],
+                "multiplier": spec.multiplier if spec else 1,
+                "contract_name": spec.name if spec else None,
+                "margin": spec.margin if spec else None,
+                "days_to_expiry": dte,
             })
 
         # Overlay signals from council
@@ -98,11 +110,46 @@ def get_account_data():
         except Exception:
             pass
 
+        # Notional exposure
+        exposure = safety.check_notional_exposure(account, positions_raw)
+
         # Allocation
         allocation = [{"asset": p["ticker"], "value": p["weight"]} for p in positions]
         cash_pct = round((acct_val - sum(pp.market_value for pp in positions_raw)) / acct_val * 100, 1)
         if cash_pct > 0:
             allocation.append({"asset": "Cash", "value": cash_pct})
+
+        # Treemap data: flat list of {sector, ticker, weight, pct_return, market_value, asset_class}
+        _SECTOR_LABELS = {
+            "tech": "Technology", "financials": "Financial", "healthcare": "Healthcare",
+            "consumer": "Consumer", "cyclical": "Industrials",
+            "etf_bond": "Fixed Income", "etf_commodity": "Commodities", "future": "Futures",
+        }
+        treemap_data = []
+        for p in positions:
+            ac = p.get("asset_class", "stock")
+            sec = p.get("sector")
+            if ac in ("etf_bond", "etf_commodity", "future"):
+                group = _SECTOR_LABELS.get(ac, "Other")
+            elif sec:
+                group = _SECTOR_LABELS.get(sec, sec.title())
+            else:
+                group = "Other"
+            treemap_data.append({
+                "group": group,
+                "ticker": p["ticker"],
+                "weight": p["weight"],
+                "pct_return": p["pct_return"],
+                "market_value": p["market_value"],
+            })
+        if cash_pct > 0:
+            treemap_data.append({
+                "group": "Cash",
+                "ticker": "Cash",
+                "weight": cash_pct,
+                "pct_return": 0,
+                "market_value": round(cash, 2),
+            })
 
         return {
             "portfolio_value": pv,
@@ -115,6 +162,8 @@ def get_account_data():
             "execution_mode": config.get("execution_mode", "paper"),
             "positions": positions,
             "allocation": allocation,
+            "treemap": treemap_data,
+            "exposure": exposure,
         }
     except Exception as e:
         print(f"[v3] account error: {e}")
@@ -139,21 +188,33 @@ def get_trades_data():
         trades = load_recent_trades(config, limit=500)
         stats = compute_trade_stats(trades, starting)
 
+        from tradingagents.execution.ticker_utils import detect_asset_type
+        from tradingagents.execution.contracts import get_multiplier
+
         recent = []
         for t in trades[:100]:
             req = t.get("order_request") or {}
             res = t.get("order_result") or {}
+            tkr = t.get("ticker", "")
+            ai = detect_asset_type(tkr)
+            mult = get_multiplier(tkr)
+            fill = res.get("filled_price")
+            qty = req.get("quantity", 0)
             recent.append({
                 "time": t.get("timestamp", "")[:16],
-                "ticker": t.get("ticker", ""),
+                "ticker": tkr,
                 "signal": t.get("signal", ""),
                 "action": t.get("action_taken", ""),
                 "side": (req.get("side") or "").upper(),
-                "qty": req.get("quantity", ""),
-                "fill": res.get("filled_price"),
+                "qty": qty,
+                "fill": fill,
                 "reason": t.get("reason", ""),
                 "account_before": t.get("account_value_before"),
                 "account_after": t.get("account_value_after"),
+                "asset_class": ai["asset_class"],
+                "sector": ai["sector"],
+                "multiplier": mult,
+                "notional": round(float(fill or 0) * int(qty or 0) * mult, 2),
             })
 
         eq = compute_equity_curve(trades, starting)
@@ -245,8 +306,11 @@ def get_ticker_states():
     try:
         config = _cfg()
         from tradingagents.execution.db import get_all_latest_states
-        return [
-            {
+        from tradingagents.execution.ticker_utils import detect_asset_type
+        results = []
+        for s in get_all_latest_states(config):
+            asset_info = detect_asset_type(s["ticker"])
+            results.append({
                 "ticker": s["ticker"],
                 "technical": round(s["technical_score"], 1),
                 "fundamental": round(s["fundamental_score"], 1),
@@ -258,9 +322,10 @@ def get_ticker_states():
                 "price": round(s["price_at_analysis"], 2) if s.get("price_at_analysis") else 0,
                 "regime": s.get("regime_at_analysis", ""),
                 "analyzed_at": s["analyzed_at"][:16],
-            }
-            for s in get_all_latest_states(config)
-        ]
+                "asset_class": asset_info["asset_class"],
+                "sector": asset_info["sector"],
+            })
+        return results
     except Exception as e:
         print(f"[v3] ticker states error: {e}")
         return []
@@ -270,6 +335,8 @@ def get_ticker_detail(ticker):
     try:
         config = _cfg()
         from tradingagents.execution.db import get_ticker_state
+        from tradingagents.execution.ticker_utils import detect_asset_type
+        asset_info = detect_asset_type(ticker)
         history = get_ticker_state(config, ticker, limit=4)
         rows = [
             {
@@ -282,25 +349,48 @@ def get_ticker_detail(ticker):
                 "weighted": round(h["weighted_score"], 2),
                 "price": round(h["price_at_analysis"], 2) if h.get("price_at_analysis") else 0,
                 "analyzed_at": h["analyzed_at"][:16],
+                "asset_class": asset_info["asset_class"],
+                "sector": asset_info["sector"],
             }
             for h in history
         ]
-        return {"detail": rows[0] if rows else {}, "history": rows}
+        # Fetch latest quant scores if available
+        quant = {}
+        try:
+            conn = get_db(config)
+            qrow = conn.execute(
+                "SELECT * FROM quant_scores WHERE ticker = ? ORDER BY scored_at DESC LIMIT 1",
+                (ticker,),
+            ).fetchone()
+            if qrow:
+                quant = {
+                    "fundamental": round(qrow["fundamental_score"], 2),
+                    "technical": round(qrow["technical_score"], 2),
+                    "data_quality": round(qrow["data_quality"], 2),
+                    "scored_at": qrow["scored_at"][:16],
+                }
+        except Exception:
+            pass
+
+        return {"detail": rows[0] if rows else {}, "history": rows, "quant": quant}
     except Exception as e:
         print(f"[v3] ticker detail error: {e}")
-        return {"detail": {}, "history": []}
+        return {"detail": {}, "history": [], "quant": {}}
 
 
 def get_trade_reports(limit=30):
     try:
         config = _cfg()
         from tradingagents.execution.db import get_db
+        from tradingagents.execution.ticker_utils import detect_asset_type
         conn = get_db(config)
         rows = conn.execute(
             "SELECT * FROM trade_reports ORDER BY created_at DESC LIMIT ?", (limit,)
         ).fetchall()
-        return [
-            {
+        results = []
+        for r in rows:
+            ai = detect_asset_type(r["ticker"])
+            results.append({
                 "id": r["id"],
                 "ticker": r["ticker"],
                 "trade_date": r["trade_date"],
@@ -318,9 +408,10 @@ def get_trade_reports(limit=30):
                 "side": r["side"] or "",
                 "pnl": r["pnl"],
                 "created_at": r["created_at"],
-            }
-            for r in rows
-        ]
+                "asset_class": ai["asset_class"],
+                "sector": ai["sector"],
+            })
+        return results
     except Exception as e:
         print(f"[v3] trade reports error: {e}")
         return []
@@ -534,12 +625,79 @@ def get_sector_rotation():
         return {"sectors": [], "direction": "neutral"}
 
 
+def get_kalshi_positions():
+    """Get open Kalshi prediction market positions."""
+    try:
+        config = _cfg()
+        from tradingagents.execution.db import get_db
+        conn = get_db(config)
+        rows = conn.execute(
+            "SELECT * FROM kalshi_positions WHERE status = 'open' ORDER BY created_at DESC"
+        ).fetchall()
+        results = []
+        for r in rows:
+            results.append({
+                "id": r["id"],
+                "ticker": r["ticker"],
+                "title": r["title"],
+                "side": r["side"],
+                "contracts": r["contracts"],
+                "entry_price": r["entry_price"],
+                "cost": r["cost"],
+                "reasoning": r["reasoning"],
+                "created_at": r["created_at"],
+            })
+        return results
+    except Exception:
+        return []
+
+
+def get_kalshi_trending_events():
+    """Get trending Kalshi events with volume."""
+    try:
+        from tradingagents.dataflows.kalshi import get_events
+        events = get_events(limit=30, with_nested_markets=True)
+        results = []
+        for e in events:
+            total_vol = sum(m.volume for m in e.markets)
+            if total_vol < 10:
+                continue
+            top_markets = sorted(e.markets, key=lambda m: -m.volume)[:5]
+            results.append({
+                "event_ticker": e.event_ticker,
+                "title": e.title,
+                "sub_title": e.sub_title,
+                "category": e.category,
+                "total_volume": total_vol,
+                "markets": [
+                    {
+                        "ticker": m.ticker,
+                        "title": m.title[:80],
+                        "yes_bid": m.yes_bid,
+                        "yes_ask": m.yes_ask,
+                        "last_price": m.last_price,
+                        "implied_prob": m.implied_probability,
+                        "volume": m.volume,
+                        "time_to_close": m.time_to_close,
+                    }
+                    for m in top_markets
+                ],
+            })
+        results.sort(key=lambda e: -e["total_volume"])
+        return results[:15]
+    except Exception as exc:
+        print(f"[v3] kalshi events error: {exc}")
+        return []
+
+
 def get_dag_data(ticker):
     try:
         config = _cfg()
         from tradingagents.execution.db import get_db, get_ticker_state
+        from tradingagents.execution.ticker_utils import detect_asset_type
         conn = get_db(config)
 
+        asset_info = detect_asset_type(ticker)
         states = get_ticker_state(config, ticker, limit=1)
         scores = {}
         if states:
@@ -555,6 +713,8 @@ def get_dag_data(ticker):
                 "regime": s.get("regime_at_analysis", ""),
                 "price": round(s["price_at_analysis"], 2) if s.get("price_at_analysis") else 0,
                 "time": s["analyzed_at"][:16],
+                "asset_class": asset_info["asset_class"],
+                "sector": asset_info["sector"],
             }
 
         rows = conn.execute(
@@ -583,6 +743,7 @@ def get_dag_data(ticker):
                 "side": (t["side"] or "").upper(), "qty": t["quantity"],
                 "fill": t["fill_price"], "time": t["timestamp"][:16],
                 "before": t["account_before"], "after": t["account_after"],
+                "asset_class": asset_info["asset_class"],
             }
 
         return {"scores": scores, "report": report, "trade": trade}
@@ -607,15 +768,18 @@ def get_wiki_pages(filter_type="all"):
                 "ORDER BY trade_date DESC, created_at DESC LIMIT 50",
                 (filter_type,),
             ).fetchall()
-        return [
-            {
+        from tradingagents.execution.ticker_utils import detect_asset_type
+        results = []
+        for r in rows:
+            ai = detect_asset_type(r["ticker"]) if r["ticker"] else {"asset_class": "stock", "sector": None}
+            results.append({
                 "path": r["path"], "ticker": r["ticker"],
                 "trade_date": r["trade_date"], "signal": r["signal"],
                 "regime": r["regime"] or "", "confidence": round(r["confidence"] or 0, 2),
                 "page_type": r["page_type"],
-            }
-            for r in rows
-        ]
+                "asset_class": ai["asset_class"], "sector": ai["sector"],
+            })
+        return results
     except Exception:
         return []
 
@@ -693,18 +857,22 @@ def get_historical_data(date_str):
         conn = get_db(config)
         d = date_str
 
+        from tradingagents.execution.ticker_utils import detect_asset_type
+
         trade_rows = conn.execute(
             "SELECT * FROM trades WHERE substr(timestamp, 1, 10) = ? ORDER BY timestamp", (d,)
         ).fetchall()
-        trades = [
-            {
+        trades = []
+        for r in trade_rows:
+            ai = detect_asset_type(r["ticker"])
+            trades.append({
                 "time": r["timestamp"][:16], "ticker": r["ticker"],
                 "signal": r["signal"], "action": r["action_taken"],
                 "side": (r["side"] or "").upper(), "qty": r["quantity"],
                 "fill": r["fill_price"], "reason": r["reason"] or "",
-            }
-            for r in trade_rows
-        ]
+                "asset_class": ai["asset_class"], "sector": ai["sector"],
+            })
+
         executed = [r for r in trade_rows if r["action_taken"] == "executed"]
         if executed and executed[0]["account_before"] and executed[-1]["account_after"]:
             hist_pnl = round(executed[-1]["account_after"] - executed[0]["account_before"], 2)
@@ -714,8 +882,10 @@ def get_historical_data(date_str):
         state_rows = conn.execute(
             "SELECT * FROM ticker_state WHERE substr(analyzed_at, 1, 10) = ? ORDER BY analyzed_at DESC", (d,)
         ).fetchall()
-        states = [
-            {
+        states = []
+        for s in state_rows:
+            ai = detect_asset_type(s["ticker"])
+            states.append({
                 "ticker": s["ticker"],
                 "technical": round(s["technical_score"], 1),
                 "fundamental": round(s["fundamental_score"], 1),
@@ -725,9 +895,9 @@ def get_historical_data(date_str):
                 "weighted": round(s["weighted_score"], 2),
                 "price": round(s["price_at_analysis"], 2) if s["price_at_analysis"] else 0,
                 "analyzed_at": s["analyzed_at"][:16],
-            }
-            for s in state_rows
-        ]
+                "asset_class": ai["asset_class"],
+                "sector": ai["sector"],
+            })
 
         return {"trades": trades, "pnl": hist_pnl, "states": states}
     except Exception:
@@ -790,6 +960,42 @@ def create_app():
         if v is None:
             return "---"
         return f"{v:+.1f}%"
+
+    @app.template_filter("domain_label")
+    def domain_label_filter(item):
+        """Derive the domain analyst label from asset_class/sector."""
+        ac = item.get("asset_class", "stock") if isinstance(item, dict) else "stock"
+        sec = item.get("sector", "") if isinstance(item, dict) else ""
+        return _domain_label(ac, sec)
+
+    @app.template_filter("domain_abbr")
+    def domain_abbr_filter(item):
+        """Short abbreviation for domain analyst (for mini score displays)."""
+        ac = item.get("asset_class", "stock") if isinstance(item, dict) else "stock"
+        sec = item.get("sector", "") if isinstance(item, dict) else ""
+        labels = {
+            "etf_bond": "Bnd", "etf_commodity": "Cmd",
+        }
+        sector_labels = {
+            "tech": "Tch", "financials": "Fin", "healthcare": "HC",
+            "consumer": "Con", "cyclical": "Cyc",
+        }
+        return labels.get(ac) or sector_labels.get(sec or "") or "F"
+
+    @app.template_filter("qty_label")
+    def qty_label_filter(asset_class):
+        """Return 'contracts' for futures, 'shares' for everything else."""
+        return "contracts" if asset_class == "future" else "shares"
+
+    def _domain_label(asset_class, sector):
+        labels = {
+            "etf_bond": "Bond", "etf_commodity": "Commodity",
+        }
+        sector_labels = {
+            "tech": "Tech", "financials": "Financials", "healthcare": "Healthcare",
+            "consumer": "Consumer", "cyclical": "Cyclical",
+        }
+        return labels.get(asset_class) or sector_labels.get(sector or "") or "Fund"
 
     @app.context_processor
     def inject_nav():
@@ -875,6 +1081,15 @@ def create_app():
                                digest_dates=digest_dates, digest_date=digest_date,
                                digest_html=digest_html,
                                page="research")
+
+    @app.route("/predictions")
+    def predictions():
+        kalshi_positions = get_kalshi_positions()
+        kalshi_events = get_kalshi_trending_events()
+        return render_template("predictions.html",
+                               positions=kalshi_positions,
+                               events=kalshi_events,
+                               page="predictions")
 
     @app.route("/pipeline")
     def pipeline():

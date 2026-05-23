@@ -1,7 +1,7 @@
 ---
 name: trading-cycle
 description: Run the autonomous trading cycle — analyze watchlist, manage portfolio positions, execute paper trades, save reports
-user_invocable: true
+user-invocable: true
 ---
 
 # Trading Cycle Skill
@@ -89,12 +89,14 @@ After all tickers are processed, give a brief summary:
 
 ## Portfolio Rules
 
-- Max ~5% of portfolio per new position ($5,000 on a $100K portfolio)
+- **Account size: $5,000** — every dollar matters, preservation over aggression
+- Max ~5% per new position (~$250), must buy at least 1 whole share
+- Prefer stocks priced under $250 for meaningful position sizing
 - Max ~25% in any single ticker
-- Max 6 concurrent positions
+- Cap at 4-5 concurrent positions (not 6) given small account
+- 20%+ cash reserve ($1,000+ minimum)
 - In risk_off regime: fewer new buys, consider trimming weak positions
 - Reduce position size 50% if earnings within 3 days
-- Always have >20% cash reserve for opportunities
 
 ## Decision Framework
 

@@ -1,9 +1,8 @@
 {
-  "mcpServers": {
-    "tradingagents": {
-      "command": "python",
-      "args": ["-m", "tradingagents.mcp.server"]
-    }
+  "env": {
+    "TRADING_MODE": "paper",
+    "MIN_CASH_RESERVE": "500",
+    "MAX_DRAWDOWN_PCT": "0.10"
   },
   "hooks": {
     "PreToolUse": [
@@ -12,7 +11,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python .claude/hooks/pre_trade_validate.py"
+            "command": "python /Users/krish/Desktop/trader/.claude/hooks/pre_trade_validate.py"
           }
         ]
       }
@@ -23,7 +22,37 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python .claude/hooks/post_tool_audit.py"
+            "command": "python /Users/krish/Desktop/trader/.claude/hooks/post_tool_audit.py"
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python /Users/krish/Desktop/trader/.claude/hooks/post_tool_audit.py"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python /Users/krish/Desktop/trader/.claude/hooks/session_start.py"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python /Users/krish/Desktop/trader/.claude/hooks/session_end.py"
           }
         ]
       }

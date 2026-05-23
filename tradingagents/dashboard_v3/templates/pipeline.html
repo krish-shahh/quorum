@@ -183,7 +183,8 @@
         <div class="bg-white border border-gray-200 rounded-lg px-3 py-2.5 flex-1 mb-1">
           <div class="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Analyst Scores</div>
           <div class="flex flex-wrap gap-1.5">
-            {% set analyst_scores = [('Tech', dag.scores.technical), ('Fund', dag.scores.fundamental), ('Sent', dag.scores.sentiment), ('News', dag.scores.news)] %}
+            {% set dl = dag.scores | domain_label if dag.scores else 'Fund' %}
+            {% set analyst_scores = [('Tech', dag.scores.technical), (dl, dag.scores.fundamental), ('Sent', dag.scores.sentiment), ('News', dag.scores.news)] %}
             {% for label, score in analyst_scores %}
             {% set sc = score|float if score else 0 %}
             <span class="text-[10px] font-semibold px-2 py-1 rounded
@@ -267,7 +268,8 @@
               {% if dag.trade.side|upper == 'BUY' %}text-green-600{% else %}text-red-600{% endif %}">
               {{ dag.trade.side|upper }}
             </span>
-            <span class="text-xs font-mono text-gray-700">{{ dag.trade.qty }} shares @ ${{ "%.2f"|format(dag.trade.fill) }}</span>
+            {% set qlabel = (dag.trade.asset_class | default('stock')) | qty_label %}
+            <span class="text-xs font-mono text-gray-700">{{ dag.trade.qty }} {{ qlabel }} @ ${{ "%.2f"|format(dag.trade.fill) }}</span>
             <span class="text-[10px] font-mono text-gray-400">{{ dag.trade.time or '' }}</span>
           </div>
           {% if dag.trade.before is defined and dag.trade.after is defined %}

@@ -1,11 +1,11 @@
-"""Drawdown monitor and kill switch for the execution layer."""
+"""Drawdown monitor, kill switch, and notional exposure tracking."""
 
 from __future__ import annotations
 
 import json
 import logging
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 from .schemas import AccountInfo
 
@@ -17,11 +17,15 @@ class SafetyMonitor:
 
     The kill switch is persistent — once tripped it stays active across restarts
     until explicitly reset by the user.
+
+    Futures-aware: tracks notional exposure vs account value and enforces
+    max notional leverage limits.
     """
 
     def __init__(self, config: Dict[str, Any]):
         self._config = config
         self.max_drawdown_pct = float(config.get("max_drawdown_pct", 0.10))
+        self.max_notional_leverage = float(config.get("max_notional_leverage", 3.0))
         self._state_path = Path(
             config.get(
                 "safety_state_path",
@@ -65,6 +69,52 @@ class SafetyMonitor:
             return False
 
         return True
+
+    def check_notional_exposure(
+        self, account: AccountInfo, positions: List[Any],
+    ) -> Dict[str, Any]:
+        """Calculate total notional exposure including futures multipliers.
+
+        Returns a dict with exposure metrics and whether it's within limits.
+        """
+        from tradingagents.execution.contracts import get_multiplier
+
+        total_notional = 0.0
+        futures_notional = 0.0
+        equity_notional = 0.0
+
+        for p in positions:
+            qty = p.quantity if hasattr(p, "quantity") else p.get("quantity", 0)
+            ticker = p.ticker if hasattr(p, "ticker") else p.get("ticker", "")
+            mv = p.market_value if hasattr(p, "market_value") else p.get("market_value", 0)
+
+            mult = get_multiplier(ticker)
+            if mult > 1:
+                futures_notional += abs(mv)
+            else:
+                equity_notional += abs(mv)
+            total_notional += abs(mv)
+
+        acct_value = account.account_value or 1
+        leverage = total_notional / acct_value
+        within_limits = leverage <= self.max_notional_leverage
+
+        if not within_limits:
+            logger.warning(
+                "Notional exposure $%.0f (%.1fx leverage) exceeds max %.1fx. "
+                "Futures: $%.0f, Equity: $%.0f, Account: $%.0f",
+                total_notional, leverage, self.max_notional_leverage,
+                futures_notional, equity_notional, acct_value,
+            )
+
+        return {
+            "total_notional": round(total_notional, 2),
+            "futures_notional": round(futures_notional, 2),
+            "equity_notional": round(equity_notional, 2),
+            "leverage": round(leverage, 2),
+            "max_leverage": self.max_notional_leverage,
+            "within_limits": within_limits,
+        }
 
     def reset_kill_switch(self) -> None:
         """Manually reset the kill switch and clear peak tracking.

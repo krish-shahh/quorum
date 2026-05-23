@@ -24,6 +24,8 @@ _ENV_OVERRIDES = {
     "TRADINGAGENTS_MAX_SINGLE_TICKER_PCT": "max_single_ticker_pct",
     "TRADINGAGENTS_MAX_OPEN_POSITIONS":   "max_open_positions",
     "TRADINGAGENTS_MAX_DRAWDOWN_PCT":     "max_drawdown_pct",
+    "TRADINGAGENTS_PAPER_SLIPPAGE":       "paper_slippage_enabled",
+    "TRADINGAGENTS_PAPER_SPREAD_BPS":     "paper_spread_bps",
     "TRADINGAGENTS_STOP_LOSS_ENABLED":    "stop_loss_enabled",
     "TRADINGAGENTS_EXTENDED_HOURS":       "extended_hours",
     "TRADINGAGENTS_SCHEDULED_TICKERS":    "scheduled_tickers",
@@ -172,7 +174,7 @@ DEFAULT_CONFIG = _apply_env_overrides({
     # Paper-trading starting cash balance
     "paper_starting_balance": 5000.0,
     # Position sizing
-    "max_position_pct": 0.05,           # 5% of portfolio per new trade
+    "max_position_pct": 0.25,           # 25% of portfolio per new trade (matches single-ticker cap)
     "max_single_ticker_pct": 0.25,      # 25% cap in any single ticker
     "max_open_positions": 6,
     # Safety / kill switch
@@ -219,6 +221,26 @@ DEFAULT_CONFIG = _apply_env_overrides({
     # ------------------------------------------------------------------
     "wiki_enabled": True,
     "wiki_dir": os.path.join(_TRADINGAGENTS_HOME, "wiki"),
+    # ------------------------------------------------------------------
+    # Data cache TTLs (seconds per category)
+    # ------------------------------------------------------------------
+    "cache_ttls": {
+        "price": 60,            # OHLCV refreshes every minute
+        "technicals": 60,       # RSI/MACD/SMA derived from price
+        "fundamentals": 86400,  # PE/EPS/margins change quarterly
+        "news": 3600,           # news refreshes hourly
+        "sentiment": 900,       # StockTwits shifts every 15 min
+        "insiders": 86400,      # insider txns change daily at most
+        "earnings": 86400,      # earnings dates change rarely
+        "regime": 300,          # VIX/DXY/yields shift intraday
+        "sector_rotation": 3600,
+    },
+    # ------------------------------------------------------------------
+    # Paper broker realism
+    # ------------------------------------------------------------------
+    "paper_slippage_enabled": False,    # simulate spread + market impact
+    "paper_spread_bps": 10,             # default spread in basis points
+    "paper_impact_bps_per_pct": 1,      # market impact: 1bp per 1% of portfolio
     # ------------------------------------------------------------------
     # Data edge features
     # ------------------------------------------------------------------

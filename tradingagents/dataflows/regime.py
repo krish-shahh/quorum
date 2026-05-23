@@ -17,7 +17,7 @@ from typing import Any, Dict, List, Optional
 
 import numpy as np
 
-from .cache import cached
+from .cache import cached_config
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +34,7 @@ _VIX_PERCENTILES = {
 class CrossAssetRegimeDetector:
     """Classify market regime from VIX, DXY, and 10Y yield."""
 
-    @cached(ttl=1800)
+    @cached_config("regime")
     def detect(self, trade_date: str) -> Dict[str, Any]:
         """Return regime classification with supporting data.
 

@@ -57,6 +57,8 @@ class OrderRequest(BaseModel):
     order_type: OrderType = OrderType.MARKET
     quantity: int
     limit_price: Optional[float] = None
+    multiplier: int = 1  # Contract multiplier (1 for stocks/ETFs, >1 for futures)
+    asset_class: str = "stock"  # stock, etf_bond, etf_commodity, etf_equity, future
 
 
 class OrderStatusValue(str, Enum):

@@ -8,12 +8,13 @@ Autonomous paper trading system that runs entirely through Claude Code via MCP t
 
 ```
 /trading-council    — 4 parallel analyst subagents (recommended)
+/prediction-council — Kalshi prediction markets (2-agent superforecaster council)
 /trading-cycle      — simpler single-agent mode
 /trading-day        — full day: immediate cycle + scheduled follow-ups
 /market-monitor     — background regime/position monitoring (use with /loop)
 ```
 
-Or just say: "Run my autonomous trading cycle"
+Or just say: "Run my autonomous trading cycle" or "Analyze Kalshi markets"
 
 ## Session Start Protocol
 
@@ -56,25 +57,45 @@ Sessions are ephemeral. If Claude Code restarts, re-run `/trading-day` to resche
 ```
 You (Chairman, Opus)
   ├── Technical Analyst (Haiku)    → MCP: get_stock_data, get_indicators
-  ├── Fundamental Analyst (Haiku)  → MCP: get_fundamentals, get_financial_statements
+  ├── Domain Analyst (Haiku)       → Sector-specific (see below)
   ├── Sentiment Analyst (Haiku)    → MCP: get_reddit/stocktwits, get_insider_*
   └── News/Macro Analyst (Haiku)   → WebSearch + get_market_regime
+  
+  Domain analyst is selected via get_asset_info(ticker):
+    stock/tech       → analyst-sector-tech (R&D, margins, AI exposure)
+    stock/financials → analyst-sector-financials (NIM, credit, ROE)
+    stock/healthcare → analyst-sector-healthcare (pipeline, patents)
+    stock/consumer   → analyst-sector-consumer (brand, pricing power)
+    stock/cyclical   → analyst-sector-cyclical (capex, commodity exposure)
+    etf_bond         → analyst-bonds (yield curve, duration, credit spreads)
+    etf_commodity    → analyst-commodities (supply/demand, DXY, geopolitics)
+    unknown sector   → analyst-fundamental (generic valuation)
   
   All 4 run in PARALLEL → return structured reports with 1-5 scores
   
   You synthesize: peer review → score_council (deterministic) → execute_paper_trade
   
   Delta detection: get_ticker_deltas → skip unchanged tickers → 30-min loop
+
+Prediction Markets (Kalshi):
+  You (Chief Forecaster, Opus)
+    ├── Event Analyst (Haiku)   → Superforecaster decomposition + WebSearch + Kalshi tools
+    └── News Analyst (Haiku)    → WebSearch + get_market_regime
+  
+  2 agents in PARALLEL → probability estimates with edge calculation
+  
+  Edge > 10% → execute_kalshi_paper_trade (quarter-Kelly sizing)
 ```
 
 ```
 tradingagents/
-  mcp/             — MCP server (34 tools: data, portfolio, execution, wiki, safety, state)
-  council/         — Council skills + 4 analyst prompts + compact_summary.py
+  mcp/             — MCP server (35 tools: data, portfolio, execution, wiki, safety, state, asset info)
+  council/         — Council skills + 11 analyst prompts (4 universal + 7 domain) + compact_summary.py
   wiki/            — Knowledge base (run pages, digests, ticker pages, regimes)
   dataflows/       — Market data with TTL caching (yfinance, Reddit, StockTwits, regime, sectors)
-  execution/       — Paper broker (with spread model), safety, analytics, trade log, position sizer
-  dashboard_v3/    — Flask + Tailwind monitoring dashboard (5 pages, auto-refresh)
+  execution/       — Paper broker (with spread model + futures multiplier), safety (notional exposure + VaR), contracts registry, ATR/Kelly position sizer
+  quant/           — Deterministic scoring layer (14 files): Altman Z, FCF yield, regime-conditional technicals, 9 sector-specific scorers, 12 hard vetoes
+  dashboard_v3/    — Flask + Tailwind monitoring dashboard (6 pages: Trading, Council, Predictions, Performance, Research, Pipeline)
 ```
 
 ## Key Files
@@ -88,14 +109,15 @@ tradingagents/
 | `.claude/skills/trading-council/` | Main council skill (delta check, 4 subagents, scoring) |
 | `.claude/skills/trading-day/` | Full-day scheduling skill |
 | `.claude/skills/market-monitor/` | Background monitoring skill for /loop |
-| `.claude/skills/analyst-*/` | 4 analyst skills with model:haiku + allowed-tools enforced |
+| `.claude/skills/analyst-*/` | 11 analyst skills (4 universal + 7 domain) with model:haiku + allowed-tools |
+| `tradingagents/execution/contracts.py` | Futures contract spec registry (22 contracts: multiplier, margin, expiry) |
 | `~/.tradingagents/tickers.txt` | Your watchlist (one ticker per line) |
 | `~/.tradingagents/rules.json` | Trading restrictions (blocked tickers, max trade value) |
 | `~/.tradingagents/tradingagents.db` | SQLite: positions, trades, wiki, reports, ticker_state |
 | `~/.tradingagents/wiki/` | Analysis pages, digests, ticker summaries |
 | `scripts/start-trading-day.sh` | Auto-start script (called by launchd at 9:30 AM) |
 
-## MCP Tools (34)
+## MCP Tools (44)
 
 Data: get_stock_data, get_indicators, get_fundamentals, get_financial_statements, get_news, get_global_news, get_reddit_sentiment, get_stocktwits_sentiment, get_insider_transactions, get_insider_clusters, get_market_regime, get_sector_rotation, get_earnings_calendar
 
@@ -107,18 +129,23 @@ Safety: kill_switch, get_rules
 
 Council: get_autonomous_tickers, get_full_ticker_data, save_analysis_to_wiki, save_trade_report, get_trade_reports, score_council
 
-State & Cache: get_ticker_state, get_ticker_deltas, get_cache_stats
+State & Cache: get_ticker_state, get_ticker_deltas, get_cache_stats, get_asset_info
+
+Quant: get_quant_scores, get_portfolio_risk
+
+Kalshi: get_kalshi_markets, get_kalshi_market, get_kalshi_orderbook, get_kalshi_events, get_kalshi_event, execute_kalshi_paper_trade, get_kalshi_positions
 
 Maintenance: prune_wiki, get_analytics_summary, search_wiki, get_wiki_page
 
 ## Safety
 
 - Pre-trade hook enforces: max positions, concentration limits, cash reserve, blocked tickers, kill switch
-- `score_council` tool has hard veto conditions (fundamental collapse, unanimous bearish, 2-2 split)
+- `score_council` tool has hard veto conditions (domain score collapse, unanimous bearish, 2-2 split) — auto-detects asset type for context-aware veto messages
 - `kill_switch` tool halts all trading immediately
 - `rules.json` lets you block specific tickers (e.g. your employer's stock)
 - Audit trail logs every MCP tool call to `~/.tradingagents/audit/`
 - Spread/slippage model simulates realistic fill prices (feature-flagged)
+- Futures: notional exposure tracking, max leverage limit (default 3.0x), margin requirement checks, contract expiry warnings
 
 ## Testing
 

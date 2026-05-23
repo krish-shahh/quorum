@@ -11,7 +11,7 @@ import logging
 from datetime import datetime, timedelta
 from typing import Any, Dict, Optional
 
-from .cache import cached
+from .cache import cached_config
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 class EarningsCalendar:
     """Check upcoming earnings dates for risk-aware position sizing."""
 
-    @cached(ttl=3600)
+    @cached_config("earnings")
     def get_upcoming(self, ticker: str, trade_date: str = "") -> Optional[Dict[str, Any]]:
         """Get the next earnings date for a ticker.
 

@@ -33,52 +33,192 @@
 
 ---
 
-## Phase 1: Bond & Commodity ETF Support
+## Phase 1: Sector-Aware Stock Analysis + ETF Support
 
-The system is ~90% compatible with bond/commodity ETFs today — price data, technicals, regime, execution all work. These items close the gap.
+### Analyst Architecture
 
-- [ ] **Asset type detection** — add `detect_asset_type(ticker)` utility that classifies tickers as stock, bond ETF, commodity ETF, or index. Use yfinance `quoteType` + a curated map for common ETFs (TLT, GLD, USO, etc.)
-- [ ] **Conditional analyst routing** — skip the fundamental analyst for non-equity assets (no PE ratio or balance sheet for TLT/GLD). Council skill should detect asset type and spawn 3 analysts instead of 4 when fundamentals don't apply
-- [ ] **Bond/commodity analyst prompts** — update `analyst-fundamental/SKILL.md` to handle bond ETFs (yield, duration, credit quality) and commodity ETFs (supply/demand, inventory, contango/backwardation) when those asset types are detected
-- [ ] **Default ticker list expansion** — add bond ETFs (TLT, IEF, SHY, AGG, HYG, LQD) and commodity ETFs (GLD, SLV, USO, UNG, DBA) to `COMMON_TICKERS` in `ticker_utils.py`
-- [ ] **Dashboard: asset type badge** — show asset class tag (Stock, Bond, Commodity) next to ticker in positions table and council grid
+The council currently spawns 4 generic analysts for every ticker. The new model makes the "domain analyst" slot adaptive — the chairman detects asset class and sector, then spawns the right specialist.
+
+**Universal analysts** (same for all assets):
+- Technical Analyst — price action, momentum, trend (works on anything with OHLCV)
+- Sentiment Analyst — social signals, insider activity
+- News/Macro Analyst — WebSearch + regime
+
+**Domain analyst** (swapped based on what you're analyzing):
+
+| Asset | Domain Analyst | Focus |
+|-------|---------------|-------|
+| Tech stocks (AAPL, NVDA, MSFT) | `analyst-sector-tech` | ARR, DAU/MAU, cloud revenue, R&D intensity, TAM, AI exposure |
+| Financials (JPM, GS, BAC) | `analyst-sector-financials` | NIM, credit quality, CET1, fee income, loan loss provisions |
+| Healthcare (UNH, JNJ, LLY) | `analyst-sector-healthcare` | Drug pipeline, FDA catalysts, patent cliffs, payer mix |
+| Consumer/Defensive (COST, PG, WMT) | `analyst-sector-consumer` | Same-store sales, brand moat, pricing power, margin trends |
+| Energy/Industrial (XOM, CAT) | `analyst-sector-cyclical` | Commodity exposure, capex cycles, reserves, order backlogs |
+| Bond ETFs (TLT, AGG, HYG) | `analyst-bonds` | Yield curve, duration, credit spreads, rate sensitivity, Fed policy |
+| Commodity ETFs (GLD, USO, UNG) | `analyst-commodities` | Supply/demand, inventory, contango/backwardation, geopolitical risk |
+
+### Implementation
+
+- [x] **Asset type detection** — `detect_asset_type(ticker)` returns `{asset_class, sector}` using curated SECTOR_MAP (197 tickers) + yfinance fallback. New `get_asset_info` MCP tool exposes it to the council.
+- [x] **Sector analyst skills (5)** — created `analyst-sector-tech/`, `analyst-sector-financials/`, `analyst-sector-healthcare/`, `analyst-sector-consumer/`, `analyst-sector-cyclical/` SKILL.md files + matching prompt files in `tradingagents/council/prompts/`
+- [x] **Bond analyst skill** — created `analyst-bonds/SKILL.md` + `tradingagents/council/prompts/bonds.md`. Tools: get_stock_data, get_indicators, get_market_regime. Framework: yield curve, duration, credit quality, regime context
+- [x] **Commodity analyst skill** — created `analyst-commodities/SKILL.md` + `tradingagents/council/prompts/commodities.md`. Tools: get_stock_data, get_indicators, get_market_regime, WebSearch. Framework: supply/demand, DXY impact, seasonal patterns
+- [x] **Council skill update** — updated `trading-council/SKILL.md` with Step 2 (asset type detection via `get_asset_info`) and routing table mapping asset_class/sector to the right domain prompt file
+- [x] **Default ticker list expansion** — BOND_ETFS (35) and COMMODITY_ETFS (27) already in COMMON_TICKERS via `ticker_utils.py`
+- [x] **Dashboard: asset type badge** — color-coded asset type badge (BOND/CMDTY/TECH/FINANCIALS/HEALTHCARE/CONSUMER/CYCLICAL) next to ticker in positions table and council grid
+- [x] **Score council update** — `score_council` auto-detects asset type: labels domain analyst in output, skips earnings penalty for bonds/commodities, contextualizes veto messages
 
 ---
 
 ## Phase 2: Commodity Futures Support
 
-Futures need contract-aware execution. The analysis layer (technicals, regime, news) works, but position sizing and order execution assume 1:1 price-to-cost (shares). Futures have contract multipliers (ES = $50/point, CL = $1000/barrel, GC = $100/oz).
+Futures need contract-aware execution. The analysis layer works (technicals, regime, news, commodity analyst from Phase 1), but position sizing and order execution assume 1:1 price-to-cost (shares). Futures have contract multipliers (ES = $50/point, CL = $1000/barrel, GC = $100/oz).
 
-- [ ] **Contract spec registry** — create `tradingagents/execution/contracts.py` with a registry mapping futures symbols to their specs: multiplier, tick size, tick value, margin requirement, expiry pattern, trading hours
-- [ ] **OrderRequest schema update** — add optional `multiplier: int` and `asset_class: str` fields to `OrderRequest` in `schemas.py`. Default multiplier=1 for stocks/ETFs
-- [ ] **Paper broker: notional accounting** — update `paper_client.py` order execution: `cost = fill_price * quantity * multiplier`. Position P&L must account for multiplier
-- [ ] **Position sizer: futures-aware** — update `position_sizer.py` to calculate `quantity = floor(allocation / (price * multiplier))` for futures. Respect minimum margin requirements
-- [ ] **Contract expiry detection** — replace earnings calendar logic with expiry-aware scheduling for futures. Warn when position is within N days of contract expiry. Add rolling logic (close front month, open next)
-- [ ] **Futures data source** — evaluate yfinance coverage for CME futures (ES=F, CL=F, GC=F, ZB=F). Supplement with alternative API if gaps exist
-- [ ] **Futures risk rules** — add leverage-aware safety checks: max notional exposure, margin utilization limits. Update `safety.py` to track notional vs cash
+- [x] **Contract spec registry** — `tradingagents/execution/contracts.py` with 22 futures specs: ES, NQ, YM, RTY, MES, MNQ (equity index), CL, NG, RB (energy), GC, SI, HG, PL, MGC (metals), ZC, ZW, ZS (agriculture), ZB, ZN, ZF (rates), 6E, 6J (forex). Each has multiplier, tick size/value, margin, sector, hours.
+- [x] **OrderRequest schema update** — added `multiplier: int = 1` and `asset_class: str = "stock"` to OrderRequest. Default 1 for stocks/ETFs, auto-set by position sizer for futures.
+- [x] **Paper broker: notional accounting** — `cost = fill_price * qty * multiplier`. `_PaperPosition` stores multiplier. P&L, market_value, sell proceeds all use multiplier. Persistence (SQLite + JSON) includes multiplier with backward-compatible loading.
+- [x] **Position sizer: futures-aware** — `qty = floor(allocation / (price * multiplier))`. Margin check (`spec.margin * qty > cash` blocks order). Auto-detects multiplier and asset_class.
+- [x] **Contract expiry detection** — `estimate_expiry()` calculates next quarterly 3rd-Friday expiry. `days_to_expiry()` returns DTE. Dashboard shows DTE badge (red <=7d, amber <=14d).
+- [x] **Futures data source** — yfinance covers all major CME futures (ES=F, CL=F, GC=F, SI=F, ZB=F, NQ=F, NG=F, HG=F verified). No supplemental API needed.
+- [x] **Futures risk rules** — `SafetyMonitor.check_notional_exposure()` tracks total/futures/equity notional and leverage ratio. `max_notional_leverage` config (default 3.0x). Pre-trade validation gate in MCP blocks orders exceeding leverage limits.
 
 ---
 
-## Phase 3: Prediction Markets (Kalshi + Polymarket) — Future
+## Phase 3: Prediction Markets (Kalshi) — Done
 
-Prediction markets are fundamentally different from equities/futures. No price history, no fundamentals — just probability of binary outcomes. This is a greenfield build on top of the existing council framework.
+Prediction markets are fundamentally different — probabilities of binary outcomes, not price action. Built a new data layer, analyst type, and execution model on top of the existing council framework. Focused on Kalshi (Polymarket deferred).
 
 ### Data Layer
-- [ ] **Kalshi API integration** — REST API for market listings, order book, positions. WebSocket for live odds streaming. Auth via API key. Docs: https://trading-api.readme.io/reference
-- [ ] **Polymarket API integration** — Subgraph/REST for market data, odds history. On-chain settlement (Polygon). Docs: https://docs.polymarket.com
-- [ ] **Probability data model** — new dataflow module that tracks yes/no probability over time (not OHLCV). Store historical odds, volume, open interest per contract
-- [ ] **Event metadata** — contract resolution date, category (politics, economics, sports, crypto), resolution source, related contracts
+- [x] **Kalshi API integration** — `tradingagents/dataflows/kalshi.py`: REST client for markets, events, orderbook, trades. Public API (no auth needed for market data). Parsed dataclasses for KalshiMarket, KalshiEvent, KalshiOrderbook with derived properties (implied_probability, mid_price, spread, time_to_close).
+- [ ] **Polymarket API integration** — deferred (future phase)
+- [x] **Probability data model** — KalshiMarket stores yes/no bid/ask, last_price, volume, open_interest. Implied probability = mid_price of yes bid/ask.
+- [x] **Event metadata** — Events have category, title, sub_title, mutually_exclusive flag, nested markets. 11 category types supported.
 
 ### Analysis
-- [ ] **Event-driven analyst** — new analyst type that evaluates: implied probability vs estimated true probability, time to resolution, liquidity/spread, historical accuracy of similar markets, news catalyst proximity
-- [ ] **Custom council scoring** — odds-based signals instead of price-based. Signal = "buy yes" / "buy no" / "pass". Confidence derived from edge (estimated probability - market probability)
-- [ ] **News/macro relevance** — WebSearch analyst tuned for event outcomes: poll data, economic indicators, regulatory decisions, court rulings
+- [x] **Event analyst skill** — `analyst-events/SKILL.md` + `tradingagents/council/prompts/events.md`. Superforecaster methodology: Tetlock decomposition, base rate anchoring, inside/outside view, dragonfly eye. Outputs structured estimate with edge calculation.
+- [x] **Prediction market council** — `prediction-council/SKILL.md`. 2-agent council (Event Analyst + News Analyst). Market-conditioned Bayesian update. Quarter-Kelly position sizing. Edge threshold >10% to trade.
+- [x] **Custom council scoring** — edge-based signals: "buy yes" / "buy no" / "pass". Confidence = |estimated_prob - market_prob|. Hard limits: max 5% per market, 15% total prediction exposure, $250 max per market.
 
 ### Execution
-- [ ] **Binary contract order schema** — new order type: `side: "yes" | "no"`, `contracts: int`, `limit_price: float` (0.01-0.99). Not shares-based
-- [ ] **Prediction market broker** — paper trading engine for binary contracts. Track cost basis per contract, P&L = (settlement - avg_cost) * contracts
-- [ ] **Risk management** — max exposure per event, max correlated exposure (e.g., multiple contracts on same election), portfolio-level binary risk
+- [x] **Binary contract order schema** — `execute_kalshi_paper_trade` MCP tool: side (yes/no), contracts (int), ticker, reasoning. Deducts from paper broker cash.
+- [x] **Prediction market broker** — `kalshi_positions` SQLite table tracks open positions with entry_price, cost, side, contracts, reasoning, status. Settlement tracking columns ready (result, settlement, pnl, settled_at).
+- [x] **Risk management** — max exposure per market enforced by cash check. Portfolio-level limits in prediction-council skill instructions.
 
 ### Dashboard
-- [ ] **Prediction markets page** — odds charts (probability over time), event timeline, position cards with implied probability, P&L tracking
-- [ ] **Event calendar** — upcoming resolutions, active positions approaching settlement
+- [x] **Prediction markets page** — `/predictions` route with positions table (side YES/NO badges, entry price, cost, reasoning) + trending events grid with probability bars, category badges, volume, bid/ask, time-to-close. Added to nav bar.
+- [ ] **Event calendar** — deferred (upcoming resolutions view)
+
+### MCP Tools (7 new)
+- `get_kalshi_markets` — list open markets with pricing
+- `get_kalshi_market` — single market detail
+- `get_kalshi_orderbook` — orderbook depth
+- `get_kalshi_events` — list events with optional nested markets
+- `get_kalshi_event` — single event with all markets
+- `execute_kalshi_paper_trade` — paper trade binary contracts
+- `get_kalshi_positions` — view open prediction positions
+
+---
+
+## Phase 4: Quantitative Scoring Layer
+
+Replace LLM "vibes-based" 1-5 scoring with auditable, deterministic calculations. The LLM still participates — it gets the quant scores AND the raw data, and can adjust for qualitative factors the math can't capture. Both scores are logged. Inspired by Quantopian's alphalens/empyrical/pyfolio stack + QuantLib.
+
+### Architecture
+
+```
+Before (vibes):   yfinance data → Haiku reads numbers → "I feel this is a 3.8" → score_council
+After (quant+LLM): yfinance data → deterministic scorer → quant_score=3.42 (auditable)
+                                  → Haiku gets quant_score + raw data → llm_adjustment=+0.3 (with reasoning)
+                                  → blended_score = f(quant, analyst, data_quality) → score_council
+```
+
+Blending: data_quality ≥ 0.7 → quant 70% / LLM 30%. 0.5-0.7 → 50/50. < 0.5 → quant 30% / LLM 70%.
+
+### New module: `tradingagents/quant/`
+
+All quantitative scoring logic lives here. Pure functions, no LLM, fully testable.
+
+```
+tradingagents/quant/
+  __init__.py          — exports get_quant_scores(), check_vetoes()
+  models.py            — QuantScore, QuantVeto dataclasses
+  data_quality.py      — field completeness scoring (required vs optional fields, NaN handling)
+  technical.py         — regime-conditional technical composite (RSI thresholds shift with VIX)
+  fundamental.py       — generic equity (Altman Z, FCF yield, PE, PEG, margins, ROE)
+  financials.py        — banks: ROE, NIM (from Net Interest Income / Total Assets), tangible book, provision trend, efficiency ratio. Uses quarterly statements (yfinance .info has None for D/E, currentRatio on banks)
+  healthcare.py        — biotech: R&D growth rate, cash runway (cash / burn), revenue concentration, margin trajectory
+  tech_sector.py       — tech: rule-of-40 (growth + margin), R&D/revenue ratio, SaaS gross margin, capex intensity
+  consumer.py          — consumer + REITs: pricing power (margin stability), P/FFO for REITs (net income + D&A), dividend coverage
+  cyclical.py          — energy/industrial: capex/revenue, margin cyclicality, D/E resilience, revenue vs commodity correlation
+  bond_etf.py          — bond ETFs: duration profile (hardcoded map: TLT=long, SHY=short, HYG=high_yield) × yield direction × regime fit × credit tier
+  commodity_etf.py     — commodity ETFs: price vs SMA200, DXY impact (regime), commodity type (GLD=safe_haven, CPER=growth), momentum
+  futures_score.py     — futures: vol percentile (ATR vs 1yr range), DTE penalty (<14d), term structure proxy (price vs SMA200), regime fit by sector
+  vetoes.py            — 12 hard override rules (Altman Z, FCF streak, RSI extreme, VaR, correlation, leverage, etc.)
+  integration.py       — route_to_scorer(), blend_quant_and_analyst(), MCP tool adapter
+```
+
+### Dependencies
+
+```bash
+# Zero new deps for core — numpy, pandas, scipy, yfinance already installed
+# Optional (Tier 2):
+pip install empyrical-reloaded quantstats
+```
+
+### Implementation
+
+#### Tier 1: Core framework + generic scorers (zero new deps)
+
+- [x] **Core framework** — `models.py` (QuantScore, QuantVeto, QuantResult), `data_quality.py` (field validation, NaN handling, per-asset field lists), `integration.py` (router via `detect_asset_type()`, blending, `_fetch_indicators()` computes RSI/MACD/SMA/BB/ATR from raw OHLCV)
+
+- [x] **Deterministic technical scoring** — `technical.py`: regime-conditional composite. RSI thresholds shift by regime (oversold=20 in risk_off vs 30 in risk_on). Indicator weights shift (trend 1.3x in risk_on, volatility 1.5x in volatile). 5 components scored 0-1, normalized to 1-5. Dampened toward 3.0 when data_quality < 0.5.
+
+- [x] **Generic fundamental scoring** — `fundamental.py`: Altman Z-score from quarterly BS/IS, FCF yield, PE, PEG, margin trajectory, ROE, D/E. Weighted: valuation 30%, profitability 25%, health 25%, growth 20%. Tested on AAPL: Z=12.86, score=3.62/5.
+
+- [x] **Hard vetoes (9 rules implemented)** — `vetoes.py`: Altman Z < 1.8 (not banks), negative FCF 4Q streak, RSI > 85, penny stock < $1, revenue collapse > 30% YoY, margin flip negative, liquidity < $100K/day, earnings within 2 days, futures leverage > 2x. Tested: AAPL triggers RSI > 85 veto correctly.
+
+- [x] **MCP tools: get_quant_scores + get_portfolio_risk** — `get_quant_scores(ticker)` routes to correct sector scorer, returns full breakdown + vetoes. `get_portfolio_risk()` computes VaR (95%, 1-day), notional exposure, leverage. Both persist to `quant_scores` DB table.
+
+- [x] **score_council quant blending** — optional `quant_fundamental_score`, `quant_technical_score`, `quant_data_quality` params. When present, blend using data_quality weights (70/30 → 50/50 → 30/70). Backward-compatible.
+
+#### Tier 2: Sector-specific scorers
+
+- [x] **Bank/financials scorer** — `financials.py`: pulls NIM from IS `Net Interest Income` / BS `Total Assets`, P/TBV from BS `Tangible Book Value`, provision trend. D/E 8-15x is normal for banks. Tested on JPM: 3.58/5 with no spurious flags.
+- [x] **Healthcare/biotech scorer** — `healthcare.py`: R&D YoY growth, cash runway from BS cash / operating CF burn, margin profile, valuation.
+- [x] **Tech scorer** — `tech_sector.py`: Rule of 40 (growth + margin), R&D intensity (15-25% sweet spot), gross margin, FCF yield.
+- [x] **Consumer + REIT scorer** — `consumer.py`: auto-detects REITs via industry string, uses P/FFO + dividend coverage. Regular consumer uses margin stability + brand moat proxy.
+- [x] **Cyclical/energy scorer** — `cyclical.py`: capex/revenue, margin range (cyclicality), D/E resilience, beta context with regime penalty.
+- [x] **Bond ETF scorer** — `bond_etf.py`: DURATION_MAP (24 ETFs) × yield direction × CREDIT_TIER × regime fit. Tested on TLT: 2.74/5.
+- [x] **Commodity ETF scorer** — `commodity_etf.py`: COMMODITY_TYPE map (24 ETFs), trend vs SMA200, DXY impact, regime fit. Tested on GLD: 3.79/5 in risk_off.
+- [x] **Futures scorer** — `futures_score.py`: term structure proxy, RSI + MACD momentum, regime fit by contract sector, ATR vol percentile, DTE risk from `contracts.py`.
+
+#### Tier 3: Position sizing + analytics upgrades
+
+- [x] **ATR-based position sizing** — `position_sizer.py`: risk 2% of account per trade, stop = 2× ATR, shares = risk$ / (stop × multiplier). Config flag `atr_sizing_enabled` (default False, opt-in). Logs ATR, stop price, risk dollars, resulting shares. Falls through to flat % allocation when disabled or ATR unavailable.
+
+- [x] **Half-Kelly fix** — `_kelly_fraction()`: true formula Kelly% = W - (1-W)/R from SQLite trade history. Half-Kelly (÷2). Requires ≥10 executed trades, falls back to 0.5. Replaces old `LearningEngine.get_position_multiplier()` vague multiplier.
+
+- [x] **empyrical analytics replacement** — `tradingagents/quant/analytics.py`: wraps empyrical-reloaded with graceful fallback. Adds VaR, CVaR, Calmar, omega, tail ratio, stability. Updated `get_analytics_summary` MCP tool to use empyrical when available. `pip install empyrical-reloaded --no-deps` (installed).
+
+- [ ] **QuantStats tear sheets** — deferred (quantstats has broken `peewee` build dep on this system; empyrical covers the metrics).
+
+#### Tier 4: Validation + adaptive weights (requires trade history)
+
+- [ ] **Adaptive council weights via IC** — deferred (requires 50+ trades for statistical validity).
+
+- [ ] **Quant score backtesting** — deferred (code path exists via `get_quant_scores()` historical replay).
+
+### Council skill integration
+
+Update `trading-council/SKILL.md` with new Step 2.5 (Quant Pre-Screening):
+1. Chairman calls `get_quant_scores(ticker)` before spawning analysts
+2. Reviews vetoes — if hard veto exists, skip buy analysis for that ticker
+3. Injects quant summary into each analyst prompt: "Quant: Fund 3.42/5, Tech 2.80/5, quality 85%"
+4. Analysts get the quant anchor and can adjust ±1.0 with written justification
+5. Chairman passes quant scores to `score_council` for blending
+
+### Dashboard updates
+
+- [x] Council page: quant score bars (indigo) alongside LLM score bars in deep dive
+- [x] Trading page: replaced allocation doughnut with finviz-style treemap (Sector > Ticker, sized by weight, colored by P&L %). Uses `chartjs-chart-treemap` plugin. VaR and leverage badges in regime bar.
+- [ ] Performance page: empyrical metrics display (VaR, CVaR, Calmar) — data available via MCP, dashboard display pending
+- [ ] Pipeline page: quant breakdown in DAG step 2 — pending

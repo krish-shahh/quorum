@@ -11,7 +11,7 @@ import logging
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
-from .cache import cached
+from .cache import cached_config
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +33,7 @@ SECTOR_ETFS = {
 class SectorRotationModel:
     """Analyze sector ETF relative strength for rotation signals."""
 
-    @cached(ttl=3600)
+    @cached_config("sector_rotation")
     def analyze(self, trade_date: str) -> Dict[str, Any]:
         """Compute sector relative strength and rotation direction.
 
