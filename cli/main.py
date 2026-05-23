@@ -26,21 +26,16 @@ app = typer.Typer(
 
 @app.callback()
 def _default(ctx: typer.Context):
-    """Launch the Reflex dashboard (default when no subcommand given)."""
+    """Launch the Flask dashboard (default when no subcommand given)."""
     if ctx.invoked_subcommand is not None:
         return
-    import subprocess, os
-    dashboard_dir = os.path.join(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-        "tradingagents", "dashboard_v2",
-    )
+    from tradingagents.dashboard_v3.app import create_app
     console.print("[bold]Starting TradingAgents Dashboard...[/bold]")
-    console.print(f"[dim]Running: reflex run  (in {dashboard_dir})[/dim]")
+    console.print("[dim]Running on http://127.0.0.1:5050[/dim]")
     console.print("Press Ctrl-C to stop\n")
     try:
-        subprocess.run(["reflex", "run"], cwd=dashboard_dir, check=True)
-    except FileNotFoundError:
-        console.print("[red]Reflex is not installed. Run: pip install reflex[/red]")
+        flask_app = create_app()
+        flask_app.run(host="127.0.0.1", port=5050)
     except KeyboardInterrupt:
         console.print("\nDashboard stopped.")
 

@@ -1,0 +1,246 @@
+{% extends "base.html" %}
+{% block title %}Research{% endblock %}
+
+{% macro signal_badge(sig) %}
+<span class="text-[10px] font-semibold px-1.5 py-0.5 rounded {% if sig in ['Buy','Overweight'] %}bg-green-50 text-green-700{% elif sig in ['Sell','Underweight'] %}bg-red-50 text-red-700{% else %}bg-gray-100 text-gray-600{% endif %}">{{ sig }}</span>
+{% endmacro %}
+
+{% macro page_type_dot(pt) %}
+{% if pt == 'run' %}<span class="inline-block w-2 h-2 rounded-full bg-blue-500"></span>
+{% elif pt == 'daily' %}<span class="inline-block w-2 h-2 rounded-full bg-purple-500"></span>
+{% elif pt == 'ticker' %}<span class="inline-block w-2 h-2 rounded-full bg-green-500"></span>
+{% elif pt == 'regime' %}<span class="inline-block w-2 h-2 rounded-full bg-amber-500"></span>
+{% elif pt == 'report' %}<span class="inline-block w-2 h-2 rounded-full bg-gray-400"></span>
+{% else %}<span class="inline-block w-2 h-2 rounded-full bg-gray-300"></span>
+{% endif %}
+{% endmacro %}
+
+{% macro page_type_badge(pt) %}
+{% if pt == 'run' %}<span class="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-blue-50 text-blue-700">run</span>
+{% elif pt == 'daily' %}<span class="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-purple-50 text-purple-700">daily</span>
+{% elif pt == 'ticker' %}<span class="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-green-50 text-green-700">ticker</span>
+{% elif pt == 'regime' %}<span class="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-50 text-amber-700">regime</span>
+{% elif pt == 'report' %}<span class="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-gray-100 text-gray-600">report</span>
+{% else %}<span class="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-gray-100 text-gray-500">{{ pt }}</span>
+{% endif %}
+{% endmacro %}
+
+{% macro report_type_badge(rt) %}
+{% if rt == 'pre' %}<span class="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-blue-50 text-blue-700">pre</span>
+{% elif rt == 'post' %}<span class="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-green-50 text-green-700">post</span>
+{% else %}<span class="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-gray-100 text-gray-600">{{ rt }}</span>
+{% endif %}
+{% endmacro %}
+
+{% block content %}
+
+{# ── 1. Search + Filter Bar ────────────────────────────────────── #}
+<div class="bg-white rounded-lg border border-gray-200 p-3 mb-4">
+  <form method="GET" action="/research" class="flex items-center gap-3 flex-wrap">
+    {# Search input #}
+    <div class="flex items-center gap-1.5 flex-1 min-w-[220px]">
+      <input type="text" name="q" value="{{ query or '' }}" placeholder="Search wiki pages, tickers, reports..."
+             class="flex-1 text-sm border border-gray-200 rounded px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-400 focus:border-blue-400">
+      <button type="submit"
+              class="text-xs font-medium px-3 py-1.5 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors">
+        Search
+      </button>
+    </div>
+
+    {# Filter dropdown #}
+    <div class="flex items-center gap-1.5">
+      <label for="filter-select" class="text-xs text-gray-500">Filter:</label>
+      <select id="filter-select" name="filter" onchange="this.form.submit()"
+              class="text-sm border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white">
+        {% set filter_options = [('all', 'All'), ('run', 'Run'), ('daily', 'Daily'), ('ticker', 'Ticker'), ('regime', 'Regime'), ('report', 'Report')] %}
+        {% for val, label in filter_options %}
+        <option value="{{ val }}" {% if filter_type == val %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+  </form>
+</div>
+
+{# ── 2. Search Results ─────────────────────────────────────────── #}
+{% if search_results %}
+<div class="bg-white rounded-lg border border-gray-200 p-4 mb-4">
+  <h2 class="text-sm font-semibold text-gray-700 mb-3">Search Results
+    <span class="text-xs font-normal text-gray-400 ml-1">({{ search_results|length }})</span>
+  </h2>
+  <div class="space-y-1.5">
+    {% for r in search_results %}
+    <a href="/research?page={{ r.path }}&filter={{ filter_type }}"
+       class="flex items-center gap-3 px-3 py-2 rounded hover:bg-gray-50 transition-colors group">
+      {{ page_type_badge(r.page_type) }}
+      <span class="text-sm font-semibold text-gray-900 group-hover:text-blue-700">{{ r.ticker or '—' }}</span>
+      {{ signal_badge(r.signal) }}
+      <span class="text-xs text-gray-400 font-mono">{{ r.trade_date or '' }}</span>
+      {% if r.confidence %}
+      <span class="text-[10px] text-gray-400">conf {{ r.confidence }}</span>
+      {% endif %}
+    </a>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+{# ── 3. Two-column Wiki Browser ────────────────────────────────── #}
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4">
+
+  {# Left column — page list #}
+  <div class="lg:col-span-1 bg-white rounded-lg border border-gray-200">
+    <div class="px-4 py-3 border-b border-gray-100">
+      <h2 class="text-sm font-semibold text-gray-700">Wiki Pages
+        <span class="text-xs font-normal text-gray-400 ml-1">({{ pages|length }})</span>
+      </h2>
+    </div>
+    <div class="overflow-y-auto" style="max-height: 500px;">
+      {% if pages %}
+      <div class="divide-y divide-gray-50">
+        {% for p in pages %}
+        <a href="/research?page={{ p.path }}&filter={{ filter_type }}"
+           class="flex items-center gap-2 px-4 py-2.5 hover:bg-gray-50 transition-colors
+                  {% if wiki_path == p.path %}bg-blue-50 border-l-2 border-blue-500{% endif %}">
+          {{ page_type_dot(p.page_type) }}
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-1.5">
+              <span class="text-sm font-medium text-gray-900 truncate">{{ p.ticker or p.path.split('/')|last }}</span>
+              {{ signal_badge(p.signal) }}
+            </div>
+            <span class="text-[10px] text-gray-400 font-mono">{{ p.trade_date or '' }}</span>
+          </div>
+          {% if p.confidence %}
+          <span class="text-[10px] text-gray-400">{{ p.confidence }}</span>
+          {% endif %}
+        </a>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="px-4 py-8 text-center text-xs text-gray-400">No wiki pages found</div>
+      {% endif %}
+    </div>
+  </div>
+
+  {# Right column — wiki reader #}
+  <div class="lg:col-span-2 bg-white rounded-lg border border-gray-200">
+    {% if wiki_html %}
+    <div class="px-4 py-3 border-b border-gray-100">
+      <h2 class="text-sm font-semibold text-gray-700">{{ wiki_title }}</h2>
+    </div>
+    <div class="p-4 wiki-content text-sm text-gray-800 overflow-y-auto" style="max-height: 600px;">
+      {{ wiki_html|safe }}
+    </div>
+    {% else %}
+    <div class="flex items-center justify-center h-full min-h-[300px]">
+      <p class="text-sm text-gray-400">Select a page to read</p>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{# ── 4. Trade Reports ──────────────────────────────────────────── #}
+<div class="bg-white rounded-lg border border-gray-200 mb-4">
+  <div class="px-4 py-3 border-b border-gray-100">
+    <div class="flex items-center justify-between flex-wrap gap-2">
+      <h2 class="text-sm font-semibold text-gray-700">Trade Reports</h2>
+      <form method="GET" action="/research" class="flex items-center gap-2">
+        {# Preserve current filters #}
+        {% if query %}<input type="hidden" name="q" value="{{ query }}">{% endif %}
+        {% if filter_type and filter_type != 'all' %}<input type="hidden" name="filter" value="{{ filter_type }}">{% endif %}
+        {% if wiki_path %}<input type="hidden" name="page" value="{{ wiki_path }}">{% endif %}
+        {% if digest_date %}<input type="hidden" name="digest" value="{{ digest_date }}">{% endif %}
+
+        <input type="text" name="report_ticker" value="{{ report_ticker or '' }}" placeholder="Ticker..."
+               class="text-sm border border-gray-200 rounded px-2 py-1 w-24 focus:outline-none focus:ring-1 focus:ring-blue-400">
+        <select name="report_type" onchange="this.form.submit()"
+                class="text-sm border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white">
+          <option value="all" {% if report_type == 'all' %}selected{% endif %}>All</option>
+          <option value="pre" {% if report_type == 'pre' %}selected{% endif %}>Pre-trade</option>
+          <option value="post" {% if report_type == 'post' %}selected{% endif %}>Post-trade</option>
+        </select>
+        <button type="submit"
+                class="text-xs font-medium px-2 py-1 rounded bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors">
+          Filter
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <div class="divide-y divide-gray-50">
+    {% if reports %}
+    {% for r in reports %}
+    <div class="px-4 py-3 hover:bg-gray-50 transition-colors cursor-pointer"
+         hx-get="/api/report/{{ r.id }}" hx-target="#report-detail" hx-swap="innerHTML">
+      <div class="flex items-center gap-3 flex-wrap">
+        <span class="text-xs text-gray-400 font-mono w-20">{{ r.trade_date or r.created_at[:10] }}</span>
+        {{ report_type_badge(r.report_type) }}
+        <span class="text-sm font-semibold text-gray-900">{{ r.ticker }}</span>
+        {{ signal_badge(r.signal) }}
+        {% if r.side %}
+        <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded
+                     {% if r.side == 'buy' %}bg-green-50 text-green-700{% else %}bg-red-50 text-red-700{% endif %}">
+          {{ r.side }}{% if r.quantity %} {{ r.quantity }}{% endif %}
+        </span>
+        {% endif %}
+        {% if r.confidence %}
+        <span class="text-[10px] text-gray-400">conf {{ r.confidence }}</span>
+        {% endif %}
+        {% if r.pnl is not none %}
+        <span class="text-xs font-mono {% if r.pnl >= 0 %}text-green-600{% else %}text-red-600{% endif %}">
+          {{ '$%.2f'|format(r.pnl) }}
+        </span>
+        {% endif %}
+      </div>
+      {% if r.reasoning %}
+      <p class="text-xs text-gray-500 mt-1 line-clamp-2">{{ r.reasoning[:200] }}{% if r.reasoning|length > 200 %}...{% endif %}</p>
+      {% endif %}
+    </div>
+    {% endfor %}
+    {% else %}
+    <div class="px-4 py-8 text-center text-xs text-gray-400">No trade reports found</div>
+    {% endif %}
+  </div>
+</div>
+
+{# Report detail loaded via htmx #}
+<div id="report-detail" class="mb-4"></div>
+
+{# ── 5. Daily Digest ───────────────────────────────────────────── #}
+<div class="bg-white rounded-lg border border-gray-200 mb-4">
+  <div class="px-4 py-3 border-b border-gray-100">
+    <div class="flex items-center justify-between flex-wrap gap-2">
+      <h2 class="text-sm font-semibold text-gray-700">Daily Digest</h2>
+      {% if digest_dates %}
+      <form method="GET" action="/research" class="flex items-center gap-2">
+        {# Preserve current filters #}
+        {% if query %}<input type="hidden" name="q" value="{{ query }}">{% endif %}
+        {% if filter_type and filter_type != 'all' %}<input type="hidden" name="filter" value="{{ filter_type }}">{% endif %}
+        {% if wiki_path %}<input type="hidden" name="page" value="{{ wiki_path }}">{% endif %}
+        {% if report_ticker %}<input type="hidden" name="report_ticker" value="{{ report_ticker }}">{% endif %}
+        {% if report_type and report_type != 'all' %}<input type="hidden" name="report_type" value="{{ report_type }}">{% endif %}
+
+        <label for="digest-select" class="text-xs text-gray-500">Date:</label>
+        <select id="digest-select" name="digest" onchange="this.form.submit()"
+                class="text-sm border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white">
+          <option value="">Select date...</option>
+          {% for d in digest_dates %}
+          <option value="{{ d }}" {% if digest_date == d %}selected{% endif %}>{{ d }}</option>
+          {% endfor %}
+        </select>
+      </form>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if digest_html %}
+  <div class="p-4 wiki-content text-sm text-gray-800 overflow-y-auto" style="max-height: 500px;">
+    {{ digest_html|safe }}
+  </div>
+  {% else %}
+  <div class="px-4 py-8 text-center text-xs text-gray-400">
+    {% if digest_dates %}Select a date to view the digest{% else %}No digests available{% endif %}
+  </div>
+  {% endif %}
+</div>
+
+{% endblock %}

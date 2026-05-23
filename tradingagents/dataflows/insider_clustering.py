@@ -16,7 +16,7 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
-from .cache import cached
+from .cache import cached_config
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +32,7 @@ class InsiderClusterDetector:
         self.window_days = window_days
         self.min_insiders = min_insiders
 
-    @cached(ttl=3600)
+    @cached_config("insiders")
     def detect_clusters(self, ticker: str) -> Dict[str, Any]:
         """Check for clustered insider activity.
 
@@ -134,7 +134,20 @@ class InsiderClusterDetector:
                     continue
 
                 insider = str(row.get("Insider", row.get("insider", "Unknown")))
-                txn_type = str(row.get("Transaction", row.get("Text", "")))
+                # Transaction column is often empty; parse from Text field
+                txn_type = str(row.get("Transaction", "") or "")
+                if not txn_type:
+                    text = str(row.get("Text", "") or "").lower()
+                    if "sale" in text:
+                        txn_type = "Sale"
+                    elif "purchase" in text or "buy" in text:
+                        txn_type = "Purchase"
+                    elif "gift" in text:
+                        txn_type = "Gift"
+                    elif "exercise" in text:
+                        txn_type = "Exercise"
+                    else:
+                        txn_type = text[:30] if text else ""
                 shares = None
                 value = None
                 try:

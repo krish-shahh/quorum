@@ -1,0 +1,290 @@
+{% extends "base.html" %}
+{% block title %}Performance{% endblock %}
+
+{% macro signal_badge(sig) %}
+<span class="text-[10px] font-semibold px-1.5 py-0.5 rounded {% if sig in ['Buy','Overweight'] %}bg-green-50 text-green-700{% elif sig in ['Sell','Underweight'] %}bg-red-50 text-red-700{% else %}bg-gray-100 text-gray-600{% endif %}">{{ sig }}</span>
+{% endmacro %}
+
+{% block content %}
+
+{# ── 1. KPI ROW ────────────────────────────────────────────────────── #}
+<div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
+  {% set kpis = [
+    ('SHARPE RATIO', trades.analytics.sharpe|default(0, true)),
+    ('SORTINO RATIO', trades.analytics.sortino|default(0, true)),
+    ('MAX DRAWDOWN', (trades.analytics.max_dd|default(0, true)|string) + '%'),
+    ('ALPHA VS SPY', (trades.analytics.alpha|default(0, true)|string) + '%'),
+    ('WIN RATE', (trades.win_rate * 100)|round(1)|string + '%'),
+    ('TOTAL TRADES', trades.total),
+  ] %}
+  {% for label, value in kpis %}
+  <div class="bg-white border border-gray-200 rounded-lg p-4">
+    <div class="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-1">{{ label }}</div>
+    <div class="text-xl font-mono font-semibold text-gray-900">{{ value }}</div>
+  </div>
+  {% endfor %}
+</div>
+
+{# ── 2. EQUITY CURVE ──────────────────────────────────────────────── #}
+<div class="bg-white border border-gray-200 rounded-lg p-5 mb-6">
+  <div class="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-4">EQUITY CURVE</div>
+  <div class="relative" style="height: 300px;">
+    <canvas id="equity-chart"></canvas>
+  </div>
+</div>
+
+{# ── 3. WIN RATE BY TICKER / BY SIGNAL ─────────────────────────── #}
+<div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+  {# Left: Win Rate by Ticker #}
+  <div class="bg-white border border-gray-200 rounded-lg p-5">
+    <div class="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-4">WIN RATE BY TICKER</div>
+    {% if trades.analytics.wr_ticker %}
+    <div class="space-y-3">
+      {% for item in trades.analytics.wr_ticker %}
+      <div>
+        <div class="flex items-center justify-between mb-1">
+          <span class="text-xs font-semibold text-gray-700 font-mono">{{ item.ticker }}</span>
+          <span class="text-[10px] text-gray-500">{{ item.wins }}w {{ item.losses }}l</span>
+        </div>
+        <div class="w-full bg-gray-100 rounded-full h-2">
+          <div class="h-2 rounded-full {% if item.wr >= 60 %}bg-green-500{% elif item.wr >= 40 %}bg-amber-400{% else %}bg-red-400{% endif %}"
+               style="width: {{ item.wr }}%"></div>
+        </div>
+        <div class="text-[10px] text-gray-400 mt-0.5">{{ item.wr }}%</div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="text-xs text-gray-400">No data</p>
+    {% endif %}
+  </div>
+
+  {# Right: Win Rate by Signal #}
+  <div class="bg-white border border-gray-200 rounded-lg p-5">
+    <div class="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-4">WIN RATE BY SIGNAL</div>
+    {% if trades.analytics.wr_signal %}
+    <div class="space-y-3">
+      {% for item in trades.analytics.wr_signal %}
+      <div>
+        <div class="flex items-center justify-between mb-1">
+          <span class="text-xs font-semibold text-gray-700">{{ signal_badge(item.signal) }}</span>
+          <span class="text-[10px] text-gray-500">{{ item.wins }}w {{ item.losses }}l</span>
+        </div>
+        <div class="w-full bg-gray-100 rounded-full h-2">
+          <div class="h-2 rounded-full {% if item.wr >= 60 %}bg-green-500{% elif item.wr >= 40 %}bg-amber-400{% else %}bg-red-400{% endif %}"
+               style="width: {{ item.wr }}%"></div>
+        </div>
+        <div class="text-[10px] text-gray-400 mt-0.5">{{ item.wr }}%</div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="text-xs text-gray-400">No data</p>
+    {% endif %}
+  </div>
+</div>
+
+{# ── 4. P&L BY TICKER (bar chart) ─────────────────────────────── #}
+<div class="bg-white border border-gray-200 rounded-lg p-5 mb-6">
+  <div class="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-4">P&L BY TICKER</div>
+  <div class="relative" style="height: 300px;">
+    <canvas id="pnl-chart"></canvas>
+  </div>
+</div>
+
+{# ── 5. SLIPPAGE SUMMARY ──────────────────────────────────────── #}
+<div class="grid grid-cols-2 gap-3 mb-6">
+  <div class="bg-white border border-gray-200 rounded-lg p-4">
+    <div class="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-1">TOTAL SLIPPAGE COST</div>
+    <div class="text-xl font-mono font-semibold text-gray-900">{{ slippage.total_cost|usd }}</div>
+  </div>
+  <div class="bg-white border border-gray-200 rounded-lg p-4">
+    <div class="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-1">AVG SLIPPAGE</div>
+    <div class="text-xl font-mono font-semibold text-gray-900">{{ slippage.avg_bps }} bps</div>
+  </div>
+</div>
+
+{# ── 6. TRADE HISTORY TABLE ───────────────────────────────────── #}
+<div class="bg-white border border-gray-200 rounded-lg p-5 mb-6">
+  <div class="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-4">TRADE HISTORY</div>
+  <div class="overflow-x-auto">
+    <table class="w-full text-xs">
+      <thead>
+        <tr class="border-b border-gray-200 text-left">
+          <th class="pb-2 font-semibold text-[10px] uppercase tracking-wider text-gray-400">TIME</th>
+          <th class="pb-2 font-semibold text-[10px] uppercase tracking-wider text-gray-400">TICKER</th>
+          <th class="pb-2 font-semibold text-[10px] uppercase tracking-wider text-gray-400">SIGNAL</th>
+          <th class="pb-2 font-semibold text-[10px] uppercase tracking-wider text-gray-400">ACTION</th>
+          <th class="pb-2 font-semibold text-[10px] uppercase tracking-wider text-gray-400">SIDE</th>
+          <th class="pb-2 font-semibold text-[10px] uppercase tracking-wider text-gray-400">QTY</th>
+          <th class="pb-2 font-semibold text-[10px] uppercase tracking-wider text-gray-400">FILL</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-100">
+        {% for t in trades.recent %}
+        <tr class="hover:bg-gray-50 cursor-pointer transition-colors"
+            hx-get="/api/trade-detail?ticker={{ t.ticker }}&time={{ t.time }}"
+            hx-target="#trade-modal-content"
+            hx-swap="innerHTML"
+            onclick="document.getElementById('trade-modal').classList.remove('hidden')">
+          <td class="py-2 font-mono text-gray-500">{{ t.time }}</td>
+          <td class="py-2 font-mono font-semibold text-gray-900">{{ t.ticker }}</td>
+          <td class="py-2">{{ signal_badge(t.signal) }}</td>
+          <td class="py-2">
+            {% if t.action == 'executed' %}
+            <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-green-50 text-green-700">executed</span>
+            {% elif t.action == 'blocked' %}
+            <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-red-50 text-red-700">blocked</span>
+            {% else %}
+            <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-gray-100 text-gray-600">{{ t.action }}</span>
+            {% endif %}
+          </td>
+          <td class="py-2 font-mono">{{ t.side }}</td>
+          <td class="py-2 font-mono">{{ t.qty }}</td>
+          <td class="py-2 font-mono">{% if t.fill %}{{ t.fill|usd }}{% else %}---{% endif %}</td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="7" class="py-8 text-center text-gray-400">No trades recorded</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{# ── 7. TRADE DETAIL MODAL ────────────────────────────────────── #}
+<div id="trade-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center">
+  {# Backdrop #}
+  <div class="absolute inset-0 bg-black/30" onclick="document.getElementById('trade-modal').classList.add('hidden')"></div>
+  {# Modal body #}
+  <div class="relative bg-white rounded-lg shadow-xl border border-gray-200 w-full max-w-lg mx-4 p-6">
+    <button onclick="document.getElementById('trade-modal').classList.add('hidden')"
+            class="absolute top-3 right-3 text-gray-400 hover:text-gray-600 text-lg leading-none">&times;</button>
+    <div class="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-3">TRADE DETAIL</div>
+    <div id="trade-modal-content" class="text-sm text-gray-700">
+      <p class="text-gray-400">Click a trade row to view details.</p>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+  // ── Equity Curve Chart ──────────────────────────────────────────
+  const eqData = {{ trades.equity | tojson }};
+  const eqLabels = eqData.map(d => d.time);
+  const eqValues = eqData.map(d => d.value);
+
+  const eqCtx = document.getElementById('equity-chart');
+  if (eqCtx && eqData.length > 0) {
+    new Chart(eqCtx, {
+      type: 'line',
+      data: {
+        labels: eqLabels,
+        datasets: [{
+          label: 'Portfolio Value',
+          data: eqValues,
+          borderColor: '#3b82f6',
+          backgroundColor: 'rgba(59, 130, 246, 0.08)',
+          fill: true,
+          tension: 0.3,
+          pointRadius: 0,
+          pointHoverRadius: 4,
+          borderWidth: 2,
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: function(ctx) {
+                return '$' + ctx.parsed.y.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+              }
+            }
+          }
+        },
+        scales: {
+          x: {
+            display: true,
+            grid: { display: false },
+            ticks: { maxTicksLimit: 10, font: { size: 10, family: 'JetBrains Mono' }, color: '#9ca3af' }
+          },
+          y: {
+            display: true,
+            grid: { color: '#f3f4f6' },
+            ticks: {
+              font: { size: 10, family: 'JetBrains Mono' },
+              color: '#9ca3af',
+              callback: function(v) { return '$' + v.toLocaleString(); }
+            }
+          }
+        }
+      }
+    });
+  }
+
+  // ── P&L by Ticker Chart ─────────────────────────────────────────
+  const pnlData = {{ trades.analytics.pnl_ticker | default([], true) | tojson }};
+  const pnlLabels = pnlData.map(d => d.ticker);
+  const pnlValues = pnlData.map(d => d.pnl);
+  const pnlColors = pnlValues.map(v => v >= 0 ? '#22c55e' : '#ef4444');
+
+  const pnlCtx = document.getElementById('pnl-chart');
+  if (pnlCtx && pnlData.length > 0) {
+    new Chart(pnlCtx, {
+      type: 'bar',
+      data: {
+        labels: pnlLabels,
+        datasets: [{
+          label: 'P&L ($)',
+          data: pnlValues,
+          backgroundColor: pnlColors,
+          borderRadius: 3,
+          barPercentage: 0.6,
+        }]
+      },
+      options: {
+        indexAxis: 'y',
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: function(ctx) {
+                const v = ctx.parsed.x;
+                const sign = v >= 0 ? '+' : '';
+                return sign + '$' + v.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+              }
+            }
+          }
+        },
+        scales: {
+          x: {
+            display: true,
+            grid: { color: '#f3f4f6' },
+            ticks: {
+              font: { size: 10, family: 'JetBrains Mono' },
+              color: '#9ca3af',
+              callback: function(v) { return (v >= 0 ? '+$' : '-$') + Math.abs(v).toLocaleString(); }
+            }
+          },
+          y: {
+            display: true,
+            grid: { display: false },
+            ticks: { font: { size: 11, family: 'JetBrains Mono', weight: '600' }, color: '#374151' }
+          }
+        }
+      }
+    });
+  }
+})();
+</script>
+{% endblock %}

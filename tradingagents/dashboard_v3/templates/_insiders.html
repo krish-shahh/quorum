@@ -1,0 +1,19 @@
+{% if clusters %}
+<div class="divide-y divide-gray-100">
+  {% for c in clusters %}
+  <div class="px-3 py-2 flex items-center gap-3">
+    <span class="text-xs font-bold text-gray-900">{{ c.ticker }}</span>
+    <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded
+      {% if c.direction == 'buy' %}bg-green-50 text-green-700
+      {% elif c.direction == 'sell' %}bg-red-50 text-red-700
+      {% else %}bg-amber-50 text-amber-700{% endif %}">
+      {{ c.direction | upper }}
+    </span>
+    <span class="text-[10px] font-mono text-gray-500">{{ c.insider_count }} insiders</span>
+    <span class="text-[10px] text-gray-400">{{ c.window }}</span>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<p class="text-xs text-gray-400 py-4 text-center">No insider clusters detected</p>
+{% endif %}

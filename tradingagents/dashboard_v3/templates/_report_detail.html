@@ -1,0 +1,67 @@
+<div class="bg-white border border-gray-200 rounded-lg p-4 mt-3">
+  <div class="flex items-center gap-3 mb-3">
+    <span class="text-sm font-bold text-gray-900">{{ r.ticker }}</span>
+    <span class="text-[10px] font-medium px-1.5 py-0.5 rounded
+      {% if r.report_type == 'pre' %}bg-blue-50 text-blue-700
+      {% else %}bg-green-50 text-green-700{% endif %}">{{ r.report_type }}</span>
+    <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded
+      {% if r.signal in ['Buy', 'Overweight'] %}bg-green-50 text-green-700
+      {% elif r.signal in ['Sell', 'Underweight'] %}bg-red-50 text-red-700
+      {% else %}bg-gray-100 text-gray-600{% endif %}">{{ r.signal }}</span>
+    <span class="text-xs text-gray-400">{{ r.trade_date }}</span>
+    <span class="text-xs font-mono text-gray-500">conf: {{ r.confidence }}</span>
+  </div>
+
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-3">
+    {% if r.technicals %}
+    <div>
+      <div class="text-[10px] uppercase tracking-wider text-gray-400 font-semibold mb-1">Technicals</div>
+      <p class="text-xs text-gray-600 leading-relaxed">{{ r.technicals }}</p>
+    </div>
+    {% endif %}
+    {% if r.fundamentals %}
+    <div>
+      <div class="text-[10px] uppercase tracking-wider text-gray-400 font-semibold mb-1">Fundamentals</div>
+      <p class="text-xs text-gray-600 leading-relaxed">{{ r.fundamentals }}</p>
+    </div>
+    {% endif %}
+    {% if r.sentiment %}
+    <div>
+      <div class="text-[10px] uppercase tracking-wider text-gray-400 font-semibold mb-1">Sentiment</div>
+      <p class="text-xs text-gray-600 leading-relaxed">{{ r.sentiment }}</p>
+    </div>
+    {% endif %}
+    {% if r.news_catalyst %}
+    <div>
+      <div class="text-[10px] uppercase tracking-wider text-gray-400 font-semibold mb-1">News Catalyst</div>
+      <p class="text-xs text-gray-600 leading-relaxed">{{ r.news_catalyst }}</p>
+    </div>
+    {% endif %}
+  </div>
+
+  {% if r.risk_factors %}
+  <div class="mb-3">
+    <div class="text-[10px] uppercase tracking-wider text-gray-400 font-semibold mb-1">Risk Factors</div>
+    <p class="text-xs text-gray-600 leading-relaxed">{{ r.risk_factors }}</p>
+  </div>
+  {% endif %}
+
+  {% if r.reasoning %}
+  <div class="mb-3">
+    <div class="text-[10px] uppercase tracking-wider text-gray-400 font-semibold mb-1">Reasoning</div>
+    <p class="text-xs text-gray-700 leading-relaxed">{{ r.reasoning }}</p>
+  </div>
+  {% endif %}
+
+  {% if r.fill_price %}
+  <div class="flex items-center gap-4 text-xs font-mono text-gray-500 border-t border-gray-100 pt-2">
+    <span>Fill: ${{ "%.2f"|format(r.fill_price) }}</span>
+    {% if r.quantity %}<span>Qty: {{ r.quantity }}</span>{% endif %}
+    {% if r.side %}<span>Side: {{ r.side | upper }}</span>{% endif %}
+    {% if r.pnl %}<span class="{% if r.pnl >= 0 %}text-green-600{% else %}text-red-600{% endif %}">P&L: ${{ "%.2f"|format(r.pnl) }}</span>{% endif %}
+  </div>
+  {% endif %}
+
+  <button onclick="this.parentElement.remove()"
+          class="mt-2 text-[10px] text-gray-400 hover:text-gray-600">Close</button>
+</div>

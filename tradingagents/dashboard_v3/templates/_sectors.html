@@ -1,0 +1,29 @@
+{% if sectors.sectors %}
+<table class="w-full text-xs">
+  <thead>
+    <tr class="text-[10px] uppercase tracking-wider text-gray-400 font-semibold border-b border-gray-100">
+      <th class="text-left py-1.5 px-2">Sector</th>
+      <th class="text-left py-1.5 px-2">ETF</th>
+      <th class="text-right py-1.5 px-2">1M %</th>
+      <th class="text-right py-1.5 px-2">Rel %</th>
+    </tr>
+  </thead>
+  <tbody class="divide-y divide-gray-50">
+    {% for s in sectors.sectors %}
+    <tr class="hover:bg-gray-50">
+      <td class="py-1.5 px-2 text-gray-700">{{ s.name }}</td>
+      <td class="py-1.5 px-2 font-mono text-gray-500">{{ s.etf }}</td>
+      <td class="py-1.5 px-2 text-right font-mono {% if s.return_1m >= 0 %}text-green-600{% else %}text-red-600{% endif %}">
+        {{ "%+.1f"|format(s.return_1m) }}%
+      </td>
+      <td class="py-1.5 px-2 text-right font-mono {% if s.relative_1m >= 0 %}text-green-600{% else %}text-red-600{% endif %}">
+        {{ "%+.1f"|format(s.relative_1m) }}%
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+<div class="px-2 py-1 text-[10px] text-gray-400">Direction: {{ sectors.direction }}</div>
+{% else %}
+<p class="text-xs text-gray-400 py-4 text-center">No sector data available</p>
+{% endif %}

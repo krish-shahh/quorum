@@ -1,0 +1,180 @@
+{% extends "base.html" %}
+{% block title %}Council{% endblock %}
+
+{% block content %}
+
+{# ── Signal badge macro ── #}
+{% macro signal_badge(sig) %}
+<span class="text-[10px] font-semibold px-1.5 py-0.5 rounded
+  {% if sig in ['Buy', 'Overweight'] %}bg-green-50 text-green-700
+  {% elif sig in ['Sell', 'Underweight'] %}bg-red-50 text-red-700
+  {% else %}bg-gray-100 text-gray-600{% endif %}">{{ sig }}</span>
+{% endmacro %}
+
+{# ══════════════════════════════════════════════════════════════════════
+   SECTION 1 — Ticker Grid
+   ══════════════════════════════════════════════════════════════════════ #}
+<section class="mb-8">
+  <h2 class="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-3">
+    Council Scores — All Tickers
+  </h2>
+
+  {% if states %}
+  <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+    {% for s in states %}
+    <a href="/council?ticker={{ s.ticker }}"
+       class="block bg-white border border-gray-200 rounded-lg px-3 py-2.5
+              hover:border-blue-400 hover:shadow-sm transition-all
+              {% if ticker and ticker == s.ticker %}border-blue-500 ring-1 ring-blue-200{% endif %}">
+      {# Top row: ticker + signal badge #}
+      <div class="flex items-center justify-between mb-1.5">
+        <span class="text-sm font-bold text-gray-900">{{ s.ticker }}</span>
+        {{ signal_badge(s.signal) }}
+      </div>
+      {# Middle: price + weighted score #}
+      <div class="flex items-end justify-between mb-1.5">
+        <span class="text-xs text-gray-400">${{ "%.2f"|format(s.price) if s.price else '—' }}</span>
+        <span class="text-lg font-bold font-mono text-gray-900">{{ "%.2f"|format(s.weighted) if s.weighted else '—' }}</span>
+      </div>
+      {# Bottom: timestamp + mini scores #}
+      <div class="flex items-center justify-between">
+        <span class="text-[9px] text-gray-300 font-mono">{{ s.analyzed_at[:16] if s.analyzed_at else '' }}</span>
+        <span class="text-[9px] text-gray-400 font-mono">
+          T:{{ s.technical }} F:{{ s.fundamental }} S:{{ s.sentiment }} N:{{ s.news }}
+        </span>
+      </div>
+    </a>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="bg-white border border-gray-200 rounded-lg px-4 py-8 text-center text-sm text-gray-400">
+    No ticker states available. Run a council cycle to populate.
+  </div>
+  {% endif %}
+</section>
+
+{# ══════════════════════════════════════════════════════════════════════
+   SECTION 2 — Selected Ticker Deep Dive
+   ══════════════════════════════════════════════════════════════════════ #}
+{% if ticker and detail %}
+<section class="mb-8">
+  <h2 class="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-3">
+    {{ ticker }} — Deep Dive
+  </h2>
+
+  <div class="bg-white border border-gray-200 rounded-lg p-5">
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+      {# Left column: score bars #}
+      <div class="space-y-3">
+        {% set scores = [
+          ('Tech', detail.detail.technical),
+          ('Fund', detail.detail.fundamental),
+          ('Sent', detail.detail.sentiment),
+          ('News', detail.detail.news)
+        ] %}
+        {% for label, score in scores %}
+        <div class="flex items-center gap-2">
+          <span class="text-[11px] font-medium text-gray-500 w-[35px] text-right shrink-0">{{ label }}</span>
+          <div class="flex-1 bg-gray-100 rounded-full h-4 overflow-hidden">
+            <div class="bg-blue-500 h-full rounded-full transition-all"
+                 style="width: {{ ((score|float / 5) * 100)|int }}%"></div>
+          </div>
+          <span class="text-xs font-mono font-semibold text-gray-700 w-[28px] text-right shrink-0">{{ score }}</span>
+        </div>
+        {% endfor %}
+      </div>
+
+      {# Right column: summary stats #}
+      <div class="space-y-2">
+        <div class="flex items-center gap-2">
+          <span class="text-xs text-gray-400">Signal</span>
+          {{ signal_badge(detail.detail.signal) }}
+        </div>
+        <div class="flex items-center gap-2">
+          <span class="text-xs text-gray-400">Confidence</span>
+          <span class="text-xs font-mono font-medium text-gray-700">{{ detail.detail.confidence }}</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <span class="text-xs text-gray-400">Weighted Score</span>
+          <span class="text-base font-bold font-mono text-gray-900">{{ "%.2f"|format(detail.detail.weighted) if detail.detail.weighted else '—' }}</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <span class="text-xs text-gray-400">Price at Analysis</span>
+          <span class="text-xs font-mono text-gray-700">${{ "%.2f"|format(detail.detail.price) if detail.detail.price else '—' }}</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <span class="text-xs text-gray-400">Last Analyzed</span>
+          <span class="text-[11px] font-mono text-gray-500">{{ detail.detail.analyzed_at or '—' }}</span>
+        </div>
+      </div>
+    </div>
+
+    {# Score history table #}
+    {% if detail.history and detail.history|length > 1 %}
+    <div class="mt-6 border-t border-gray-100 pt-4">
+      <h3 class="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-2">Score History</h3>
+      <div class="overflow-x-auto">
+        <table class="w-full text-xs">
+          <thead>
+            <tr class="border-b border-gray-100">
+              <th class="text-left py-1.5 px-2 font-semibold text-gray-500 uppercase text-[10px] tracking-wider">Time</th>
+              <th class="text-left py-1.5 px-2 font-semibold text-gray-500 uppercase text-[10px] tracking-wider">Signal</th>
+              <th class="text-right py-1.5 px-2 font-semibold text-gray-500 uppercase text-[10px] tracking-wider">Score</th>
+              <th class="text-right py-1.5 px-2 font-semibold text-gray-500 uppercase text-[10px] tracking-wider">T</th>
+              <th class="text-right py-1.5 px-2 font-semibold text-gray-500 uppercase text-[10px] tracking-wider">F</th>
+              <th class="text-right py-1.5 px-2 font-semibold text-gray-500 uppercase text-[10px] tracking-wider">S</th>
+              <th class="text-right py-1.5 px-2 font-semibold text-gray-500 uppercase text-[10px] tracking-wider">N</th>
+              <th class="text-right py-1.5 px-2 font-semibold text-gray-500 uppercase text-[10px] tracking-wider">Price</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for h in detail.history %}
+            <tr class="border-b border-gray-50 hover:bg-gray-50 transition-colors">
+              <td class="py-1.5 px-2 font-mono text-gray-500">{{ h.analyzed_at[:16] if h.analyzed_at else '—' }}</td>
+              <td class="py-1.5 px-2">{{ signal_badge(h.signal) }}</td>
+              <td class="py-1.5 px-2 text-right font-mono font-semibold text-gray-900">{{ "%.2f"|format(h.weighted) if h.weighted else '—' }}</td>
+              <td class="py-1.5 px-2 text-right font-mono text-gray-600">{{ h.technical }}</td>
+              <td class="py-1.5 px-2 text-right font-mono text-gray-600">{{ h.fundamental }}</td>
+              <td class="py-1.5 px-2 text-right font-mono text-gray-600">{{ h.sentiment }}</td>
+              <td class="py-1.5 px-2 text-right font-mono text-gray-600">{{ h.news }}</td>
+              <td class="py-1.5 px-2 text-right font-mono text-gray-600">${{ "%.2f"|format(h.price) if h.price else '—' }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</section>
+{% endif %}
+
+{# ══════════════════════════════════════════════════════════════════════
+   SECTION 3 — Trade Reports Feed
+   ══════════════════════════════════════════════════════════════════════ #}
+<section class="mb-8">
+  <h2 class="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-3">
+    Council Activity — Trade Reports
+  </h2>
+
+  {% if reports %}
+  <div class="bg-white border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-96 overflow-y-auto">
+    {% for r in reports %}
+    <div class="flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 transition-colors">
+      <span class="text-[10px] font-mono text-gray-400 shrink-0 w-[120px]">{{ r.trade_date or r.created_at[:16] if r.created_at else '' }}</span>
+      <span class="text-[10px] font-medium px-1.5 py-0.5 rounded border border-gray-200 text-gray-500 shrink-0">{{ r.report_type }}</span>
+      <span class="text-xs font-bold text-gray-900 shrink-0">{{ r.ticker }}</span>
+      {{ signal_badge(r.signal) }}
+      <span class="text-xs text-gray-400 truncate min-w-0">{{ r.reasoning or '' }}</span>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="bg-white border border-gray-200 rounded-lg px-4 py-8 text-center text-sm text-gray-400">
+    No trade reports yet. Run a council cycle to generate reports.
+  </div>
+  {% endif %}
+</section>
+
+{% endblock %}

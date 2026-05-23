@@ -1,0 +1,55 @@
+<div class="space-y-3">
+  <div class="flex items-center gap-3">
+    <span class="text-lg font-bold text-gray-900">{{ t.ticker }}</span>
+    <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded
+      {% if t.signal in ['Buy', 'Overweight'] %}bg-green-50 text-green-700
+      {% elif t.signal in ['Sell', 'Underweight'] %}bg-red-50 text-red-700
+      {% else %}bg-gray-100 text-gray-600{% endif %}">{{ t.signal }}</span>
+    <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded
+      {% if t.action == 'executed' %}bg-green-50 text-green-700
+      {% elif t.action == 'blocked' %}bg-red-50 text-red-700
+      {% else %}bg-gray-100 text-gray-600{% endif %}">{{ t.action }}</span>
+  </div>
+
+  <div class="text-xs text-gray-400 font-mono">{{ t.time }}</div>
+
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+    <div>
+      <div class="text-[10px] uppercase tracking-wider text-gray-400 font-semibold mb-0.5">Side</div>
+      <div class="text-sm font-semibold {% if t.side == 'BUY' %}text-green-600{% else %}text-red-600{% endif %}">{{ t.side }}</div>
+    </div>
+    <div>
+      <div class="text-[10px] uppercase tracking-wider text-gray-400 font-semibold mb-0.5">Quantity</div>
+      <div class="text-sm font-mono font-semibold text-gray-900">{{ t.qty }}</div>
+    </div>
+    <div>
+      <div class="text-[10px] uppercase tracking-wider text-gray-400 font-semibold mb-0.5">Fill Price</div>
+      <div class="text-sm font-mono font-semibold text-gray-900">{% if t.fill %}${{ "%.2f"|format(t.fill) }}{% else %}---{% endif %}</div>
+    </div>
+    <div>
+      <div class="text-[10px] uppercase tracking-wider text-gray-400 font-semibold mb-0.5">Trade P&L</div>
+      {% if t.before and t.after %}
+      {% set pnl = t.after - t.before %}
+      <div class="text-sm font-mono font-semibold {% if pnl >= 0 %}text-green-600{% else %}text-red-600{% endif %}">
+        {{ "%+.2f"|format(pnl) }}
+      </div>
+      {% else %}
+      <div class="text-sm font-mono text-gray-400">---</div>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if t.before and t.after %}
+  <div class="flex items-center gap-4 text-xs font-mono text-gray-500 border-t border-gray-100 pt-2">
+    <span>Before: ${{ "%.2f"|format(t.before) }}</span>
+    <span>After: ${{ "%.2f"|format(t.after) }}</span>
+  </div>
+  {% endif %}
+
+  {% if t.reason and t.reason != '---' %}
+  <div class="border-t border-gray-100 pt-2">
+    <div class="text-[10px] uppercase tracking-wider text-gray-400 font-semibold mb-1">Reasoning</div>
+    <p class="text-xs text-gray-700 leading-relaxed">{{ t.reason }}</p>
+  </div>
+  {% endif %}
+</div>

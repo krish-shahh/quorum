@@ -222,6 +222,5 @@ __marimo__/
 # macOS
 .DS_Store
 
-# Reflex dashboard build artifacts
-tradingagents/dashboard_v2/.web/
-tradingagents/dashboard_v2/.states/
+# Flask dashboard
+__pycache__/

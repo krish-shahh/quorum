@@ -1,0 +1,364 @@
+{% extends "base.html" %}
+
+{% block title %}Trading{% endblock %}
+
+{% block content %}
+
+{# ── Historical banner ───────────────────────────────────────────── #}
+{% if hist_date %}
+<div class="mb-4 rounded-lg bg-amber-50 border border-amber-200 px-4 py-2.5 flex items-center justify-between">
+  <div class="flex items-center gap-4 text-sm">
+    <span class="font-semibold text-amber-800">Historical View: {{ hist_date }}</span>
+    {% if historical %}
+    <span class="text-amber-700">{{ historical.trades | length }} trades</span>
+    <span class="font-mono text-amber-700">P&L {{ historical.pnl | signed_usd }}</span>
+    {% endif %}
+  </div>
+  <a href="/" class="text-xs font-medium px-2 py-1 rounded bg-amber-100 text-amber-800 hover:bg-amber-200 transition-colors">
+    Back to Live
+  </a>
+</div>
+{% endif %}
+
+{# ── KPI row ─────────────────────────────────────────────────────── #}
+<div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 mb-4">
+  {# Portfolio Value #}
+  <div class="bg-white border border-gray-200 rounded-lg px-4 py-3">
+    <div class="text-[9px] uppercase tracking-wider text-gray-400 font-semibold mb-1">Portfolio Value</div>
+    <div class="text-xl font-mono font-semibold text-gray-900">{{ acct.portfolio_value | usd }}</div>
+  </div>
+
+  {# Cash #}
+  <div class="bg-white border border-gray-200 rounded-lg px-4 py-3">
+    <div class="text-[9px] uppercase tracking-wider text-gray-400 font-semibold mb-1">Cash</div>
+    <div class="text-xl font-mono font-semibold text-gray-900">{{ acct.cash | usd }}</div>
+  </div>
+
+  {# P&L #}
+  <div class="bg-white border border-gray-200 rounded-lg px-4 py-3">
+    <div class="text-[9px] uppercase tracking-wider text-gray-400 font-semibold mb-1">P&L</div>
+    <div class="text-xl font-mono font-semibold {% if acct.pnl >= 0 %}text-green-600{% else %}text-red-600{% endif %}">
+      {{ acct.pnl | signed_usd }}
+    </div>
+    <div class="text-[10px] font-mono {% if acct.pnl_pct >= 0 %}text-green-500{% else %}text-red-500{% endif %}">
+      {{ acct.pnl_pct | signed_pct }}
+    </div>
+  </div>
+
+  {# Drawdown #}
+  <div class="bg-white border border-gray-200 rounded-lg px-4 py-3">
+    <div class="text-[9px] uppercase tracking-wider text-gray-400 font-semibold mb-1">Drawdown</div>
+    <div class="text-xl font-mono font-semibold {% if acct.drawdown > acct.dd_limit * 0.7 %}text-red-600{% elif acct.drawdown > acct.dd_limit * 0.4 %}text-amber-600{% else %}text-gray-900{% endif %}">
+      {{ acct.drawdown | pct }}
+    </div>
+    <div class="text-[10px] text-gray-400">limit {{ acct.dd_limit | pct }}</div>
+  </div>
+
+  {# Win Rate #}
+  <div class="bg-white border border-gray-200 rounded-lg px-4 py-3">
+    <div class="text-[9px] uppercase tracking-wider text-gray-400 font-semibold mb-1">Win Rate</div>
+    <div class="text-xl font-mono font-semibold text-gray-900">{{ trades.win_rate | pct }}</div>
+    <div class="text-[10px] text-gray-400">{{ trades.wins }}W / {{ trades.losses }}L of {{ trades.total }}</div>
+  </div>
+</div>
+
+{# ── Regime bar ──────────────────────────────────────────────────── #}
+{% if regime %}
+<div class="mb-4 bg-gray-100 rounded-lg px-4 py-2 flex flex-wrap items-center gap-x-6 gap-y-1 text-xs text-gray-600">
+  <span>
+    <span class="text-[10px] uppercase tracking-wider text-gray-400 font-semibold mr-1">Regime</span>
+    <span class="font-semibold
+      {% if regime.regime == 'RISK_ON' %}text-green-700
+      {% elif regime.regime == 'RISK_OFF' %}text-red-700
+      {% elif regime.regime == 'VOLATILE' %}text-amber-700
+      {% else %}text-gray-700{% endif %}">{{ regime.regime }}</span>
+  </span>
+  <span>
+    <span class="text-[10px] uppercase tracking-wider text-gray-400 font-semibold mr-1">VIX</span>
+    <span class="font-mono">{{ regime.vix }}</span>
+  </span>
+  <span>
+    <span class="text-[10px] uppercase tracking-wider text-gray-400 font-semibold mr-1">DXY</span>
+    <span class="font-mono">{{ regime.dxy }}</span>
+  </span>
+  <span>
+    <span class="text-[10px] uppercase tracking-wider text-gray-400 font-semibold mr-1">10Y</span>
+    <span class="font-mono">{{ regime.yield_10y }}</span>
+  </span>
+  <span>
+    <span class="text-[10px] uppercase tracking-wider text-gray-400 font-semibold mr-1">Confidence</span>
+    <span class="font-mono">{{ regime.confidence }}</span>
+  </span>
+
+  {% if acct.kill_switch %}
+  <span class="ml-auto text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-red-100 text-red-700">Kill Switch Active</span>
+  {% endif %}
+  {% if acct.execution_mode %}
+  <span class="text-[10px] font-semibold uppercase px-2 py-0.5 rounded bg-blue-50 text-blue-600">{{ acct.execution_mode }}</span>
+  {% endif %}
+</div>
+{% endif %}
+
+{# ── Positions table ─────────────────────────────────────────────── #}
+<div class="bg-white border border-gray-200 rounded-lg mb-4 overflow-hidden">
+  <div class="px-4 py-2.5 border-b border-gray-100">
+    <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-wider">Positions</h2>
+  </div>
+  {% if acct.positions %}
+  <div class="overflow-x-auto">
+    <table class="w-full text-xs">
+      <thead>
+        <tr class="bg-gray-50 text-[10px] uppercase tracking-wider text-gray-400 font-semibold">
+          <th class="text-left px-4 py-2">Ticker</th>
+          <th class="text-right px-4 py-2">Qty</th>
+          <th class="text-right px-4 py-2">Entry</th>
+          <th class="text-right px-4 py-2">Current</th>
+          <th class="text-right px-4 py-2">P&L</th>
+          <th class="text-right px-4 py-2">Return</th>
+          <th class="text-right px-4 py-2">Weight</th>
+          <th class="text-center px-4 py-2">Signal</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-100">
+        {% for p in acct.positions %}
+        <tr class="hover:bg-gray-50 transition-colors">
+          <td class="px-4 py-2 font-semibold text-gray-900">{{ p.ticker }}</td>
+          <td class="px-4 py-2 text-right font-mono text-gray-700">{{ p.quantity }}</td>
+          <td class="px-4 py-2 text-right font-mono text-gray-700">{{ p.avg_cost | usd }}</td>
+          <td class="px-4 py-2 text-right font-mono text-gray-700">{{ p.last_price | usd }}</td>
+          <td class="px-4 py-2 text-right font-mono {% if p.unrealized_pnl >= 0 %}text-green-600{% else %}text-red-600{% endif %}">
+            {{ p.unrealized_pnl | signed_usd }}
+          </td>
+          <td class="px-4 py-2 text-right font-mono {% if p.pct_return >= 0 %}text-green-600{% else %}text-red-600{% endif %}">
+            {{ p.pct_return | signed_pct }}
+          </td>
+          <td class="px-4 py-2 text-right font-mono text-gray-700">{{ "%.1f"|format(p.weight) }}%</td>
+          <td class="px-4 py-2 text-center">
+            {% set sig = p.signal | upper if p.signal else 'HOLD' %}
+            <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded
+              {% if sig in ('BUY', 'OVERWEIGHT') %}bg-green-50 text-green-700
+              {% elif sig in ('SELL', 'UNDERWEIGHT') %}bg-red-50 text-red-700
+              {% else %}bg-gray-100 text-gray-600{% endif %}">{{ sig }}</span>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="px-4 py-6 text-center text-xs text-gray-400">No open positions</div>
+  {% endif %}
+</div>
+
+{# ── Historical trades table ────────────────────────────────────── #}
+{% if historical and historical.trades %}
+<div class="bg-white border border-gray-200 rounded-lg mb-4 overflow-hidden">
+  <div class="px-4 py-2.5 border-b border-gray-100">
+    <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-wider">Trades on {{ hist_date }}</h2>
+  </div>
+  <div class="overflow-x-auto">
+    <table class="w-full text-xs">
+      <thead>
+        <tr class="bg-gray-50 text-[10px] uppercase tracking-wider text-gray-400 font-semibold">
+          <th class="text-left px-4 py-2">Time</th>
+          <th class="text-left px-4 py-2">Ticker</th>
+          <th class="text-center px-4 py-2">Signal</th>
+          <th class="text-left px-4 py-2">Action</th>
+          <th class="text-center px-4 py-2">Side</th>
+          <th class="text-right px-4 py-2">Qty</th>
+          <th class="text-right px-4 py-2">Fill</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-100">
+        {% for t in historical.trades %}
+        <tr class="hover:bg-gray-50 transition-colors">
+          <td class="px-4 py-2 font-mono text-gray-500">{{ t.time }}</td>
+          <td class="px-4 py-2 font-semibold text-gray-900">{{ t.ticker }}</td>
+          <td class="px-4 py-2 text-center">
+            {% set sig = t.signal | upper if t.signal else '' %}
+            <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded
+              {% if sig in ('BUY', 'OVERWEIGHT') %}bg-green-50 text-green-700
+              {% elif sig in ('SELL', 'UNDERWEIGHT') %}bg-red-50 text-red-700
+              {% else %}bg-gray-100 text-gray-600{% endif %}">{{ sig }}</span>
+          </td>
+          <td class="px-4 py-2 text-gray-700">{{ t.action }}</td>
+          <td class="px-4 py-2 text-center font-semibold
+            {% if t.side | upper == 'BUY' %}text-green-600{% else %}text-red-600{% endif %}">
+            {{ t.side | upper }}
+          </td>
+          <td class="px-4 py-2 text-right font-mono text-gray-700">{{ t.qty }}</td>
+          <td class="px-4 py-2 text-right font-mono text-gray-700">{{ t.fill | usd }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{# ── Historical council scores grid ─────────────────────────────── #}
+{% if historical and historical.states %}
+<div class="mb-4">
+  <div class="mb-2">
+    <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-wider">Council Scores &mdash; {{ hist_date }}</h2>
+  </div>
+  <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+    {% for s in historical.states %}
+    <div class="bg-white border border-gray-200 rounded-lg px-4 py-3">
+      <div class="flex items-center justify-between mb-2">
+        <span class="font-semibold text-sm text-gray-900">{{ s.ticker }}</span>
+        {% set sig = s.signal | upper if s.signal else 'HOLD' %}
+        <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded
+          {% if sig in ('BUY', 'OVERWEIGHT') %}bg-green-50 text-green-700
+          {% elif sig in ('SELL', 'UNDERWEIGHT') %}bg-red-50 text-red-700
+          {% else %}bg-gray-100 text-gray-600{% endif %}">{{ sig }}</span>
+      </div>
+      <div class="text-lg font-mono font-semibold text-gray-900 mb-1.5">{{ "%.2f" | format(s.weighted) }}</div>
+      <div class="grid grid-cols-4 gap-1 text-[10px]">
+        <div class="text-center">
+          <div class="text-gray-400 uppercase font-semibold">T</div>
+          <div class="font-mono text-gray-700">{{ "%.1f" | format(s.technical) }}</div>
+        </div>
+        <div class="text-center">
+          <div class="text-gray-400 uppercase font-semibold">F</div>
+          <div class="font-mono text-gray-700">{{ "%.1f" | format(s.fundamental) }}</div>
+        </div>
+        <div class="text-center">
+          <div class="text-gray-400 uppercase font-semibold">S</div>
+          <div class="font-mono text-gray-700">{{ "%.1f" | format(s.sentiment) }}</div>
+        </div>
+        <div class="text-center">
+          <div class="text-gray-400 uppercase font-semibold">N</div>
+          <div class="font-mono text-gray-700">{{ "%.1f" | format(s.news) }}</div>
+        </div>
+      </div>
+      {% if s.price %}
+      <div class="mt-1.5 text-[10px] text-gray-400 font-mono">@ {{ s.price | usd }}</div>
+      {% endif %}
+      {% if s.analyzed_at %}
+      <div class="text-[10px] text-gray-400">{{ s.analyzed_at }}</div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+{# ── Bottom 2-column: Activity + Allocation ─────────────────────── #}
+<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+  {# Activity feed #}
+  <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
+    <div class="px-4 py-2.5 border-b border-gray-100">
+      <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-wider">Activity</h2>
+    </div>
+    {% if activity %}
+    <ul class="divide-y divide-gray-100 max-h-72 overflow-y-auto">
+      {% for a in activity %}
+      <li class="px-4 py-2 flex items-start gap-3 text-xs">
+        <span class="text-[10px] font-mono text-gray-400 whitespace-nowrap pt-0.5">{{ a.time }}</span>
+        <span class="text-gray-700 leading-snug">{{ a.summary }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <div class="px-4 py-6 text-center text-xs text-gray-400">No recent activity</div>
+    {% endif %}
+  </div>
+
+  {# Allocation chart #}
+  <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
+    <div class="px-4 py-2.5 border-b border-gray-100">
+      <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-wider">Allocation</h2>
+    </div>
+    <div class="px-4 py-4">
+      {% if acct.allocation %}
+      <canvas id="allocation-chart" height="200"></canvas>
+      {% else %}
+      <div class="py-6 text-center text-xs text-gray-400">No allocation data</div>
+      {% endif %}
+    </div>
+  </div>
+
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+{% if acct.allocation %}
+<script>
+(function() {
+  const labels = {{ acct.allocation | map(attribute='asset') | list | tojson }};
+  const values = {{ acct.allocation | map(attribute='value') | list | tojson }};
+
+  const colors = [
+    '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6',
+    '#06b6d4', '#ec4899', '#14b8a6', '#f97316', '#6366f1',
+    '#84cc16', '#e11d48'
+  ];
+
+  new Chart(document.getElementById('allocation-chart'), {
+    type: 'doughnut',
+    data: {
+      labels: labels,
+      datasets: [{
+        data: values,
+        backgroundColor: colors.slice(0, labels.length),
+        borderWidth: 2,
+        borderColor: '#ffffff',
+        hoverOffset: 6,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      cutout: '50%',
+      layout: { padding: 24 },
+      plugins: {
+        legend: {
+          position: 'right',
+          labels: {
+            boxWidth: 10,
+            padding: 12,
+            font: { family: 'Inter', size: 11 },
+            usePointStyle: true,
+            pointStyle: 'circle',
+          }
+        },
+        tooltip: {
+          callbacks: {
+            label: function(ctx) {
+              return ctx.label + ': ' + ctx.parsed.toFixed(1) + '%';
+            }
+          }
+        },
+        datalabels: {
+          formatter: function(value, ctx) {
+            return ctx.chart.data.labels[ctx.dataIndex] + '\n' + value.toFixed(1) + '%';
+          },
+          anchor: function(ctx) {
+            return ctx.dataset.data[ctx.dataIndex] < 8 ? 'end' : 'center';
+          },
+          align: function(ctx) {
+            return ctx.dataset.data[ctx.dataIndex] < 8 ? 'end' : 'center';
+          },
+          offset: function(ctx) {
+            return ctx.dataset.data[ctx.dataIndex] < 8 ? 6 : 0;
+          },
+          color: function(ctx) {
+            return ctx.dataset.data[ctx.dataIndex] < 8 ? '#374151' : '#ffffff';
+          },
+          font: { family: 'JetBrains Mono', size: 10, weight: 600 },
+          textAlign: 'center',
+          display: function(ctx) {
+            return ctx.dataset.data[ctx.dataIndex] > 2;
+          },
+        },
+      },
+    },
+    plugins: [ChartDataLabels],
+  });
+})();
+</script>
+{% endif %}
+{% endblock %}
