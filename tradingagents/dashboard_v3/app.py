@@ -690,6 +690,152 @@ def get_kalshi_trending_events():
         return []
 
 
+def get_cross_platform_comparison():
+    """Compare Kalshi vs Polymarket prices for matching markets."""
+    try:
+        from tradingagents.dataflows.kalshi import get_markets as kalshi_get_markets
+        from tradingagents.dataflows.polymarket import list_markets as poly_list_markets, fuzzy_match_markets
+
+        kalshi_markets = kalshi_get_markets(limit=100, status="open")
+        poly_markets = poly_list_markets(limit=100, active=True)
+
+        pairs = fuzzy_match_markets(kalshi_markets, poly_markets, threshold=0.45)
+
+        results = []
+        for p in pairs:
+            results.append({
+                "kalshi_ticker": p.kalshi_market.ticker[:35],
+                "kalshi_title": p.kalshi_market.title[:60],
+                "kalshi_yes": p.kalshi_yes_price,
+                "kalshi_spread": p.kalshi_market.spread,
+                "kalshi_volume": p.kalshi_market.volume,
+                "poly_question": p.poly_market.question[:60],
+                "poly_yes": p.poly_yes_price,
+                "poly_volume": p.poly_market.volume,
+                "similarity": p.similarity_score,
+                "divergence": p.price_divergence,
+                "potential_arb": p.potential_arb,
+            })
+        return results
+    except Exception as exc:
+        print(f"[v3] cross-platform comparison error: {exc}")
+        return []
+
+
+def get_polymarket_trending(limit=15):
+    """Get top Polymarket markets by volume."""
+    try:
+        from tradingagents.dataflows.polymarket import list_markets
+        markets = list_markets(limit=limit, active=True)
+        results = []
+        for m in markets:
+            if not m.outcome_prices:
+                continue
+            results.append({
+                "question": m.question[:80],
+                "yes_price": m.outcome_prices[0] if m.outcome_prices else 0,
+                "no_price": m.outcome_prices[1] if len(m.outcome_prices) > 1 else 0,
+                "volume": m.volume,
+                "liquidity": m.liquidity,
+                "end_date": m.end_date[:10] if m.end_date else "",
+                "category": m.category,
+                "slug": m.slug,
+            })
+        return results
+    except Exception as exc:
+        print(f"[v3] polymarket error: {exc}")
+        return []
+
+
+def get_council_candidates_data():
+    """Get prediction council candidate markets ranked by edge."""
+    try:
+        from tradingagents.dataflows.arb_scanner import get_council_candidates
+        candidates = get_council_candidates(min_volume=500, top_n=10)
+        return [
+            {
+                "ticker": c.ticker[:30],
+                "title": c.title,
+                "event_ticker": c.event_ticker,
+                "implied_probability": c.implied_probability,
+                "volume": c.volume,
+                "spread": c.spread,
+                "days_to_close": c.days_to_close,
+                "bias_edge": c.bias_edge,
+                "category": c.category,
+                "reason": c.reason,
+            }
+            for c in candidates
+        ]
+    except Exception as exc:
+        print(f"[v3] council candidates error: {exc}")
+        return []
+
+
+def get_arb_scans(limit=20):
+    """Get recent arbitrage scan results."""
+    try:
+        config = _cfg()
+        from tradingagents.execution.db import get_db
+        conn = get_db(config)
+        rows = conn.execute(
+            "SELECT * FROM arb_scans ORDER BY scanned_at DESC LIMIT ?", (limit,)
+        ).fetchall()
+        results = []
+        for r in rows:
+            results.append({
+                "id": r["id"],
+                "scan_type": r["scan_type"],
+                "event_ticker": r["event_ticker"] or "",
+                "market_ticker": r["market_ticker"] or "",
+                "implied_prob_sum": r["implied_prob_sum"],
+                "overround_pct": r["overround_pct"],
+                "profit_pct": r["profit_pct"],
+                "price_bucket": r["price_bucket"] or "",
+                "bucket_edge": r["bucket_edge"],
+                "num_markets": r["num_markets"],
+                "scanned_at": r["scanned_at"],
+            })
+        return results
+    except Exception:
+        return []
+
+
+def get_arb_executions():
+    """Get arb execution bundles."""
+    try:
+        config = _cfg()
+        from tradingagents.execution.db import get_db
+        import json
+        conn = get_db(config)
+        rows = conn.execute(
+            "SELECT * FROM arb_executions ORDER BY created_at DESC LIMIT 20"
+        ).fetchall()
+        results = []
+        for r in rows:
+            markets = []
+            try:
+                markets = json.loads(r["markets_json"])
+            except Exception:
+                pass
+            results.append({
+                "id": r["id"],
+                "event_ticker": r["event_ticker"],
+                "strategy": r["strategy"],
+                "markets": markets,
+                "num_legs": len(markets),
+                "total_cost": r["total_cost"],
+                "expected_profit": r["expected_profit"],
+                "status": r["status"],
+                "result_pnl": r["result_pnl"],
+                "created_at": r["created_at"],
+                "settled_at": r["settled_at"],
+            })
+        return results
+    except Exception:
+        return []
+
+
 def get_dag_data(ticker):
     try:
         config = _cfg()
@@ -1086,9 +1232,19 @@ def create_app():
     def predictions():
         kalshi_positions = get_kalshi_positions()
         kalshi_events = get_kalshi_trending_events()
+        arb_scans = get_arb_scans()
+        arb_executions = get_arb_executions()
+        council_candidates = get_council_candidates_data()
+        poly_markets = get_polymarket_trending()
+        cross_platform = get_cross_platform_comparison()
         return render_template("predictions.html",
                                positions=kalshi_positions,
                                events=kalshi_events,
+                               arb_scans=arb_scans,
+                               arb_executions=arb_executions,
+                               council_candidates=council_candidates,
+                               poly_markets=poly_markets,
+                               cross_platform=cross_platform,
                                page="predictions")
 
     @app.route("/pipeline")

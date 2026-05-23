@@ -212,6 +212,38 @@ CREATE TABLE IF NOT EXISTS quant_scores (
     scored_at       TEXT    NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_qs_ticker ON quant_scores(ticker);
+
+CREATE TABLE IF NOT EXISTS arb_scans (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    scan_type       TEXT    NOT NULL,
+    event_ticker    TEXT,
+    market_ticker   TEXT,
+    implied_prob_sum REAL,
+    overround_pct   REAL,
+    profit_pct      REAL,
+    price_bucket    TEXT,
+    bucket_edge     REAL,
+    num_markets     INTEGER,
+    details_json    TEXT    NOT NULL DEFAULT '{}',
+    scanned_at      TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_arb_scan_type ON arb_scans(scan_type);
+
+CREATE TABLE IF NOT EXISTS arb_executions (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    scan_id         INTEGER,
+    event_ticker    TEXT    NOT NULL,
+    strategy        TEXT    NOT NULL,
+    markets_json    TEXT    NOT NULL DEFAULT '[]',
+    total_cost      REAL    NOT NULL DEFAULT 0.0,
+    expected_profit REAL    NOT NULL DEFAULT 0.0,
+    status          TEXT    NOT NULL DEFAULT 'open',
+    result_pnl      REAL,
+    created_at      TEXT    NOT NULL DEFAULT (datetime('now')),
+    settled_at      TEXT,
+    FOREIGN KEY (scan_id) REFERENCES arb_scans(id)
+);
+CREATE INDEX IF NOT EXISTS idx_arb_exec_status ON arb_executions(status);
 """
 
 # ──────────────────────────────────────────────────────────────────────

@@ -12,6 +12,7 @@ Autonomous paper trading system that runs entirely through Claude Code via MCP t
 /trading-cycle      — simpler single-agent mode
 /trading-day        — full day: immediate cycle + scheduled follow-ups
 /market-monitor     — background regime/position monitoring (use with /loop)
+/prediction-arb-scan — scan Kalshi for Dutch book + bias arbitrage opportunities
 ```
 
 Or just say: "Run my autonomous trading cycle" or "Analyze Kalshi markets"
@@ -50,7 +51,7 @@ After the final trading cycle each day (or when asked for a summary), produce:
 
 ## Scheduling
 
-Sessions are ephemeral. If Claude Code restarts, re-run `/trading-day` to reschedule remaining cycles. CronCreate jobs only fire while the REPL is idle.
+Sessions are ephemeral. If Claude Code restarts, re-run `/trading-day` to reschedule remaining cycles. CronCreate jobs only fire while the REPL is idle. Kalshi position monitoring runs weekday mornings (8:47 AM) — checks prices, news, and resolution triggers for open prediction market positions.
 
 ## Architecture
 
@@ -85,6 +86,14 @@ Prediction Markets (Kalshi):
   2 agents in PARALLEL → probability estimates with edge calculation
   
   Edge > 10% → execute_kalshi_paper_trade (quarter-Kelly sizing)
+
+Scheduled Monitoring:
+  CronCreate (weekday 8:47 AM) → Kalshi position monitor
+    ├── get_kalshi_positions → check open positions
+    ├── get_kalshi_market    → price changes vs entry
+    ├── WebSearch            → resolution-relevant news
+    └── Alert on: edge flip, resolution approaching, price move >5%
+  Session-only — re-schedule on restart via /trading-day
 ```
 
 ```
@@ -117,7 +126,7 @@ tradingagents/
 | `~/.tradingagents/wiki/` | Analysis pages, digests, ticker summaries |
 | `scripts/start-trading-day.sh` | Auto-start script (called by launchd at 9:30 AM) |
 
-## MCP Tools (44)
+## MCP Tools (49)
 
 Data: get_stock_data, get_indicators, get_fundamentals, get_financial_statements, get_news, get_global_news, get_reddit_sentiment, get_stocktwits_sentiment, get_insider_transactions, get_insider_clusters, get_market_regime, get_sector_rotation, get_earnings_calendar
 
@@ -134,6 +143,8 @@ State & Cache: get_ticker_state, get_ticker_deltas, get_cache_stats, get_asset_i
 Quant: get_quant_scores, get_portfolio_risk
 
 Kalshi: get_kalshi_markets, get_kalshi_market, get_kalshi_orderbook, get_kalshi_events, get_kalshi_event, execute_kalshi_paper_trade, get_kalshi_positions
+
+Kalshi Arbitrage: scan_kalshi_overround, scan_kalshi_bias, get_dutch_book_detail, execute_kalshi_arb_trade, get_prediction_candidates
 
 Maintenance: prune_wiki, get_analytics_summary, search_wiki, get_wiki_page
 
@@ -173,3 +184,42 @@ If MCP tools aren't loading in Claude Code:
 2. Check `.mcp.json` has the `tradingagents` MCP server with absolute python path
 3. Restart the Claude Code session (MCP connections are established at session init)
 4. The MCP stdio protocol test in `health` proves the server works end-to-end
+
+<!-- code-review-graph MCP tools -->
+## MCP Tools: code-review-graph
+
+**IMPORTANT: This project has a knowledge graph. ALWAYS use the
+code-review-graph MCP tools BEFORE using Grep/Glob/Read to explore
+the codebase.** The graph is faster, cheaper (fewer tokens), and gives
+you structural context (callers, dependents, test coverage) that file
+scanning cannot.
+
+### When to use graph tools FIRST
+
+- **Exploring code**: `semantic_search_nodes` or `query_graph` instead of Grep
+- **Understanding impact**: `get_impact_radius` instead of manually tracing imports
+- **Code review**: `detect_changes` + `get_review_context` instead of reading entire files
+- **Finding relationships**: `query_graph` with callers_of/callees_of/imports_of/tests_for
+- **Architecture questions**: `get_architecture_overview` + `list_communities`
+
+Fall back to Grep/Glob/Read **only** when the graph doesn't cover what you need.
+
+### Key Tools
+
+| Tool | Use when |
+|------|----------|
+| `detect_changes` | Reviewing code changes — gives risk-scored analysis |
+| `get_review_context` | Need source snippets for review — token-efficient |
+| `get_impact_radius` | Understanding blast radius of a change |
+| `get_affected_flows` | Finding which execution paths are impacted |
+| `query_graph` | Tracing callers, callees, imports, tests, dependencies |
+| `semantic_search_nodes` | Finding functions/classes by name or keyword |
+| `get_architecture_overview` | Understanding high-level codebase structure |
+| `refactor_tool` | Planning renames, finding dead code |
+
+### Workflow
+
+1. The graph auto-updates on file changes (via hooks).
+2. Use `detect_changes` for code review.
+3. Use `get_affected_flows` to understand impact.
+4. Use `query_graph` pattern="tests_for" to check coverage.

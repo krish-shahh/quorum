@@ -27,7 +27,7 @@ from pathlib import Path
 hook_input = json.loads(sys.stdin.read())
 tool_name = hook_input.get("tool_name", "")
 
-if "execute_paper_trade" not in tool_name:
+if "execute_paper_trade" not in tool_name and "execute_kalshi_arb_trade" not in tool_name:
     sys.exit(0)
 
 tool_input = hook_input.get("tool_input", {})

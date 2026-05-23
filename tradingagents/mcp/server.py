@@ -96,10 +96,16 @@ def create_server():
         Tool(name="get_kalshi_markets", description="List open prediction markets from Kalshi. Returns title, yes/no prices, volume, implied probability, time to close. Use to discover tradeable events.", inputSchema={"type": "object", "properties": {"limit": {"type": "integer", "default": 20, "description": "Max markets (1-200)"}, "event_ticker": {"type": "string", "description": "Filter by event ticker"}, "series_ticker": {"type": "string", "description": "Filter by series ticker"}}}),
         Tool(name="get_kalshi_market", description="Get detailed data for a single Kalshi market: prices, volume, open interest, orderbook depth, rules, close time.", inputSchema={"type": "object", "properties": {"ticker": {"type": "string", "description": "Kalshi market ticker"}}, "required": ["ticker"]}),
         Tool(name="get_kalshi_orderbook", description="Get the orderbook for a Kalshi market. Shows yes bids and no bids at each price level. In binary markets, YES bid at $X = NO ask at $(1-X).", inputSchema={"type": "object", "properties": {"ticker": {"type": "string", "description": "Kalshi market ticker"}, "depth": {"type": "integer", "default": 10, "description": "Number of price levels"}}, "required": ["ticker"]}),
-        Tool(name="get_kalshi_events", description="List prediction market events from Kalshi. Events group related markets (e.g., 'Who will be next PM?' has one market per candidate). Returns title, category, sub_title.", inputSchema={"type": "object", "properties": {"limit": {"type": "integer", "default": 20}, "series_ticker": {"type": "string", "description": "Filter by series"}, "with_nested_markets": {"type": "boolean", "default": false, "description": "Include market data in each event"}}}),
+        Tool(name="get_kalshi_events", description="List prediction market events from Kalshi. Events group related markets (e.g., 'Who will be next PM?' has one market per candidate). Returns title, category, sub_title.", inputSchema={"type": "object", "properties": {"limit": {"type": "integer", "default": 20}, "series_ticker": {"type": "string", "description": "Filter by series"}, "with_nested_markets": {"type": "boolean", "default": False, "description": "Include market data in each event"}}}),
         Tool(name="get_kalshi_event", description="Get a single Kalshi event with all its markets. Use for multi-market events (e.g., 'Who will be next Pope?' with 7 candidate markets).", inputSchema={"type": "object", "properties": {"event_ticker": {"type": "string", "description": "Event ticker"}}, "required": ["event_ticker"]}),
         Tool(name="execute_kalshi_paper_trade", description="Execute a paper trade on a Kalshi prediction market. Buys YES or NO contracts at the current market price. Uses the local paper broker (no Kalshi auth needed).", inputSchema={"type": "object", "properties": {"ticker": {"type": "string", "description": "Kalshi market ticker"}, "side": {"type": "string", "enum": ["yes", "no"], "description": "Buy YES or NO contracts"}, "contracts": {"type": "integer", "description": "Number of contracts to buy"}, "reasoning": {"type": "string", "description": "Why you're taking this position"}}, "required": ["ticker", "side", "contracts"]}),
         Tool(name="get_kalshi_positions", description="Get all open Kalshi prediction market paper positions.", inputSchema={"type": "object", "properties": {}}),
+        # Kalshi arbitrage
+        Tool(name="scan_kalshi_overround", description="Scan Kalshi events for overround/Dutch book arbitrage. Finds mutually exclusive events where YES prices across all outcomes sum != $1.00. Sum < $1.00 = guaranteed profit. Returns opportunities sorted by profit potential.", inputSchema={"type": "object", "properties": {"limit": {"type": "integer", "default": 100, "description": "Max events to scan"}, "min_markets": {"type": "integer", "default": 2, "description": "Min outcomes per event"}}}),
+        Tool(name="scan_kalshi_bias", description="Scan Kalshi markets for favorite-longshot bias. Research (Whelan et al. 2025, 300K+ contracts) shows favorites ($0.75-$0.92) are underpriced while longshots (<$0.10) lose >60%. Returns markets bucketed by price with empirical edge data.", inputSchema={"type": "object", "properties": {"limit": {"type": "integer", "default": 200, "description": "Max markets to scan"}, "min_volume": {"type": "integer", "default": 100, "description": "Min volume filter"}}}),
+        Tool(name="get_dutch_book_detail", description="Calculate exact Dutch book execution plan for a Kalshi event. Shows per-market cost, total investment, guaranteed payout, and net profit after fees. Use after scan_kalshi_overround finds an opportunity.", inputSchema={"type": "object", "properties": {"event_ticker": {"type": "string", "description": "Kalshi event ticker"}, "contracts": {"type": "integer", "default": 1, "description": "Contracts per leg"}}, "required": ["event_ticker"]}),
+        Tool(name="execute_kalshi_arb_trade", description="Execute a multi-leg Dutch book arbitrage on Kalshi. Buys YES on ALL markets in a mutually exclusive event to lock in guaranteed profit. Paper trading only.", inputSchema={"type": "object", "properties": {"event_ticker": {"type": "string", "description": "Kalshi event ticker"}, "contracts_per_market": {"type": "integer", "default": 1, "description": "Contracts per leg"}, "reasoning": {"type": "string", "description": "Why this arb"}}, "required": ["event_ticker"]}),
+        Tool(name="get_prediction_candidates", description="Get the best Kalshi markets for the prediction council to analyze. Combines favorite-longshot bias edge with volume, spread, and category filters to rank markets by expected value. Use this BEFORE running /prediction-council to pick the right market.", inputSchema={"type": "object", "properties": {"min_volume": {"type": "integer", "default": 500, "description": "Min volume"}, "top_n": {"type": "integer", "default": 10, "description": "How many candidates"}}}),
         # Quantitative scoring
         Tool(name="get_quant_scores", description="Compute deterministic quantitative scores for a ticker. Returns fundamental and technical quant scores (1-5), data quality (0-1), component breakdowns, and hard vetoes. Asset-type aware: uses sector-specific scoring (banks, healthcare, tech, bonds, commodities). These are auditable, math-based scores — not LLM judgment.", inputSchema={"type": "object", "properties": {"ticker": {"type": "string", "description": "Stock/ETF/futures ticker"}, "regime": {"type": "string", "description": "Current regime (risk_on/risk_off/volatile/transition). Auto-detected if omitted.", "default": ""}}, "required": ["ticker"]}),
         Tool(name="get_portfolio_risk", description="Compute portfolio-level risk metrics: historical VaR (95%, 1-day), total notional exposure, position correlation, sector concentration. Use before new buys to check portfolio health.", inputSchema={"type": "object", "properties": {}}),
@@ -1380,6 +1386,296 @@ def _handle_tool(name: str, args: dict) -> str:
             )
         total_cost = sum(r['cost'] for r in rows)
         lines.append(f"\n**Total invested:** ${total_cost:.2f}")
+        return "\n".join(lines)
+
+    # ── Kalshi Arbitrage Tools ──
+
+    if name == "scan_kalshi_overround":
+        from tradingagents.dataflows.arb_scanner import scan_overround
+        from tradingagents.execution.db import get_db
+        import json as _json
+
+        limit = args.get("limit", 100)
+        min_mkts = args.get("min_markets", 2)
+        opps = scan_overround(limit=limit, min_markets=min_mkts)
+
+        # Persist scan results
+        conn = get_db(config)
+        for opp in opps:
+            try:
+                conn.execute(
+                    "INSERT INTO arb_scans (scan_type, event_ticker, implied_prob_sum, "
+                    "overround_pct, profit_pct, num_markets, details_json) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    ("overround", opp.event_ticker, opp.implied_prob_sum,
+                     opp.overround_pct, opp.net_profit_pct, opp.num_markets,
+                     _json.dumps(opp.markets)),
+                )
+            except Exception:
+                pass
+        try:
+            conn.commit()
+        except Exception:
+            pass
+
+        # Split into actionable vs skipped
+        actionable = [o for o in opps if o.net_profit_pct > 0 and not o.skip_reason]
+        skipped = [o for o in opps if o.net_profit_pct > 0 and o.skip_reason]
+        near = [o for o in opps if o.net_profit_pct <= 0 and o.overround_pct < 5 and not o.skip_reason]
+
+        lines = [f"# Overround Scan Results",
+                 f"Scanned {len(opps)} mutually exclusive events\n"]
+
+        if actionable:
+            lines.append("## Actionable Dutch Books (profitable + liquid + valid)")
+            lines.append("| Event | Legs | Cost | Net Profit | Days |")
+            lines.append("|-------|------|------|-----------|------|")
+            for o in actionable:
+                lines.append(
+                    f"| {o.event_title[:40]} | {o.num_markets} | "
+                    f"${o.total_cost:.3f} | **{o.net_profit_pct:.1f}%** | "
+                    f"{o.days_to_close}d |"
+                )
+            lines.append("")
+        else:
+            lines.append("## No actionable Dutch books right now\n")
+
+        if skipped:
+            lines.append("## Dutch Books Found but Skipped")
+            lines.append("| Event | Net Profit | Reason |")
+            lines.append("|-------|-----------|--------|")
+            for o in skipped:
+                lines.append(
+                    f"| {o.event_title[:40]} | {o.net_profit_pct:.1f}% | "
+                    f"{o.skip_reason} |"
+                )
+            lines.append("")
+
+        if near:
+            lines.append("## Monitoring (overround < 5%, could flip)")
+            lines.append("| Event | Markets | Sum | Overround |")
+            lines.append("|-------|---------|-----|-----------|")
+            for o in near[:8]:
+                lines.append(
+                    f"| {o.event_title[:40]} | {o.num_markets} | "
+                    f"${o.implied_prob_sum:.3f} | {o.overround_pct:+.1f}% |"
+                )
+            lines.append("")
+
+        lines.append(f"**Summary:** {len(opps)} events | "
+                     f"{len(actionable)} actionable | "
+                     f"{len(skipped)} skipped | "
+                     f"{len(near)} monitoring")
+        return "\n".join(lines)
+
+    if name == "scan_kalshi_bias":
+        from tradingagents.dataflows.arb_scanner import scan_bias, BIAS_BUCKETS
+        from tradingagents.execution.db import get_db
+        import json as _json
+
+        limit = args.get("limit", 200)
+        min_vol = args.get("min_volume", 100)
+        opps = scan_bias(limit=limit, min_volume=min_vol)
+
+        # Persist
+        conn = get_db(config)
+        for opp in opps:
+            try:
+                conn.execute(
+                    "INSERT INTO arb_scans (scan_type, market_ticker, price_bucket, "
+                    "bucket_edge, details_json) VALUES (?, ?, ?, ?, ?)",
+                    ("bias", opp.ticker, opp.price_bucket,
+                     opp.historical_bucket_edge,
+                     _json.dumps({"title": opp.title, "prob": opp.implied_probability})),
+                )
+            except Exception:
+                pass
+        try:
+            conn.commit()
+        except Exception:
+            pass
+
+        lines = ["# Favorite-Longshot Bias Scan",
+                 f"Scanned {len(opps)} markets (min volume: {min_vol})\n"]
+
+        # Group by bucket
+        for bucket in BIAS_BUCKETS:
+            bucket_opps = [o for o in opps if o.price_bucket == bucket["name"]]
+            if not bucket_opps:
+                continue
+            edge_str = f"{bucket['edge']:+.0%}"
+            lines.append(f"## {bucket['label']}")
+            lines.append(f"Historical edge: **{edge_str}** | "
+                         f"Action: **{bucket['action']}** | "
+                         f"Markets: {len(bucket_opps)}")
+            lines.append("| Ticker | Prob | Ask | Volume | Spread |")
+            lines.append("|--------|------|-----|--------|--------|")
+            for o in bucket_opps[:5]:
+                lines.append(
+                    f"| {o.ticker[:25]} | {o.implied_probability:.0%} | "
+                    f"${o.yes_ask:.2f} | {o.volume:.0f} | ${o.spread:.2f} |"
+                )
+            if len(bucket_opps) > 5:
+                lines.append(f"*...and {len(bucket_opps) - 5} more*")
+            lines.append("")
+
+        buy_zone = [o for o in opps if o.recommended_action == "buy_yes"]
+        lines.append(f"**Summary:** {len(opps)} markets scanned, "
+                     f"{len(buy_zone)} in buy zone (favorites)")
+        return "\n".join(lines)
+
+    if name == "get_dutch_book_detail":
+        from tradingagents.dataflows.arb_scanner import calculate_dutch_book
+
+        event_ticker = args["event_ticker"]
+        contracts = args.get("contracts", 1)
+        plan = calculate_dutch_book(event_ticker, contracts=contracts)
+
+        if not plan.legs:
+            return (f"Event {event_ticker} is not mutually exclusive "
+                    f"or has no active markets.")
+
+        lines = [f"# Dutch Book Plan: {plan.event_title}",
+                 f"Event: `{plan.event_ticker}` | Legs: {plan.num_legs} | "
+                 f"Contracts/leg: {contracts}\n"]
+
+        lines.append("## Per-Leg Breakdown")
+        lines.append("| # | Ticker | Side | Price | Cost | Spread | Volume |")
+        lines.append("|---|--------|------|-------|------|--------|--------|")
+        for i, leg in enumerate(plan.legs, 1):
+            lines.append(
+                f"| {i} | {leg['ticker'][:25]} | YES | "
+                f"${leg['price']:.4f} | ${leg['leg_cost']:.4f} | "
+                f"${leg['spread']:.2f} | {leg['volume']:.0f} |"
+            )
+
+        lines.append(f"\n## Execution Summary")
+        lines.append(f"- **Total cost:** ${plan.total_cost:.4f}")
+        lines.append(f"- **Guaranteed payout:** ${plan.guaranteed_payout:.4f}")
+        lines.append(f"- **Gross profit:** ${plan.gross_profit:.4f}")
+        lines.append(f"- **Kalshi fee (7%):** ${plan.fee_estimate:.4f}")
+        lines.append(f"- **Net profit:** ${plan.net_profit:.4f}")
+        lines.append(f"- **Return:** {plan.return_pct:.2f}%")
+        lines.append(f"- **Profitable:** {'YES' if plan.is_profitable else 'NO'}")
+
+        if not plan.is_profitable:
+            lines.append("\n> This event is NOT profitable after fees. "
+                         "The overround exceeds the Kalshi fee margin.")
+        return "\n".join(lines)
+
+    if name == "execute_kalshi_arb_trade":
+        from tradingagents.dataflows.arb_scanner import calculate_dutch_book
+        from tradingagents.execution.db import get_db
+        import json as _json
+
+        event_ticker = args["event_ticker"]
+        contracts = args.get("contracts_per_market", 1)
+        reasoning = args.get("reasoning", "Dutch book arbitrage")
+
+        # Re-validate with fresh prices
+        plan = calculate_dutch_book(event_ticker, contracts=contracts)
+
+        if not plan.is_profitable:
+            return (f"Arb on {event_ticker} is NO LONGER profitable "
+                    f"(net profit: {plan.net_profit_pct:.2f}%). "
+                    f"Prices moved since scan. Aborting.")
+
+        # Check cash
+        broker = _get_broker(config)
+        account = broker.get_account_info()
+        if plan.total_cost > account.cash_balance:
+            return (f"Insufficient cash. Need ${plan.total_cost:.2f}, "
+                    f"have ${account.cash_balance:.2f}.")
+
+        # Enforce max 15% of portfolio in prediction markets
+        conn = get_db(config)
+        try:
+            existing = conn.execute(
+                "SELECT COALESCE(SUM(cost), 0) FROM kalshi_positions WHERE status = 'open'"
+            ).fetchone()[0]
+        except Exception:
+            existing = 0
+        max_exposure = account.cash_balance * 0.15
+        if existing + plan.total_cost > max_exposure:
+            return (f"Would exceed 15% prediction market exposure limit. "
+                    f"Current: ${existing:.2f}, this trade: ${plan.total_cost:.2f}, "
+                    f"limit: ${max_exposure:.2f}.")
+
+        # Execute each leg
+        executed_legs = []
+        total_spent = 0.0
+        for leg in plan.legs:
+            price = leg["price"]
+            leg_cost = price * contracts
+            broker._cash -= leg_cost
+            total_spent += leg_cost
+
+            conn.execute(
+                "INSERT INTO kalshi_positions "
+                "(ticker, title, side, contracts, entry_price, cost, reasoning, status) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (leg["ticker"], leg["title"], "yes", contracts,
+                 price, leg_cost,
+                 f"Dutch book leg: {reasoning}", "open"),
+            )
+            executed_legs.append({
+                "ticker": leg["ticker"],
+                "side": "yes",
+                "contracts": contracts,
+                "price": price,
+            })
+
+        broker._save_state()
+
+        # Record the arb bundle
+        conn.execute(
+            "INSERT INTO arb_executions "
+            "(event_ticker, strategy, markets_json, total_cost, expected_profit, status) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (event_ticker, "dutch_book", _json.dumps(executed_legs),
+             total_spent, plan.net_profit, "open"),
+        )
+        conn.commit()
+
+        return (
+            f"# Dutch Book Executed: {plan.event_title}\n\n"
+            f"- **Legs:** {len(executed_legs)}\n"
+            f"- **Contracts/leg:** {contracts}\n"
+            f"- **Total cost:** ${total_spent:.4f}\n"
+            f"- **Expected net profit:** ${plan.net_profit:.4f} "
+            f"({plan.return_pct:.2f}%)\n"
+            f"- **Cash remaining:** ${broker._cash:.2f}\n\n"
+            f"All legs executed. One outcome will resolve YES, "
+            f"paying $1.00 × {contracts} contracts."
+        )
+
+    if name == "get_prediction_candidates":
+        from tradingagents.dataflows.arb_scanner import get_council_candidates
+
+        min_vol = args.get("min_volume", 500)
+        top_n = args.get("top_n", 10)
+        candidates = get_council_candidates(min_volume=min_vol, top_n=top_n)
+
+        if not candidates:
+            return ("No prediction market candidates found above volume/edge thresholds. "
+                    "Try lowering min_volume or check back when more markets are active.")
+
+        lines = ["# Prediction Council Candidates",
+                 f"Top {len(candidates)} markets ranked by bias edge + volume + researchability\n",
+                 "| # | Ticker | Prob | Vol | Spread | Edge | Category | Why |",
+                 "|---|--------|------|-----|--------|------|----------|-----|"]
+        for i, c in enumerate(candidates, 1):
+            lines.append(
+                f"| {i} | `{c.ticker[:25]}` | {c.implied_probability:.0%} | "
+                f"{c.volume:.0f} | ${c.spread:.2f} | "
+                f"{c.bias_edge:+.0%} | {c.category} | {c.reason[:50]} |"
+            )
+
+        lines.append(f"\n**Usage:** Pick a ticker from this list, then run "
+                     f"`/prediction-council` to do full 2-agent analysis.")
+        lines.append(f"\nThese markets have positive historical edge (favorites "
+                     f"are systematically underpriced on Kalshi per Whelan et al. 2025). "
+                     f"The council adds probability estimation on top of the statistical edge.")
         return "\n".join(lines)
 
     return f"Unknown tool: {name}"

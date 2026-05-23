@@ -37,112 +37,356 @@
 
 {% block content %}
 
-{# ── Positions ──────────────────────────────────────────────────── #}
+{# ── Prediction Markets Hub ───────────────────────────────────── #}
 <div class="bg-white border border-gray-200 rounded-lg mb-4 overflow-hidden">
   <div class="px-4 py-2.5 border-b border-gray-100 flex items-center justify-between">
-    <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-wider">Kalshi Positions</h2>
-    {% if positions %}
-    <span class="text-[10px] font-mono text-gray-400">
-      {{ positions | length }} open | ${{ "%.2f"|format(positions | sum(attribute='cost')) }} invested
-    </span>
-    {% endif %}
+    <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-wider">Prediction Markets</h2>
+    <div class="flex items-center gap-3">
+      {% if positions %}
+      <span class="text-[10px] font-mono text-gray-500">
+        {{ positions | length }} positions | ${{ "%.2f"|format(positions | sum(attribute='cost')) }} invested
+      </span>
+      {% endif %}
+      <span class="text-[10px] font-mono text-gray-400">
+        <code class="bg-gray-100 px-1 rounded">/prediction-council</code>
+        <code class="bg-gray-100 px-1 rounded ml-1">/prediction-arb-scan</code>
+      </span>
+    </div>
   </div>
 
+  {# ── Active Arb Bundles ── #}
+  {% if arb_executions %}
+  <div class="px-4 py-2 border-b border-gray-100">
+    <div class="text-[10px] font-semibold text-gray-500 uppercase mb-1.5">Active Arb Bundles</div>
+    <div class="space-y-2">
+      {% for a in arb_executions %}
+      <div class="flex items-center justify-between bg-{% if a.status == 'open' %}amber{% else %}gray{% endif %}-50 rounded-lg px-3 py-2">
+        <div>
+          <span class="text-xs font-semibold text-gray-900">{{ a.event_ticker }}</span>
+          <span class="text-[10px] text-gray-400 ml-2">{{ a.strategy | replace('_', ' ') | title }}</span>
+          <span class="text-[10px] text-gray-400 ml-1">({{ a.num_legs }} legs)</span>
+        </div>
+        <div class="flex items-center gap-4">
+          <div class="text-right">
+            <div class="text-xs font-mono text-gray-700">${{ "%.4f"|format(a.total_cost) }}</div>
+            <div class="text-[9px] text-gray-400">cost</div>
+          </div>
+          <div class="text-right">
+            <div class="text-xs font-mono {% if a.expected_profit > 0 %}text-green-600{% else %}text-red-600{% endif %}">
+              ${{ "%.4f"|format(a.expected_profit) }}
+            </div>
+            <div class="text-[9px] text-gray-400">expected</div>
+          </div>
+          <span class="text-[10px] font-bold px-2 py-0.5 rounded
+            {% if a.status == 'open' %}bg-amber-100 text-amber-700
+            {% elif a.status == 'settled' %}bg-green-100 text-green-700
+            {% else %}bg-gray-100 text-gray-600{% endif %}">
+            {{ a.status | upper }}
+          </span>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  {% set overround_scans = arb_scans | selectattr('scan_type', 'equalto', 'overround') | list %}
+  {% set bias_scans = arb_scans | selectattr('scan_type', 'equalto', 'bias') | list %}
+
+  {% if overround_scans %}
+  <div class="px-4 py-2 border-b border-gray-100">
+    <div class="text-[10px] font-semibold text-gray-500 uppercase mb-1.5">Recent Overround Scans</div>
+    <div class="overflow-x-auto">
+      <table class="w-full text-xs">
+        <thead>
+          <tr class="text-[10px] uppercase tracking-wider text-gray-400 font-semibold">
+            <th class="text-left py-1">Event</th>
+            <th class="text-right py-1">Markets</th>
+            <th class="text-right py-1">Prob Sum</th>
+            <th class="text-right py-1">Overround</th>
+            <th class="text-right py-1">Net Profit</th>
+            <th class="text-right py-1">Scanned</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-50">
+          {% for s in overround_scans[:10] %}
+          <tr class="hover:bg-gray-50">
+            <td class="py-1 font-mono text-gray-700">{{ s.event_ticker[:30] }}</td>
+            <td class="py-1 text-right text-gray-600">{{ s.num_markets or '-' }}</td>
+            <td class="py-1 text-right font-mono text-gray-600">
+              {% if s.implied_prob_sum %}${{ "%.3f"|format(s.implied_prob_sum) }}{% else %}-{% endif %}
+            </td>
+            <td class="py-1 text-right font-mono
+              {% if s.overround_pct and s.overround_pct < 0 %}text-green-600{% else %}text-gray-600{% endif %}">
+              {% if s.overround_pct %}{{ "%+.1f"|format(s.overround_pct) }}%{% else %}-{% endif %}
+            </td>
+            <td class="py-1 text-right font-mono font-semibold
+              {% if s.profit_pct and s.profit_pct > 0 %}text-green-600{% else %}text-gray-400{% endif %}">
+              {% if s.profit_pct %}{{ "%.1f"|format(s.profit_pct) }}%{% else %}0%{% endif %}
+            </td>
+            <td class="py-1 text-right text-gray-400 font-mono">{{ s.scanned_at[:16] if s.scanned_at else '' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if bias_scans %}
+  <div class="px-4 py-2">
+    <div class="text-[10px] font-semibold text-gray-500 uppercase mb-1.5">Bias Scan (Favorite-Longshot)</div>
+    {% set buckets = {} %}
+    {% for s in bias_scans %}
+      {% if s.price_bucket not in buckets %}
+        {% if buckets.update({s.price_bucket: []}) %}{% endif %}
+      {% endif %}
+      {% if buckets[s.price_bucket].append(s) %}{% endif %}
+    {% endfor %}
+    <div class="flex flex-wrap gap-2">
+      {% for bucket_name in ['favorite', 'heavy_favorite', 'lean', 'tossup', 'underdog', 'longshot'] %}
+        {% set count = bias_scans | selectattr('price_bucket', 'equalto', bucket_name) | list | length %}
+        {% if count > 0 %}
+        <div class="px-2 py-1 rounded text-[10px] font-mono
+          {% if bucket_name in ['favorite', 'heavy_favorite'] %}bg-green-50 text-green-700
+          {% elif bucket_name in ['lean', 'tossup'] %}bg-gray-100 text-gray-600
+          {% else %}bg-red-50 text-red-700{% endif %}">
+          {{ bucket_name | replace('_', ' ') | title }}: {{ count }}
+        </div>
+        {% endif %}
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  {# ── Open Positions (inside same card) ── #}
   {% if positions %}
+  <div class="px-4 py-2 border-t border-gray-100">
+    <div class="text-[10px] font-semibold text-gray-500 uppercase mb-1.5">Open Positions</div>
+    <div class="overflow-x-auto">
+      <table class="w-full text-xs">
+        <thead>
+          <tr class="text-[10px] uppercase tracking-wider text-gray-400 font-semibold">
+            <th class="text-left py-1">Market</th>
+            <th class="text-center py-1">Side</th>
+            <th class="text-right py-1">Qty</th>
+            <th class="text-right py-1">Entry</th>
+            <th class="text-right py-1">Cost</th>
+            <th class="text-left py-1">Reasoning</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-50">
+          {% for p in positions %}
+          <tr class="hover:bg-gray-50">
+            <td class="py-1 max-w-[200px]">
+              <div class="text-gray-900 truncate text-[11px]">{{ p.title }}</div>
+              <div class="text-[9px] text-gray-400 font-mono">{{ p.ticker[:30] }}</div>
+            </td>
+            <td class="py-1 text-center">
+              <span class="text-[10px] font-bold px-1.5 py-0.5 rounded
+                {% if p.side == 'yes' %}bg-green-50 text-green-700{% else %}bg-red-50 text-red-700{% endif %}">
+                {{ p.side | upper }}
+              </span>
+            </td>
+            <td class="py-1 text-right font-mono">{{ p.contracts }}</td>
+            <td class="py-1 text-right font-mono">${{ "%.2f"|format(p.entry_price) }}</td>
+            <td class="py-1 text-right font-mono">${{ "%.2f"|format(p.cost) }}</td>
+            <td class="py-1 text-gray-500 max-w-[180px] truncate text-[10px]">{{ p.reasoning[:50] }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if not arb_scans and not arb_executions and not positions %}
+  <div class="px-4 py-6 text-center text-xs text-gray-400">
+    No prediction market activity yet. Run <code class="bg-gray-100 px-1.5 py-0.5 rounded">/prediction-council</code> or <code class="bg-gray-100 px-1.5 py-0.5 rounded">/prediction-arb-scan</code> to get started.
+  </div>
+  {% endif %}
+</div>
+
+{# ── Council Candidates ─────────────────────────────────────────── #}
+{% if council_candidates %}
+<div class="bg-white border border-gray-200 rounded-lg mb-4 overflow-hidden">
+  <div class="px-4 py-2.5 border-b border-gray-100 flex items-center justify-between">
+    <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-wider">Council Candidates</h2>
+    <span class="text-[10px] font-mono text-gray-400">
+      bias edge + volume + researchability | run <code class="bg-gray-100 px-1 rounded">/prediction-council</code> on these
+    </span>
+  </div>
   <div class="overflow-x-auto">
     <table class="w-full text-xs">
       <thead>
         <tr class="bg-gray-50 text-[10px] uppercase tracking-wider text-gray-400 font-semibold">
+          <th class="text-left px-4 py-2">#</th>
           <th class="text-left px-4 py-2">Market</th>
-          <th class="text-center px-4 py-2">Side</th>
-          <th class="text-right px-4 py-2">Contracts</th>
-          <th class="text-right px-4 py-2">Entry</th>
-          <th class="text-right px-4 py-2">Cost</th>
-          <th class="text-left px-4 py-2">Reasoning</th>
-          <th class="text-right px-4 py-2">Opened</th>
+          <th class="text-center px-3 py-2">Prob</th>
+          <th class="text-center px-3 py-2">Bias Edge</th>
+          <th class="text-right px-3 py-2">Volume</th>
+          <th class="text-right px-3 py-2">Spread</th>
+          <th class="text-left px-3 py-2">Category</th>
+          <th class="text-left px-4 py-2">Why</th>
         </tr>
       </thead>
       <tbody class="divide-y divide-gray-100">
-        {% for p in positions %}
+        {% for c in council_candidates %}
         <tr class="hover:bg-gray-50 transition-colors">
-          <td class="px-4 py-2 max-w-xs">
-            <div class="font-semibold text-gray-900 truncate">{{ p.title }}</div>
-            <div class="text-[9px] text-gray-400 font-mono">{{ p.ticker[:40] }}</div>
+          <td class="px-4 py-2 text-gray-400 font-mono">{{ loop.index }}</td>
+          <td class="px-4 py-2 max-w-[200px]">
+            <div class="text-gray-900 truncate text-[11px]">{{ c.title }}</div>
+            <div class="text-[9px] text-gray-400 font-mono">{{ c.ticker }}</div>
           </td>
-          <td class="px-4 py-2 text-center">
-            <span class="text-[10px] font-bold px-2 py-0.5 rounded
-              {% if p.side == 'yes' %}bg-green-50 text-green-700{% else %}bg-red-50 text-red-700{% endif %}">
-              {{ p.side | upper }}
-            </span>
+          <td class="px-3 py-2 text-center">
+            <div class="w-20 mx-auto">{{ prob_bar(c.implied_probability) }}</div>
           </td>
-          <td class="px-4 py-2 text-right font-mono">{{ p.contracts }}</td>
-          <td class="px-4 py-2 text-right font-mono">${{ "%.2f"|format(p.entry_price) }}</td>
-          <td class="px-4 py-2 text-right font-mono">${{ "%.2f"|format(p.cost) }}</td>
-          <td class="px-4 py-2 text-gray-600 max-w-xs truncate">{{ p.reasoning[:60] }}</td>
-          <td class="px-4 py-2 text-right text-gray-400 font-mono">{{ p.created_at[:16] if p.created_at else '' }}</td>
+          <td class="px-3 py-2 text-center font-mono font-semibold text-green-600">+{{ "%.0f"|format(c.bias_edge * 100) }}%</td>
+          <td class="px-3 py-2 text-right font-mono text-gray-700">{{ "%.0f"|format(c.volume) }}</td>
+          <td class="px-3 py-2 text-right font-mono text-gray-600">${{ "%.2f"|format(c.spread) }}</td>
+          <td class="px-3 py-2">
+            {% if c.category %}{{ category_badge(c.category) }}{% endif %}
+          </td>
+          <td class="px-4 py-2 text-[10px] text-gray-500 max-w-[200px] truncate">{{ c.reason[:60] }}</td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
-  {% else %}
-  <div class="px-4 py-8 text-center text-xs text-gray-400">
-    No open prediction market positions. Run <code class="bg-gray-100 px-1.5 py-0.5 rounded">/prediction-council</code> to analyze markets.
-  </div>
-  {% endif %}
 </div>
+{% endif %}
 
-{# ── Trending Events ────────────────────────────────────────────── #}
-<div class="mb-4">
-  <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-wider mb-3">Kalshi Markets</h2>
-
-  {% if events %}
-  <div class="space-y-3">
-    {% for e in events %}
-    <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
-      {# Event header #}
-      <div class="px-4 py-2.5 border-b border-gray-100 flex items-center gap-3">
-        {{ category_badge(e.category) }}
-        <span class="text-sm font-semibold text-gray-900">{{ e.title }}</span>
-        {% if e.sub_title %}
-        <span class="text-xs text-gray-400">{{ e.sub_title }}</span>
-        {% endif %}
-        <span class="ml-auto text-[10px] text-gray-400 font-mono">vol {{ "%.0f"|format(e.total_volume) }}</span>
-      </div>
-
-      {# Markets in this event #}
-      <div class="divide-y divide-gray-50">
-        {% for m in e.markets %}
-        <div class="px-4 py-2 flex items-center gap-4 hover:bg-gray-50 transition-colors">
-          <div class="flex-1 min-w-0">
-            <div class="text-xs text-gray-700 truncate">{{ m.title }}</div>
-            <div class="text-[9px] text-gray-400 font-mono">{{ m.ticker[:40] }}</div>
-          </div>
-          <div class="w-32 shrink-0">
-            {{ prob_bar(m.implied_prob) }}
-          </div>
-          <div class="text-right shrink-0 w-20">
-            <div class="text-xs font-mono text-gray-700">${{ "%.2f"|format(m.yes_bid) }}/${{ "%.2f"|format(m.yes_ask) }}</div>
-            <div class="text-[9px] text-gray-400">bid/ask</div>
-          </div>
-          <div class="text-right shrink-0 w-16">
-            <div class="text-xs font-mono text-gray-700">{{ "%.0f"|format(m.volume) }}</div>
-            <div class="text-[9px] text-gray-400">vol</div>
-          </div>
-          <div class="text-right shrink-0 w-16">
-            <span class="text-[10px] text-gray-400">{{ m.time_to_close or '---' }}</span>
-          </div>
-        </div>
+{# ── Cross-Platform Comparison ──────────────────────────────────── #}
+{% if cross_platform %}
+<div class="bg-white border border-gray-200 rounded-lg mb-4 overflow-hidden">
+  <div class="px-4 py-2.5 border-b border-gray-100 flex items-center justify-between">
+    <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-wider">Cross-Platform Price Monitor</h2>
+    <span class="text-[10px] font-mono text-gray-400">
+      Kalshi vs Polymarket | {{ cross_platform | length }} matched
+      {% set arbs = cross_platform | selectattr('potential_arb') | list %}
+      {% if arbs %}| <span class="text-amber-600 font-semibold">{{ arbs | length }} divergences > 5%</span>{% endif %}
+    </span>
+  </div>
+  <div class="overflow-x-auto">
+    <table class="w-full text-xs">
+      <thead>
+        <tr class="bg-gray-50 text-[10px] uppercase tracking-wider text-gray-400 font-semibold">
+          <th class="text-left px-4 py-2">Market</th>
+          <th class="text-center px-3 py-2">Kalshi YES</th>
+          <th class="text-center px-3 py-2">Polymarket YES</th>
+          <th class="text-center px-3 py-2">Divergence</th>
+          <th class="text-right px-3 py-2">Match</th>
+          <th class="text-right px-4 py-2">Volume (K/P)</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-100">
+        {% for p in cross_platform[:15] %}
+        <tr class="hover:bg-gray-50 transition-colors {% if p.potential_arb %}bg-amber-50/50{% endif %}">
+          <td class="px-4 py-2 max-w-xs">
+            <div class="text-gray-900 truncate">{{ p.kalshi_title }}</div>
+            <div class="text-[9px] text-gray-400 font-mono">{{ p.kalshi_ticker }}</div>
+          </td>
+          <td class="px-3 py-2 text-center">
+            <div class="w-24 mx-auto">{{ prob_bar(p.kalshi_yes) }}</div>
+          </td>
+          <td class="px-3 py-2 text-center">
+            <div class="w-24 mx-auto">{{ prob_bar(p.poly_yes) }}</div>
+          </td>
+          <td class="px-3 py-2 text-center font-mono font-semibold
+            {% if p.divergence|abs > 0.10 %}text-red-600
+            {% elif p.divergence|abs > 0.05 %}text-amber-600
+            {% else %}text-gray-400{% endif %}">
+            {{ "%+.1f"|format(p.divergence * 100) }}%
+          </td>
+          <td class="px-3 py-2 text-right text-gray-400 font-mono">{{ "%.0f"|format(p.similarity * 100) }}%</td>
+          <td class="px-4 py-2 text-right font-mono text-gray-600">
+            {{ "%.0f"|format(p.kalshi_volume) }} / {{ "%.0f"|format(p.poly_volume) }}
+          </td>
+        </tr>
         {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{# ── Markets Side-by-Side ──────────────────────────────────────── #}
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+
+  {# ── Kalshi Markets ── #}
+  <div>
+    <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-wider mb-3 flex items-center gap-2">
+      <span class="w-2 h-2 rounded-full bg-blue-500"></span> Kalshi Markets
+    </h2>
+    {% if events %}
+    <div class="space-y-3">
+      {% for e in events[:8] %}
+      <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
+        <div class="px-3 py-2 border-b border-gray-100 flex items-center gap-2">
+          {{ category_badge(e.category) }}
+          <span class="text-xs font-semibold text-gray-900 truncate">{{ e.title }}</span>
+          <span class="ml-auto text-[10px] text-gray-400 font-mono shrink-0">{{ "%.0f"|format(e.total_volume) }}</span>
+        </div>
+        <div class="divide-y divide-gray-50">
+          {% for m in e.markets[:3] %}
+          <div class="px-3 py-1.5 flex items-center gap-3 hover:bg-gray-50 transition-colors">
+            <div class="flex-1 min-w-0">
+              <div class="text-[11px] text-gray-700 truncate">{{ m.title }}</div>
+            </div>
+            <div class="w-24 shrink-0">{{ prob_bar(m.implied_prob) }}</div>
+            <div class="text-right shrink-0 w-16">
+              <div class="text-[10px] font-mono text-gray-600">${{ "%.2f"|format(m.yes_bid) }}/${{ "%.2f"|format(m.yes_ask) }}</div>
+            </div>
+          </div>
+          {% endfor %}
+          {% if e.markets | length > 3 %}
+          <div class="px-3 py-1 text-[9px] text-gray-400 text-center">+{{ e.markets | length - 3 }} more</div>
+          {% endif %}
+        </div>
       </div>
+      {% endfor %}
     </div>
-    {% endfor %}
+    {% else %}
+    <div class="bg-white border border-gray-200 rounded-lg px-4 py-6 text-center text-xs text-gray-400">
+      Could not load Kalshi markets.
+    </div>
+    {% endif %}
   </div>
-  {% else %}
-  <div class="bg-white border border-gray-200 rounded-lg px-4 py-8 text-center text-sm text-gray-400">
-    Could not load Kalshi markets. Check your internet connection.
+
+  {# ── Polymarket Markets ── #}
+  <div>
+    <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-wider mb-3 flex items-center gap-2">
+      <span class="w-2 h-2 rounded-full bg-purple-500"></span> Polymarket Markets
+    </h2>
+    {% if poly_markets %}
+    <div class="space-y-2">
+      {% for m in poly_markets[:12] %}
+      <div class="bg-white border border-gray-200 rounded-lg px-3 py-2 hover:bg-gray-50 transition-colors">
+        <div class="flex items-center gap-3">
+          <div class="flex-1 min-w-0">
+            <div class="text-[11px] text-gray-900 truncate">{{ m.question }}</div>
+            {% if m.category %}
+            <span class="text-[9px] text-gray-400">{{ m.category }}</span>
+            {% endif %}
+          </div>
+          <div class="w-24 shrink-0">{{ prob_bar(m.yes_price) }}</div>
+          <div class="text-right shrink-0 w-20">
+            <div class="text-[10px] font-mono text-gray-600">${{ "%.0f"|format(m.volume) }}</div>
+            <div class="text-[9px] text-gray-400">volume</div>
+          </div>
+          {% if m.end_date %}
+          <div class="text-[9px] text-gray-400 shrink-0 w-16 text-right">{{ m.end_date }}</div>
+          {% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="bg-white border border-gray-200 rounded-lg px-4 py-6 text-center text-xs text-gray-400">
+      Could not load Polymarket data.
+    </div>
+    {% endif %}
   </div>
-  {% endif %}
 </div>
 
 {% endblock %}

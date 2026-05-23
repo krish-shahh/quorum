@@ -12,9 +12,9 @@ This is fundamentally different from stock analysis — you're estimating **prob
 
 ## Step 1: Market Discovery
 
-Call `get_kalshi_events(limit=20, with_nested_markets=true)` to browse available markets.
+**Preferred method:** Call `get_prediction_candidates(min_volume=500, top_n=10)` first. This uses the bias scanner to find markets where favorites are systematically underpriced (+5% historical edge), ranked by volume and researchability. Pick from this list — you start with a statistical edge before the council even analyzes.
 
-**Prioritize markets that are:**
+**Fallback** (if no candidates or user wants to browse): Call `get_kalshi_events(limit=20, with_nested_markets=true)` and prioritize:
 - High volume (>1,000 contracts) — better liquidity for execution
 - Closing in days-to-weeks (not years) — faster feedback loop
 - In categories you can research: Economics, Politics, AI, Finance, Climate
