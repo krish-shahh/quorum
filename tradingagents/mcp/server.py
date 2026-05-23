@@ -1581,7 +1581,8 @@ def _handle_tool(name: str, args: dict) -> str:
                     f"Prices moved since scan. Aborting.")
 
         # Check cash
-        broker = _get_broker(config)
+        from tradingagents.execution.broker.paper_client import PaperBrokerClient
+        broker = PaperBrokerClient(config)
         account = broker.get_account_info()
         if plan.total_cost > account.cash_balance:
             return (f"Insufficient cash. Need ${plan.total_cost:.2f}, "
