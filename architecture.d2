@@ -84,7 +84,7 @@ council: STOCK TRADING COUNCIL — 4 parallel Haiku analysts orchestrated by Opu
     }
   }
 
-  score: score_council\n\n25% tech + 25% domain\n20% sent + 20% news\nBuy >3.5 / Sell <2.5 / Hold {
+  score: score_council\n\n25% tech + 25% domain\n20% sent + 20% news\nRegime-conditional thresholds\nSignal scores saved for IC {
     style.fill: "#f0fdf4"
     style.stroke: "#10b981"
   }
@@ -181,22 +181,22 @@ risk: LIVE RISK + SAFETY {
   style.stroke-dash: 5
   style.border-radius: 10
 
-  live: get_live_risk\n\nGREEN: all clear\nYELLOW: no new buys\nORANGE: sell only\nRED: auto kill switch {
+  live: get_live_risk\n\nGREEN: all clear\nYELLOW: no new buys\nORANGE: sell only\nRED: auto kill switch\n+ exit signals + sell recs {
     style.fill: "#fef2f2"
     style.stroke: "#ef4444"
   }
 
-  monitors: Monitors\n\nDaily P&L limits\nATR stop distances\nVIX spike detection\nCash reserve % {
+  monitors: Monitors\n\nDaily P&L limits\nATR + trailing stops\nVIX spike detection\nProfit targets / time decay {
     style.fill: "#fef2f2"
     style.stroke: "#ef4444"
   }
 
-  hook: Pre-Trade Hook + Kill Switch\n\nPositions, Concentration\nCash reserve, Drawdown 10% {
+  hook: Pre-Trade Hook + Kill Switch\n\nPositions, Concentration\nRegime-conditional cash target\nDrawdown 10%, Earnings gate {
     style.fill: "#fef2f2"
     style.stroke: "#fca5a5"
   }
 
-  sizer: Position Sizer\n\nKelly / ATR / Inverse-ATR {
+  sizer: Position Sizer\n\nKelly / ATR / Inverse-ATR\nCorrelation-aware\nEarnings avoidance {
     style.fill: "#f0fdf4"
     style.stroke: "#86efac"
   }
@@ -252,6 +252,7 @@ data: DATA + PERSISTENCE {
 runtime -> council: stock analysis {style.stroke-dash: 3}
 runtime -> predictions: prediction mkts {style.stroke-dash: 3}
 runtime -> arb: arb scanning {style.stroke-dash: 3}
+risk -> council: Step 0 check {style.stroke-dash: 3}
 council -> risk: validates {style.stroke-dash: 3}
 predictions -> risk: validates {style.stroke-dash: 3}
 data -> council: feeds {style.stroke-dash: 3}
