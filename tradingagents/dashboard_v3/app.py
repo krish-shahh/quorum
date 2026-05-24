@@ -692,6 +692,69 @@ def get_kalshi_trending_events():
         return []
 
 
+def get_event_calendar():
+    """Get Kalshi events grouped by resolution timeframe for the calendar view."""
+    try:
+        from tradingagents.dataflows.kalshi import get_events
+        from datetime import datetime, timezone
+        events = get_events(limit=30, with_nested_markets=True)
+        now = datetime.now(timezone.utc)
+        buckets = {"this_week": [], "this_month": [], "this_quarter": [], "this_year": [], "long_dated": []}
+        for e in events:
+            if not e.markets:
+                continue
+            # Use earliest close_time from nested markets
+            close_times = []
+            for m in e.markets:
+                try:
+                    ct = datetime.fromisoformat(m.close_time.replace("Z", "+00:00"))
+                    close_times.append(ct)
+                except Exception:
+                    pass
+            if not close_times:
+                continue
+            earliest = min(close_times)
+            delta = earliest - now
+            days = delta.days
+            if days < 0:
+                continue  # already closed
+            total_vol = sum(m.volume for m in e.markets)
+            if total_vol < 10:
+                continue
+            # Top market by volume for display
+            top_market = max(e.markets, key=lambda m: m.volume)
+            entry = {
+                "event_ticker": e.event_ticker,
+                "title": e.title,
+                "sub_title": e.sub_title,
+                "category": e.category,
+                "num_markets": len(e.markets),
+                "total_volume": total_vol,
+                "close_date": earliest.strftime("%b %d, %Y"),
+                "days_until": days,
+                "can_close_early": any(m.can_close_early for m in e.markets),
+                "top_prob": top_market.implied_probability,
+                "top_market_title": top_market.title[:60],
+            }
+            if days <= 7:
+                buckets["this_week"].append(entry)
+            elif days <= 30:
+                buckets["this_month"].append(entry)
+            elif days <= 90:
+                buckets["this_quarter"].append(entry)
+            elif days <= 365:
+                buckets["this_year"].append(entry)
+            else:
+                buckets["long_dated"].append(entry)
+        # Sort each bucket by days_until
+        for k in buckets:
+            buckets[k].sort(key=lambda e: e["days_until"])
+        return buckets
+    except Exception as exc:
+        print(f"[v3] event calendar error: {exc}")
+        return {"this_week": [], "this_month": [], "this_quarter": [], "this_year": [], "long_dated": []}
+
+
 def get_cross_platform_comparison():
     """Compare Kalshi vs Polymarket prices for matching markets."""
     try:
@@ -1239,6 +1302,7 @@ def create_app():
         council_candidates = get_council_candidates_data()
         poly_markets = get_polymarket_trending()
         cross_platform = get_cross_platform_comparison()
+        event_calendar = get_event_calendar()
         return render_template("predictions.html",
                                positions=kalshi_positions,
                                events=kalshi_events,
@@ -1247,6 +1311,7 @@ def create_app():
                                council_candidates=council_candidates,
                                poly_markets=poly_markets,
                                cross_platform=cross_platform,
+                               event_calendar=event_calendar,
                                page="predictions")
 
     @app.route("/pipeline")

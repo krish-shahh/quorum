@@ -105,7 +105,7 @@ Prediction markets are fundamentally different — probabilities of binary outco
 
 ### Dashboard
 - [x] **Prediction markets page** — `/predictions` route with positions table (side YES/NO badges, entry price, cost, reasoning) + trending events grid with probability bars, category badges, volume, bid/ask, time-to-close. Added to nav bar.
-- [ ] **Event calendar** — deferred (upcoming resolutions view)
+- [x] **Event calendar** — timeline view grouping events by resolution window (This Week/Month/Quarter/Year/1yr+). Shows category, top market prob, close date, market count. Inserted between Prediction Markets Hub and Council Candidates on `/predictions` page.
 
 ### MCP Tools (7 new)
 - `get_kalshi_markets` — list open markets with pricing
@@ -200,6 +200,74 @@ pip install empyrical-reloaded quantstats
 - [x] **empyrical analytics replacement** — `tradingagents/quant/analytics.py`: wraps empyrical-reloaded with graceful fallback. Adds VaR, CVaR, Calmar, omega, tail ratio, stability. Updated `get_analytics_summary` MCP tool to use empyrical when available. `pip install empyrical-reloaded --no-deps` (installed).
 
 - [ ] **QuantStats tear sheets** — deferred (quantstats has broken `peewee` build dep on this system; empyrical covers the metrics).
+
+---
+
+## Phase 5: Headless Budget Optimization (target: June 15, 2026)
+
+**Goal:** Fit headless `claude -p` trading into the $20/month Pro Agent SDK credit.
+
+**Problem:** Current 4-cycles/day schedule costs ~$125-250/month. Pro credit is $20/month after downgrade from Max 5x.
+
+**Solution:** Two-tier headless system — cheap pre-check gates full council runs. Combined with interactive sessions for ad-hoc analysis (interactive uses subscription limits, not SDK credit).
+
+### Architecture
+
+```
+launchd (9:30 AM weekdays)
+  └── claude -p "pre-check" (~$0.10-0.20 per invocation)
+        ├── Call get_ticker_deltas + get_market_regime
+        ├── Call get_kalshi_positions + get_kalshi_market (price check)
+        ├── If nothing moved >3% AND regime unchanged → LOG + EXIT
+        └── If trigger hit → run full trading council (~$1.50-2.00)
+
+Interactive (subscription limits, $0 SDK cost):
+  ├── Manual /trading-council when checking in
+  ├── Manual /prediction-council or /prediction-arb-scan
+  └── EOD report run interactively
+```
+
+### Budget Estimate
+
+| Item | Count/month | Unit cost | Monthly |
+|------|-------------|-----------|---------|
+| Pre-checks (no trigger) | ~15 | $0.15 | $2.25 |
+| Full councils (triggered) | ~6 | $1.75 | $10.50 |
+| Pre-checks that trigger | ~6 | $0.15 | $0.90 |
+| **Total** | | | **~$13.65** |
+
+Buffer: ~$6/month for spikes, extra Kalshi monitoring, or volatile days.
+
+### Implementation
+
+- [ ] **1. Build pre-check prompt** — Minimal prompt that calls only `get_ticker_deltas`, `get_market_regime`, and `get_kalshi_positions`. Outputs structured JSON: `{"action": "SKIP"|"TRADE", "reason": "..."}`. No subagents, no council, no wiki writes.
+
+- [ ] **2. Update `start-trading-day.sh`** — Two-stage script: run pre-check first with `--output-format json`, parse result, only invoke full council if action is TRADE. Log both stages.
+
+- [ ] **3. Reduce launchd to 1 headless cycle/day** — Change plist from 4 CalendarIntervals to 1 (9:30 AM only). Midday/afternoon/EOD cycles become interactive-only.
+
+- [ ] **4. Add cost tracking** — Log estimated token usage per `claude -p` invocation to `~/.tradingagents/logs/sdk-cost-YYYY-MM.log`. Running monthly total. Alert if approaching $18 (90% of credit).
+
+- [ ] **5. Update CLAUDE.md and architecture diagram** — Document the hybrid model: headless morning pre-check + interactive ad-hoc cycles.
+
+- [ ] **6. Test end-to-end** — Dry-run the pre-check script with `claude -p`. Verify it correctly skips on quiet days and triggers on volatile days. Measure actual token cost per invocation.
+
+- [ ] **7. Opt in to Agent SDK credit** — Claim the credit via Claude account before June 15. One-time action.
+
+### Claude Code Built-in Commands to Adopt
+
+Commands to integrate into the workflow when implementing Phase 5:
+
+- [ ] **`/effort low` for pre-check gate** — Run the headless pre-check at low reasoning effort to cut token cost. Only bump to default effort when triggering the full council.
+- [ ] **`/usage` for cost tracking** — Run at end of interactive sessions to track SDK credit burn. Feed into the cost tracking log (task 4 above).
+- [ ] **`/compact` for long interactive sessions** — If running multiple manual `/trading-council` cycles in one session, compact between cycles to avoid context blowup (4 subagents × 4 cycles = 16 analyst reports in context).
+
+### Decision Log
+
+- 2026-05-23: Decided on pre-check gate + hybrid approach. Defer implementation until closer to June 15 cutover. Current Max 5x plan covers headless usage until then.
+- 2026-05-23: Reviewed all Claude Code built-in commands. `/goal` considered but rejected for headless — too fragile for all-day unattended use vs independent `claude -p` invocations. `/effort`, `/usage`, `/compact` are the three worth adopting.
+
+---
 
 #### Tier 4: Validation + adaptive weights (requires trade history)
 

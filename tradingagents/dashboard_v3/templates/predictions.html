@@ -207,6 +207,81 @@
   {% endif %}
 </div>
 
+{# ── Event Calendar ─────────────────────────────────────────────── #}
+{% set cal = event_calendar %}
+{% set cal_total = cal.this_week|length + cal.this_month|length + cal.this_quarter|length + cal.this_year|length + cal.long_dated|length %}
+{% if cal_total > 0 %}
+<div class="bg-white border border-gray-200 rounded-lg mb-4 overflow-hidden">
+  <div class="px-4 py-2.5 border-b border-gray-100 flex items-center justify-between">
+    <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-wider">Event Calendar</h2>
+    <span class="text-[10px] font-mono text-gray-400">{{ cal_total }} events by resolution window</span>
+  </div>
+
+  {# ── Timeline buckets ── #}
+  {% set buckets = [
+    ('this_week', 'This Week', 'bg-red-500', 'bg-red-50', 'text-red-700', 'border-red-200'),
+    ('this_month', 'This Month', 'bg-amber-500', 'bg-amber-50', 'text-amber-700', 'border-amber-200'),
+    ('this_quarter', 'This Quarter', 'bg-blue-500', 'bg-blue-50', 'text-blue-700', 'border-blue-200'),
+    ('this_year', 'This Year', 'bg-gray-400', 'bg-gray-50', 'text-gray-600', 'border-gray-200'),
+    ('long_dated', '1yr+', 'bg-gray-300', 'bg-gray-50', 'text-gray-500', 'border-gray-200'),
+  ] %}
+
+  {# ── Summary bar ── #}
+  <div class="px-4 py-2 border-b border-gray-100 flex items-center gap-3">
+    {% for key, label, dot_color, bg, text, border in buckets %}
+    {% set count = cal[key]|length %}
+    {% if count > 0 %}
+    <div class="flex items-center gap-1.5">
+      <span class="w-2 h-2 rounded-full {{ dot_color }}"></span>
+      <span class="text-[10px] font-semibold {{ text }}">{{ label }}</span>
+      <span class="text-[10px] font-mono text-gray-400">({{ count }})</span>
+    </div>
+    {% endif %}
+    {% endfor %}
+  </div>
+
+  {# ── Event rows grouped by bucket ── #}
+  <div class="divide-y divide-gray-100">
+    {% for key, label, dot_color, bg, text, border in buckets %}
+    {% if cal[key] %}
+    <div class="px-4 py-2">
+      <div class="text-[10px] font-semibold text-gray-500 uppercase mb-1.5 flex items-center gap-1.5">
+        <span class="w-1.5 h-1.5 rounded-full {{ dot_color }}"></span>{{ label }}
+      </div>
+      <div class="space-y-1">
+        {% for ev in cal[key][:8] %}
+        <div class="flex items-center gap-3 px-2 py-1.5 rounded {{ bg }} {{ border }} border">
+          {{ category_badge(ev.category) }}
+          <div class="flex-1 min-w-0">
+            <div class="text-[11px] text-gray-900 truncate">{{ ev.title }}</div>
+            <div class="text-[9px] text-gray-400">{{ ev.top_market_title }}</div>
+          </div>
+          <div class="shrink-0 text-right">
+            <div class="text-[10px] font-mono {{ text }}">{{ ev.close_date }}</div>
+            <div class="text-[9px] text-gray-400">{{ ev.days_until }}d
+              {% if ev.can_close_early %}<span class="text-amber-500" title="Can close early">*</span>{% endif %}
+            </div>
+          </div>
+          <div class="shrink-0 w-16">
+            {{ prob_bar(ev.top_prob) }}
+          </div>
+          <div class="shrink-0 text-right w-12">
+            <div class="text-[10px] font-mono text-gray-500">{{ ev.num_markets }}</div>
+            <div class="text-[9px] text-gray-400">mkts</div>
+          </div>
+        </div>
+        {% endfor %}
+        {% if cal[key]|length > 8 %}
+        <div class="text-[9px] text-gray-400 text-center py-0.5">+{{ cal[key]|length - 8 }} more</div>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
 {# ── Council Candidates ─────────────────────────────────────────── #}
 {% if council_candidates %}
 <div class="bg-white border border-gray-200 rounded-lg mb-4 overflow-hidden">
