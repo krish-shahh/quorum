@@ -175,7 +175,7 @@ arb: ARBITRAGE SCANNER {
 # LIVE RISK + SAFETY
 # ══════════════════════════════════════════════════════════════
 
-risk: LIVE RISK + SAFETY — Beacon Platform inspired {
+risk: LIVE RISK + SAFETY {
   style.fill: "#fef2f2"
   style.stroke: "#ef4444"
   style.stroke-dash: 5
@@ -225,7 +225,12 @@ data: DATA + PERSISTENCE {
     style.stroke: "#c4b5fd"
   }
 
-  persist: Persistence Layer\n\nWiki: analysis pages\nMemory: 5 session files\nAudit: MCP call JSONL\nBacktest: quant IC replay {
+  wiki: Wiki Knowledge Base\n\nPer-ticker analysis pages\nDaily digest summaries\nRegime change records\nCouncil run archives\nAccumulates over time\n(Karpathy LLM context pattern) {
+    style.fill: "#fff"
+    style.stroke: "#e5e7eb"
+  }
+
+  persist: Persistence Layer\n\nMemory: 5 cross-session files\nAudit: MCP call JSONL\nBacktest: quant IC replay {
     style.fill: "#fff"
     style.stroke: "#e5e7eb"
   }
@@ -236,6 +241,7 @@ data: DATA + PERSISTENCE {
   }
 
   market -> db: writes
+  db -> wiki: analysis pages
   db -> persist: syncs
 }
 
