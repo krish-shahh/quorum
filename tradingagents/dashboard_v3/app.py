@@ -4,6 +4,7 @@ All data-fetching is ported from the Reflex v2 state.py into plain
 functions.  Templates use Jinja2 + Tailwind CDN + Chart.js + htmx.
 """
 
+import json
 import sys
 from datetime import date, datetime
 from pathlib import Path
@@ -1008,9 +1009,30 @@ def get_dag_data(ticker):
                 "asset_class": asset_info["asset_class"],
             }
 
-        return {"scores": scores, "report": report, "trade": trade}
+        # Quant pre-screen scores
+        quant = {}
+        try:
+            qrow = conn.execute(
+                "SELECT * FROM quant_scores WHERE ticker = ? ORDER BY scored_at DESC LIMIT 1",
+                (ticker,),
+            ).fetchone()
+            if qrow:
+                quant = {
+                    "fundamental": round(qrow["fundamental_score"], 2),
+                    "technical": round(qrow["technical_score"], 2),
+                    "data_quality": round(qrow["data_quality"], 2),
+                    "asset_class": qrow["asset_class"],
+                    "sector": qrow["sector"] or "",
+                    "scored_at": qrow["scored_at"][:16],
+                    "vetoes": json.loads(qrow["vetoes_json"]) if qrow["vetoes_json"] else [],
+                    "components": json.loads(qrow["components_json"]) if qrow["components_json"] else {},
+                }
+        except Exception:
+            pass
+
+        return {"scores": scores, "report": report, "trade": trade, "quant": quant}
     except Exception:
-        return {"scores": {}, "report": {}, "trade": {}}
+        return {"scores": {}, "report": {}, "trade": {}, "quant": {}}
 
 
 def get_wiki_pages(filter_type="all"):

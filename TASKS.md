@@ -19,8 +19,8 @@ These are blocked or waiting on prerequisites:
 - [ ] **Polymarket API integration** — deferred to future phase
 - [ ] **QuantStats tear sheets** — blocked (quantstats has broken `peewee` build dep; empyrical covers the metrics)
 - [ ] **Adaptive council weights via IC** — needs 50+ trades with forward returns for statistical validity. Infrastructure ready (`signal_scores` table + `fill_forward_returns()`)
-- [ ] **Quant score backtesting** — code path exists via `get_quant_scores()` historical replay, not wired up yet
-- [ ] **Pipeline dashboard: quant breakdown** — show quant pre-screen in DAG step 2 on Pipeline page
+- [x] **Quant score backtesting** — `tradingagents/backtest/quant_replay.py`: `replay_quant_scores(ticker, start, end, regime)` downloads historical OHLCV, computes technical indicators at each date, runs scorer, compares with forward returns (1d/5d/20d), computes IC (Spearman rank correlation). Tested: AAPL 83 days scored.
+- [x] **Pipeline dashboard: quant breakdown** — added "Quant Pre-Screen" step (Q) to the decision DAG between Analyst Scores and Council Weighting. Shows fundamental/technical scores, data quality %, vetoes (red badges), and component breakdown.
 
 ---
 
