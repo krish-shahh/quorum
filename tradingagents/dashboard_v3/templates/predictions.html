@@ -385,6 +385,61 @@
 </div>
 {% endif %}
 
+{# ── Prediction Calibration ────────────────────────────────────── #}
+{% if calibration %}
+<div class="bg-white border border-gray-200 rounded-lg mb-4 overflow-hidden">
+  <div class="px-4 py-2.5 border-b border-gray-100 flex items-center justify-between">
+    <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-wider">Forecast Calibration</h2>
+    <span class="text-[10px] font-mono text-gray-400">{{ calibration.total_resolved }} resolved | {{ calibration.wins }}W {{ calibration.losses }}L</span>
+  </div>
+  <div class="px-4 py-3">
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
+      <div class="bg-gray-50 rounded-lg p-3 text-center">
+        <div class="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-1">Brier Score</div>
+        <div class="text-lg font-mono font-semibold
+          {% if calibration.brier_score is not none %}
+            {% if calibration.brier_score <= 0.20 %}text-green-600
+            {% elif calibration.brier_score <= 0.30 %}text-amber-600
+            {% else %}text-red-600{% endif %}
+          {% else %}text-gray-400{% endif %}">
+          {% if calibration.brier_score is not none %}{{ "%.3f"|format(calibration.brier_score) }}{% else %}N/A{% endif %}
+        </div>
+        <div class="text-[9px] text-gray-400 mt-0.5">0=perfect, 0.25=coin flip</div>
+      </div>
+      <div class="bg-gray-50 rounded-lg p-3 text-center">
+        <div class="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-1">Log Score</div>
+        <div class="text-lg font-mono font-semibold
+          {% if calibration.log_score is not none %}
+            {% if calibration.log_score >= -0.30 %}text-green-600
+            {% elif calibration.log_score >= -0.60 %}text-amber-600
+            {% else %}text-red-600{% endif %}
+          {% else %}text-gray-400{% endif %}">
+          {% if calibration.log_score is not none %}{{ "%.3f"|format(calibration.log_score) }}{% else %}N/A{% endif %}
+        </div>
+        <div class="text-[9px] text-gray-400 mt-0.5">0=perfect, more negative=worse</div>
+      </div>
+      <div class="bg-gray-50 rounded-lg p-3 text-center">
+        <div class="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-1">Win Rate</div>
+        <div class="text-lg font-mono font-semibold text-gray-900">
+          {{ "%.0f"|format(calibration.wins / calibration.total_resolved * 100) }}%
+        </div>
+        <div class="text-[9px] text-gray-400 mt-0.5">{{ calibration.wins }}/{{ calibration.total_resolved }}</div>
+      </div>
+      <div class="bg-gray-50 rounded-lg p-3 text-center">
+        <div class="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-1">Skill Level</div>
+        <div class="text-lg font-semibold
+          {% if calibration.brier_score is not none and calibration.brier_score <= 0.15 %}text-green-600">Superforecaster
+          {% elif calibration.brier_score is not none and calibration.brier_score <= 0.25 %}text-blue-600">Above Average
+          {% elif calibration.brier_score is not none %}text-gray-600">Average
+          {% else %}text-gray-400">Pending{% endif %}
+        </div>
+        <div class="text-[9px] text-gray-400 mt-0.5">&lt;0.20 = superforecaster (Tetlock)</div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
 {# ── Markets Side-by-Side ──────────────────────────────────────── #}
 <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
 

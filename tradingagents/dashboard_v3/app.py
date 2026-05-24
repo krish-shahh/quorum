@@ -231,6 +231,7 @@ def get_trades_data():
                 compute_sharpe_ratio, compute_sortino_ratio,
                 compute_max_drawdown_series, compute_alpha_vs_benchmark,
                 compute_win_rate_by_ticker, compute_win_rate_by_signal,
+                compute_profit_factor, compute_expectancy, compute_sqn,
             )
             from tradingagents.execution.trade_data import compute_pnl_by_ticker
 
@@ -252,6 +253,9 @@ def get_trades_data():
                 {"ticker": d["ticker"], "pnl": round(d["pnl"], 2), "trades": d["trades"]}
                 for d in compute_pnl_by_ticker(trades)
             ]
+            analytics["profit_factor"] = round(compute_profit_factor(trades), 2)
+            analytics["expectancy"] = round(compute_expectancy(trades), 2)
+            analytics["sqn"] = round(compute_sqn(trades), 2)
         except Exception:
             pass
 
@@ -654,6 +658,33 @@ def get_kalshi_positions():
         return []
 
 
+def get_kalshi_calibration():
+    """Get Brier/Log scores for resolved Kalshi positions."""
+    try:
+        config = _cfg()
+        from tradingagents.execution.db import get_db
+        from tradingagents.execution.analytics import compute_brier_score, compute_log_score
+        conn = get_db(config)
+        rows = conn.execute(
+            "SELECT * FROM kalshi_positions WHERE status = 'settled' ORDER BY settled_at DESC"
+        ).fetchall()
+        if not rows:
+            return None
+        positions = [dict(r) for r in rows]
+        brier = compute_brier_score(positions)
+        log_score = compute_log_score(positions)
+        return {
+            "total_resolved": len(positions),
+            "wins": sum(1 for p in positions if p.get("result") == "win"),
+            "losses": sum(1 for p in positions if p.get("result") == "loss"),
+            "brier_score": round(brier, 4) if brier is not None else None,
+            "log_score": round(log_score, 4) if log_score is not None else None,
+            "positions": positions[:10],
+        }
+    except Exception:
+        return None
+
+
 def get_kalshi_trending_events():
     """Get trending Kalshi events with volume."""
     try:
@@ -753,6 +784,26 @@ def get_event_calendar():
     except Exception as exc:
         print(f"[v3] event calendar error: {exc}")
         return {"this_week": [], "this_month": [], "this_quarter": [], "this_year": [], "long_dated": []}
+
+
+def get_live_risk_data():
+    """Get live intraday risk status for the trading dashboard."""
+    try:
+        config = _cfg()
+        from tradingagents.execution.safety import compute_live_risk
+        return compute_live_risk(config)
+    except Exception as exc:
+        print(f"[v3] live risk error: {exc}")
+        return {
+            "risk_level": "unknown",
+            "daily_pnl": 0, "daily_pnl_pct": 0,
+            "intraday_drawdown": 0,
+            "cash_reserve_pct": 0,
+            "vix": 0,
+            "consecutive_losses": 0,
+            "position_stops": [],
+            "stops_breached": [],
+        }
 
 
 def get_cross_platform_comparison():
@@ -1234,10 +1285,12 @@ def create_app():
         activity = get_activity_feed(trades["recent"])
         dates = get_available_dates()
         historical = get_historical_data(hist_date) if hist_date else None
+        live_risk = get_live_risk_data() if not hist_date else None
         return render_template("trading.html",
                                acct=acct, trades=trades, regime=regime,
                                activity=activity, dates=dates,
                                hist_date=hist_date, historical=historical,
+                               live_risk=live_risk,
                                page="trading")
 
     @app.route("/council")
@@ -1303,6 +1356,7 @@ def create_app():
         poly_markets = get_polymarket_trending()
         cross_platform = get_cross_platform_comparison()
         event_calendar = get_event_calendar()
+        calibration = get_kalshi_calibration()
         return render_template("predictions.html",
                                positions=kalshi_positions,
                                events=kalshi_events,
@@ -1312,6 +1366,7 @@ def create_app():
                                poly_markets=poly_markets,
                                cross_platform=cross_platform,
                                event_calendar=event_calendar,
+                               calibration=calibration,
                                page="predictions")
 
     @app.route("/pipeline")

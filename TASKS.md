@@ -298,5 +298,7 @@ Update `trading-council/SKILL.md` with new Step 2.5 (Quant Pre-Screening):
 
 - [x] Council page: quant score bars (indigo) alongside LLM score bars in deep dive
 - [x] Trading page: replaced allocation doughnut with finviz-style treemap (Sector > Ticker, sized by weight, colored by P&L %). Uses `chartjs-chart-treemap` plugin. VaR and leverage badges in regime bar.
-- [ ] Performance page: empyrical metrics display (VaR, CVaR, Calmar) — data available via MCP, dashboard display pending
+- [x] Performance page: split KPIs into two rows — top row (Sharpe, Sortino, Max DD, Alpha, Win Rate) + bottom row (Profit Factor, Expectancy, SQN, Total Trades)
+- [x] Trading page: live risk status banner — color-coded GREEN/YELLOW/ORANGE/RED bar with daily P&L, intraday drawdown, cash reserve %, per-position ATR stop distances
+- [x] Predictions page: forecast calibration card — Brier Score, Log Score, win rate, skill level label (Tetlock scale) for resolved Kalshi positions
 - [ ] Pipeline page: quant breakdown in DAG step 2 — pending

@@ -18,13 +18,28 @@
 {% block content %}
 
 {# ── 1. KPI ROW ────────────────────────────────────────────────────── #}
-<div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
-  {% set kpis = [
+<div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 mb-3">
+  {% set kpis_top = [
     ('SHARPE RATIO', trades.analytics.sharpe|default(0, true)),
     ('SORTINO RATIO', trades.analytics.sortino|default(0, true)),
     ('MAX DRAWDOWN', (trades.analytics.max_dd|default(0, true)|string) + '%'),
     ('ALPHA VS SPY', (trades.analytics.alpha|default(0, true)|string) + '%'),
     ('WIN RATE', (trades.win_rate * 100)|round(1)|string + '%'),
+  ] %}
+  {% for label, value in kpis_top %}
+  <div class="bg-white border border-gray-200 rounded-lg p-4">
+    <div class="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-1">{{ label }}</div>
+    <div class="text-xl font-mono font-semibold text-gray-900">{{ value }}</div>
+  </div>
+  {% endfor %}
+</div>
+<div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+  {% set pf_val = trades.analytics.profit_factor|default(0, true) %}
+  {% set sqn_val = trades.analytics.sqn|default(0, true) %}
+  {% set kpis = [
+    ('PROFIT FACTOR', pf_val),
+    ('EXPECTANCY', '$' + (trades.analytics.expectancy|default(0, true)|string)),
+    ('SQN', sqn_val),
     ('TOTAL TRADES', trades.total),
   ] %}
   {% for label, value in kpis %}
