@@ -492,3 +492,36 @@ class PositionSizer:
         except Exception:
             pass
         return allocation
+
+
+# ---------------------------------------------------------------------------
+# Inverse-ATR portfolio weighting (risk parity)
+# ---------------------------------------------------------------------------
+
+
+def compute_inverse_atr_weights(
+    tickers: List[str],
+    atr_cache: Optional[Dict[str, float]] = None,
+) -> Dict[str, float]:
+    """Compute inverse-ATR normalized weights for risk-parity allocation.
+
+    weight_i = (1/ATR_i) / sum(1/ATR_j).  Lower volatility -> higher weight.
+    Returns dict of ticker -> weight (0 to 1, summing to 1.0).
+    Falls back to equal weight if ATR unavailable.
+    """
+    from tradingagents.execution.safety import _get_cached_atr
+
+    inv_atrs: Dict[str, float] = {}
+    for ticker in tickers:
+        atr = (atr_cache or {}).get(ticker) or _get_cached_atr(ticker)
+        if atr and atr > 0:
+            inv_atrs[ticker] = 1.0 / atr
+        else:
+            inv_atrs[ticker] = 1.0
+
+    total = sum(inv_atrs.values())
+    if total == 0:
+        n = len(tickers) or 1
+        return {t: 1.0 / n for t in tickers}
+
+    return {t: round(v / total, 4) for t, v in inv_atrs.items()}

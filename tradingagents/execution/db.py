@@ -189,6 +189,7 @@ CREATE TABLE IF NOT EXISTS kalshi_positions (
     contracts   INTEGER NOT NULL DEFAULT 1,
     entry_price REAL    NOT NULL DEFAULT 0.0,
     cost        REAL    NOT NULL DEFAULT 0.0,
+    council_probability REAL,
     reasoning   TEXT    NOT NULL DEFAULT '',
     status      TEXT    NOT NULL DEFAULT 'open',
     result      TEXT    NOT NULL DEFAULT '',
@@ -244,6 +245,35 @@ CREATE TABLE IF NOT EXISTS arb_executions (
     FOREIGN KEY (scan_id) REFERENCES arb_scans(id)
 );
 CREATE INDEX IF NOT EXISTS idx_arb_exec_status ON arb_executions(status);
+
+CREATE TABLE IF NOT EXISTS intraday_risk (
+    date        TEXT PRIMARY KEY,
+    open_value  REAL NOT NULL,
+    high_value  REAL NOT NULL,
+    low_value   REAL NOT NULL,
+    current_value REAL NOT NULL,
+    daily_pnl   REAL NOT NULL DEFAULT 0.0,
+    daily_pnl_pct REAL NOT NULL DEFAULT 0.0,
+    risk_level  TEXT NOT NULL DEFAULT 'green',
+    updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS signal_scores (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    ticker              TEXT NOT NULL,
+    score_date          TEXT NOT NULL,
+    council_score       REAL,
+    technical_score     REAL,
+    fundamental_score   REAL,
+    sentiment_score     REAL,
+    news_score          REAL,
+    forward_return_1d   REAL,
+    forward_return_5d   REAL,
+    forward_return_20d  REAL,
+    created_at          TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_ss_ticker ON signal_scores(ticker);
+CREATE INDEX IF NOT EXISTS idx_ss_date ON signal_scores(score_date);
 """
 
 # ──────────────────────────────────────────────────────────────────────
@@ -287,6 +317,14 @@ def get_db(config: Optional[Dict[str, Any]] = None) -> sqlite3.Connection:
         conn.execute("PRAGMA journal_mode=WAL")
         conn.executescript(_SCHEMA_SQL)
         conn.commit()
+
+        # Migrate: add council_probability column if missing
+        try:
+            conn.execute("ALTER TABLE kalshi_positions ADD COLUMN council_probability REAL")
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass  # Column already exists
+
         _connections[key] = conn
 
         if fresh:
@@ -526,7 +564,8 @@ def db_table_counts(config: Optional[Dict[str, Any]] = None) -> Dict[str, int]:
     """Return a mapping of table name -> row count for every execution table."""
     conn = get_db(config)
     tables = ["watchlist", "paper_positions", "paper_account", "trades",
-              "safety_state", "config_overrides", "ticker_state"]
+              "safety_state", "config_overrides", "ticker_state",
+              "intraday_risk", "signal_scores"]
     counts: Dict[str, int] = {}
     for tbl in tables:
         row = conn.execute(f"SELECT COUNT(*) FROM {tbl}").fetchone()  # noqa: S608
@@ -597,3 +636,83 @@ def get_all_latest_states(
         "ORDER BY ts.weighted_score DESC",
     ).fetchall()
     return [dict(r) for r in rows]
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Signal score helpers
+# ──────────────────────────────────────────────────────────────────────
+
+def save_signal_score(
+    config: Optional[Dict[str, Any]],
+    ticker: str,
+    scores: Dict[str, float],
+    council_score: float,
+) -> None:
+    """Save council analysis scores for future IC computation."""
+    from datetime import date
+    conn = get_db(config)
+    conn.execute(
+        """INSERT INTO signal_scores
+           (ticker, score_date, council_score, technical_score, fundamental_score,
+            sentiment_score, news_score)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        (
+            ticker,
+            date.today().isoformat(),
+            council_score,
+            scores.get("technical", None),
+            scores.get("fundamental", None),
+            scores.get("sentiment", None),
+            scores.get("news", None),
+        ),
+    )
+    conn.commit()
+
+
+def fill_forward_returns(config: Optional[Dict[str, Any]] = None) -> int:
+    """Batch-fill actual forward returns for signal_scores rows.
+
+    For rows where forward_return_1d is NULL and score_date is old enough,
+    fetch actual returns and fill. Returns count of rows updated.
+    """
+    import yfinance as yf
+    from datetime import date, timedelta
+
+    conn = get_db(config)
+    today = date.today()
+    rows = conn.execute(
+        """SELECT id, ticker, score_date FROM signal_scores
+           WHERE forward_return_1d IS NULL
+           AND date(score_date) <= date(?, '-5 days')
+           LIMIT 50""",
+        (today.isoformat(),),
+    ).fetchall()
+
+    updated = 0
+    for row in rows:
+        try:
+            score_dt = date.fromisoformat(row["score_date"])
+            hist = yf.Ticker(row["ticker"]).history(
+                start=score_dt.isoformat(),
+                end=(score_dt + timedelta(days=25)).isoformat(),
+            )
+            if hist is None or len(hist) < 2:
+                continue
+            close = hist["Close"]
+            base_price = float(close.iloc[0])
+            if base_price <= 0:
+                continue
+            ret_1d = float((close.iloc[min(1, len(close)-1)] - base_price) / base_price) if len(close) > 1 else None
+            ret_5d = float((close.iloc[min(5, len(close)-1)] - base_price) / base_price) if len(close) > 5 else None
+            ret_20d = float((close.iloc[min(20, len(close)-1)] - base_price) / base_price) if len(close) > 20 else None
+            conn.execute(
+                """UPDATE signal_scores
+                   SET forward_return_1d = ?, forward_return_5d = ?, forward_return_20d = ?
+                   WHERE id = ?""",
+                (ret_1d, ret_5d, ret_20d, row["id"]),
+            )
+            updated += 1
+        except Exception:
+            continue
+    conn.commit()
+    return updated

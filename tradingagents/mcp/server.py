@@ -109,6 +109,7 @@ def create_server():
         # Quantitative scoring
         Tool(name="get_quant_scores", description="Compute deterministic quantitative scores for a ticker. Returns fundamental and technical quant scores (1-5), data quality (0-1), component breakdowns, and hard vetoes. Asset-type aware: uses sector-specific scoring (banks, healthcare, tech, bonds, commodities). These are auditable, math-based scores — not LLM judgment.", inputSchema={"type": "object", "properties": {"ticker": {"type": "string", "description": "Stock/ETF/futures ticker"}, "regime": {"type": "string", "description": "Current regime (risk_on/risk_off/volatile/transition). Auto-detected if omitted.", "default": ""}}, "required": ["ticker"]}),
         Tool(name="get_portfolio_risk", description="Compute portfolio-level risk metrics: historical VaR (95%, 1-day), total notional exposure, position correlation, sector concentration. Use before new buys to check portfolio health.", inputSchema={"type": "object", "properties": {}}),
+        Tool(name="get_live_risk", description="Live intraday risk check. Returns daily P&L, drawdown, ATR stop distances, cash reserve, VIX, and circuit breaker status (GREEN/YELLOW/ORANGE/RED). Call at the start of every trading council cycle.", inputSchema={"type": "object", "properties": {}}),
     ]
 
     @server.list_tools()
@@ -682,6 +683,7 @@ def _handle_tool(name: str, args: dict) -> str:
         from tradingagents.execution.analytics import (
             compute_sharpe_ratio, compute_sortino_ratio,
             compute_alpha_vs_benchmark, compute_win_rate_by_ticker,
+            compute_profit_factor, compute_expectancy, compute_sqn,
         )
         import pandas as pd
 
@@ -752,6 +754,19 @@ def _handle_tool(name: str, args: dict) -> str:
         sortino = compute_sortino_ratio(trades, starting)
         alpha = compute_alpha_vs_benchmark(trades, starting)
 
+        # --- Trade quality metrics ---
+        pf = compute_profit_factor(trades)
+        expectancy = compute_expectancy(trades)
+        sqn = compute_sqn(trades)
+
+        def _sqn_label(v):
+            if v >= 7: return "holy grail"
+            if v >= 5: return "superb"
+            if v >= 3: return "excellent"
+            if v >= 2: return "good"
+            if v >= 1.5: return "below average"
+            return "poor"
+
         lines = [
             "Portfolio Analytics Summary",
             "=" * 40,
@@ -761,6 +776,12 @@ def _handle_tool(name: str, args: dict) -> str:
             f"Sortino Ratio: {sortino:.2f}",
             f"Alpha vs SPY: {alpha.get('alpha', 0):+.2f}%",
             f"Total P&L: ${stats.get('total_realized_pnl', 0):,.2f}",
+            "",
+            "Trade Quality",
+            "-" * 40,
+            f"Profit Factor: {pf:.2f} (>1.5 good, >2.0 excellent)",
+            f"Expectancy: ${expectancy:,.2f} per trade",
+            f"SQN: {sqn:.2f} ({_sqn_label(sqn)})",
         ]
         if empyrical_section:
             lines.append(empyrical_section)
@@ -1185,6 +1206,59 @@ def _handle_tool(name: str, args: dict) -> str:
             f"- Threshold: 3.0% (${account.account_value * 0.03:,.2f})",
             f"- Within limits: {'YES' if var_data['var_95_pct'] <= 3.0 else '**NO**'}",
         ]
+        return "\n".join(lines)
+
+    if name == "get_live_risk":
+        from tradingagents.execution.safety import compute_live_risk
+        risk = compute_live_risk(config)
+
+        level = risk["risk_level"].upper()
+        level_desc = {
+            "GREEN": "All clear",
+            "YELLOW": "Caution — no new buys",
+            "ORANGE": "Warning — sell-only mode",
+            "RED": "HALT — kill switch triggered",
+        }
+
+        lines = [
+            f"# Live Risk Status: {level}",
+            f"**{level_desc.get(level, level)}**",
+            f"",
+            f"## Daily P&L",
+            f"- P&L: ${risk['daily_pnl']:+,.2f} ({risk['daily_pnl_pct']:+.2%})",
+            f"- Open value: ${risk['open_value']:,.2f} → Current: ${risk['current_value']:,.2f}",
+            f"- Intraday high: ${risk['high_value']:,.2f} | Low: ${risk['low_value']:,.2f}",
+            f"- Intraday drawdown: {risk['intraday_drawdown']:.2%}",
+            f"",
+            f"## Cash & Reserves",
+            f"- Cash reserve: {risk['cash_reserve_pct']:.1%}",
+            f"- {'OK' if risk['cash_reserve_pct'] >= 0.20 else '**BELOW 20% TARGET**'}",
+            f"",
+            f"## Market Conditions",
+            f"- VIX: {risk['vix']:.1f}",
+            f"- Consecutive losses today: {risk['consecutive_losses']}",
+        ]
+
+        if risk["position_stops"]:
+            lines.extend([f"", f"## Position Stops (2x ATR)"])
+            for s in risk["position_stops"]:
+                status = "**BREACHED**" if s["breached"] else "OK"
+                stop_str = f"${s['stop_price']}" if s["stop_price"] else "N/A"
+                dist_str = f"{s['distance_pct']:.1%}" if s["distance_pct"] is not None else "N/A"
+                lines.append(
+                    f"- {s['ticker']}: ${s['current_price']} (stop: {stop_str}, "
+                    f"distance: {dist_str}) [{status}]"
+                )
+
+        if risk["stops_breached"]:
+            lines.extend([
+                f"",
+                f"## !! STOPS BREACHED",
+                f"The following positions have broken their 2x ATR stop:",
+            ])
+            for s in risk["stops_breached"]:
+                lines.append(f"- **{s['ticker']}**: price ${s['current_price']} < stop ${s['stop_price']}")
+
         return "\n".join(lines)
 
     # ── Kalshi Prediction Markets ──────────────────────────────────

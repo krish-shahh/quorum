@@ -201,6 +201,16 @@ pip install empyrical-reloaded quantstats
 
 - [ ] **QuantStats tear sheets** — deferred (quantstats has broken `peewee` build dep on this system; empyrical covers the metrics).
 
+#### Tier 3.5: Trade quality + Live risk + Calibration
+
+- [x] **Profit Factor, Expectancy, SQN** — `analytics.py`: three new trade quality metrics. Surfaced in `get_analytics_summary` MCP tool with SQN scale labels.
+- [x] **Live intraday risk monitoring** — `safety.py`: `compute_live_risk()` computes daily P&L, intraday drawdown, per-position ATR stops (cached), cash reserve, VIX, consecutive losses. Circuit breaker tiers: GREEN/YELLOW/ORANGE/RED. Auto kill switch on RED. New `get_live_risk` MCP tool.
+- [x] **Intraday risk DB table** — `db.py`: `intraday_risk` table tracks daily open/high/low/current value and risk level.
+- [x] **Brier Score + Log Score** — `analytics.py`: prediction market calibration for resolved Kalshi positions. Brier = (1/N)×Σ(forecast-outcome)². Log score uses proper scoring rule.
+- [x] **Signal validation infrastructure** — `db.py`: `signal_scores` table + `save_signal_score()` + `fill_forward_returns()` for IC computation (needs 50+ trades).
+- [x] **Council probability tracking** — `db.py`: `council_probability` column on `kalshi_positions` with auto-migration.
+- [x] **Inverse-ATR position weighting** — `position_sizer.py`: `compute_inverse_atr_weights()` for risk-parity allocation. Uses cached ATR from safety module.
+
 ---
 
 ## Phase 5: Headless Budget Optimization (target: June 15, 2026)

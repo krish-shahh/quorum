@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import json
 import logging
+import time
+from datetime import date, datetime
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from .schemas import AccountInfo
 
@@ -213,3 +215,202 @@ class SafetyMonitor:
                 logger.info("Migrated safety state from JSON to SQLite")
             except Exception as exc:  # noqa: BLE001
                 logger.debug("Post-load migration to SQLite failed: %s", exc)
+
+
+# ---------------------------------------------------------------------------
+# Live intraday risk monitoring
+# ---------------------------------------------------------------------------
+
+_atr_cache: Dict[str, tuple] = {}  # ticker -> (atr_value, timestamp)
+_ATR_CACHE_TTL = 3600  # 1 hour
+
+
+def _get_cached_atr(ticker: str) -> Optional[float]:
+    """Get ATR(14) for a ticker with 1-hour cache."""
+    cached = _atr_cache.get(ticker)
+    if cached and (time.time() - cached[1]) < _ATR_CACHE_TTL:
+        return cached[0]
+    try:
+        import yfinance as yf
+        import numpy as np
+        hist = yf.Ticker(ticker).history(period="30d")
+        if hist is None or len(hist) < 15:
+            return None
+        high = hist["High"].values
+        low = hist["Low"].values
+        close = hist["Close"].values
+        tr = np.maximum(
+            high[1:] - low[1:],
+            np.maximum(
+                np.abs(high[1:] - close[:-1]),
+                np.abs(low[1:] - close[:-1]),
+            ),
+        )
+        atr = float(np.mean(tr[-14:]))
+        _atr_cache[ticker] = (atr, time.time())
+        return atr
+    except Exception:
+        return None
+
+
+def _classify_risk_level(
+    daily_pnl_pct: float,
+    cash_reserve_pct: float,
+    vix: float,
+    consecutive_losses: int,
+) -> str:
+    """Pure function: classify circuit breaker tier from metrics."""
+    if daily_pnl_pct <= -0.03 or vix > 30:
+        return "red"
+    if daily_pnl_pct <= -0.02 or consecutive_losses >= 3:
+        return "orange"
+    if daily_pnl_pct <= -0.01 or cash_reserve_pct < 0.20:
+        return "yellow"
+    return "green"
+
+
+def compute_live_risk(config: Dict[str, Any]) -> Dict[str, Any]:
+    """Compute all intraday risk metrics in one call (<2 seconds).
+
+    Returns dict with: risk_level (green/yellow/orange/red), daily_pnl,
+    daily_pnl_pct, intraday_drawdown, cash_reserve_pct, per-position stop
+    distances, consecutive_losses, vix.
+    """
+    import sqlite3
+    from tradingagents.execution.broker.paper_client import PaperBrokerClient
+    from tradingagents.execution.db import get_db
+
+    broker = PaperBrokerClient(config)
+    account = broker.get_account_info()
+    positions = broker.get_positions()
+    current_value = account.account_value
+    cash = account.cash_balance
+    today = date.today().isoformat()
+
+    # --- Daily P&L from intraday_risk table ---
+    conn = get_db(config)
+    row = None
+    try:
+        row = conn.execute(
+            "SELECT * FROM intraday_risk WHERE date = ?", (today,)
+        ).fetchone()
+    except sqlite3.OperationalError:
+        pass
+
+    if row:
+        open_value = row["open_value"]
+        high_value = max(row["high_value"], current_value)
+        low_value = min(row["low_value"], current_value)
+    else:
+        open_value = current_value
+        high_value = current_value
+        low_value = current_value
+
+    daily_pnl = current_value - open_value
+    daily_pnl_pct = daily_pnl / open_value if open_value > 0 else 0.0
+    intraday_drawdown = (high_value - current_value) / high_value if high_value > 0 else 0.0
+
+    # --- Cash reserve ---
+    cash_reserve_pct = cash / current_value if current_value > 0 else 0.0
+
+    # --- Per-position stops ---
+    position_stops = []
+    for p in positions:
+        ticker = p.ticker if hasattr(p, "ticker") else p.get("ticker", "")
+        qty = p.quantity if hasattr(p, "quantity") else p.get("quantity", 0)
+        avg_cost = p.avg_cost if hasattr(p, "avg_cost") else p.get("avg_cost", 0)
+        market_value = p.market_value if hasattr(p, "market_value") else p.get("market_value", 0)
+        current_price = market_value / qty if qty > 0 else 0
+        atr = _get_cached_atr(ticker)
+        if atr and atr > 0:
+            stop_price = avg_cost - (2 * atr)
+            distance_pct = (current_price - stop_price) / current_price if current_price > 0 else 0
+            breached = current_price <= stop_price
+        else:
+            stop_price = None
+            distance_pct = None
+            breached = False
+        position_stops.append({
+            "ticker": ticker,
+            "current_price": round(current_price, 2),
+            "avg_cost": round(avg_cost, 2),
+            "atr": round(atr, 2) if atr else None,
+            "stop_price": round(stop_price, 2) if stop_price else None,
+            "distance_pct": round(distance_pct, 4) if distance_pct is not None else None,
+            "breached": breached,
+        })
+
+    # --- Consecutive losses ---
+    consecutive_losses = 0
+    try:
+        recent_trades = conn.execute(
+            """SELECT account_value_before, account_value_after FROM trades
+               WHERE action_taken = 'executed' AND date(timestamp) = ?
+               ORDER BY timestamp DESC LIMIT 10""",
+            (today,),
+        ).fetchall()
+        for t in recent_trades:
+            if t["account_value_after"] < t["account_value_before"]:
+                consecutive_losses += 1
+            else:
+                break
+    except (sqlite3.OperationalError, KeyError):
+        pass
+
+    # --- VIX ---
+    vix = 16.0  # default
+    try:
+        from tradingagents.dataflows.regime import CrossAssetRegimeDetector
+        regime = CrossAssetRegimeDetector().detect()
+        vix = regime.get("vix", 16.0) if isinstance(regime, dict) else 16.0
+    except Exception:
+        pass
+
+    # --- Circuit breaker ---
+    risk_level = _classify_risk_level(daily_pnl_pct, cash_reserve_pct, vix, consecutive_losses)
+
+    # --- Persist intraday_risk ---
+    try:
+        now = datetime.now().isoformat()
+        conn.execute(
+            """INSERT OR REPLACE INTO intraday_risk
+               (date, open_value, high_value, low_value, current_value,
+                daily_pnl, daily_pnl_pct, risk_level, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (today, open_value, high_value, low_value, current_value,
+             round(daily_pnl, 2), round(daily_pnl_pct, 6), risk_level, now),
+        )
+        conn.commit()
+    except Exception as exc:
+        logger.warning("Failed to persist intraday_risk: %s", exc)
+
+    # --- Auto kill switch if RED ---
+    if risk_level == "red":
+        try:
+            safety = SafetyMonitor(config)
+            if not safety.kill_switch_active:
+                safety.kill_switch_active = True
+                safety._save_state()
+                logger.critical(
+                    "LIVE RISK: RED level triggered auto kill switch. "
+                    "Daily P&L: $%.2f (%.2f%%), VIX: %.1f",
+                    daily_pnl, daily_pnl_pct * 100, vix,
+                )
+        except Exception:
+            pass
+
+    return {
+        "risk_level": risk_level,
+        "daily_pnl": round(daily_pnl, 2),
+        "daily_pnl_pct": round(daily_pnl_pct, 6),
+        "intraday_drawdown": round(intraday_drawdown, 6),
+        "open_value": round(open_value, 2),
+        "high_value": round(high_value, 2),
+        "low_value": round(low_value, 2),
+        "current_value": round(current_value, 2),
+        "cash_reserve_pct": round(cash_reserve_pct, 4),
+        "consecutive_losses": consecutive_losses,
+        "vix": vix,
+        "position_stops": position_stops,
+        "stops_breached": [s for s in position_stops if s["breached"]],
+    }
