@@ -1,0 +1,252 @@
+direction: right
+
+# ══════════════════════════════════════════════════════════════
+# RUNTIME
+# ══════════════════════════════════════════════════════════════
+
+runtime: RUNTIME {
+  style.fill: "#f9fafb"
+  style.stroke: "#d1d5db"
+  style.border-radius: 8
+
+  you: You\n(terminal) {
+    style.fill: "#fff"
+    style.stroke: "#d1d5db"
+  }
+  claude: Claude Code\n(Opus orchestrator) {
+    style.fill: "#eff6ff"
+    style.stroke: "#3b82f6"
+  }
+  mcp: MCP Server\n(stdio protocol) {
+    style.fill: "#f0fdf4"
+    style.stroke: "#10b981"
+  }
+  tools: 50 Python Tools\n(data + execution) {
+    style.fill: "#f0fdf4"
+    style.stroke: "#10b981"
+  }
+  dashboard: Flask Dashboard\n(6 pages + live risk) {
+    style.fill: "#eff6ff"
+    style.stroke: "#3b82f6"
+  }
+  launchd: launchd\n(4x daily headless) {
+    style.fill: "#fffbeb"
+    style.stroke: "#f59e0b"
+  }
+
+  you -> claude: terminal
+  claude -> mcp: stdio
+  mcp -> tools: python
+  tools -> dashboard
+  launchd -> claude: claude -p
+}
+
+# ══════════════════════════════════════════════════════════════
+# STOCK TRADING COUNCIL
+# ══════════════════════════════════════════════════════════════
+
+council: STOCK TRADING COUNCIL — 4 parallel Haiku analysts orchestrated by Opus {
+  style.fill: "#f0fdf4"
+  style.stroke: "#10b981"
+  style.stroke-dash: 5
+  style.border-radius: 10
+
+  delta: Delta Check\n\nskip unchanged tickers\nprice <1%, regime same {
+    style.fill: "#f0fdf4"
+    style.stroke: "#10b981"
+  }
+
+  quant: Quant Pre-Screen\n\nget_quant_scores\n12 hard vetoes\nAltman Z, FCF, RSI {
+    style.fill: "#f5f3ff"
+    style.stroke: "#8b5cf6"
+  }
+
+  analysts: 4 Haiku Subagents in Parallel {
+    style.fill: "#f8fafc"
+    style.stroke: "#d1d5db"
+    style.border-radius: 8
+
+    tech: Technical Analyst\n\nmodel: haiku\nRSI, MACD, SMA, ATR\nRegime-conditional {
+      style.fill: "#eff6ff"
+      style.stroke: "#3b82f6"
+    }
+    domain: Domain Analyst\n\nmodel: haiku\n7 sector specialists\nTech Fin HC Con Cyc Bnd Cmd {
+      style.fill: "#eff6ff"
+      style.stroke: "#3b82f6"
+    }
+    sentiment: Sentiment Analyst\n\nmodel: haiku\nReddit, StockTwits\nInsider clusters {
+      style.fill: "#eff6ff"
+      style.stroke: "#3b82f6"
+    }
+    news: News/Macro Analyst\n\nmodel: haiku\nWebSearch + regime\nFOMC, CPI, earnings {
+      style.fill: "#eff6ff"
+      style.stroke: "#3b82f6"
+    }
+  }
+
+  score: score_council\n\n25% tech + 25% domain\n20% sent + 20% news\nBuy >3.5 / Sell <2.5 / Hold {
+    style.fill: "#f0fdf4"
+    style.stroke: "#10b981"
+  }
+
+  execute: execute_paper_trade\n\npre-trade hook validates\nspread + slippage model {
+    style.fill: "#f0fdf4"
+    style.stroke: "#10b981"
+  }
+
+  delta -> quant
+  quant -> analysts
+  analysts -> score: 4 scores
+  score -> execute: signal
+}
+
+# ══════════════════════════════════════════════════════════════
+# PREDICTION MARKETS
+# ══════════════════════════════════════════════════════════════
+
+predictions: PREDICTION MARKETS — Kalshi superforecaster (Tetlock) {
+  style.fill: "#faf5ff"
+  style.stroke: "#8b5cf6"
+  style.stroke-dash: 5
+  style.border-radius: 10
+
+  pred_analysts: 2 Haiku Subagents in Parallel {
+    style.fill: "#f8fafc"
+    style.stroke: "#d1d5db"
+    style.border-radius: 8
+
+    event: Event Analyst (haiku)\n\nDecompose + base rates\nWebSearch + Kalshi tools\nProbability estimate {
+      style.fill: "#eff6ff"
+      style.stroke: "#3b82f6"
+    }
+    news_pred: News Analyst (haiku)\n\nLatest via WebSearch\nWhat market hasn't priced in\nEvidence score (1-5) {
+      style.fill: "#eff6ff"
+      style.stroke: "#3b82f6"
+    }
+  }
+
+  forecaster: Chief Forecaster (Opus)\n\nBayesian synthesis\nedge > 10% = trade\nquarter-Kelly sizing\nBrier + Log Score calibration {
+    style.fill: "#f5f3ff"
+    style.stroke: "#8b5cf6"
+  }
+
+  kalshi_trade: Kalshi Paper Trade\n\nYES/NO contracts\nmax 250 per market {
+    style.fill: "#f5f3ff"
+    style.stroke: "#8b5cf6"
+  }
+
+  pred_analysts -> forecaster: estimates
+  forecaster -> kalshi_trade: edge > 10%
+}
+
+# ══════════════════════════════════════════════════════════════
+# ARBITRAGE SCANNER
+# ══════════════════════════════════════════════════════════════
+
+arb: ARBITRAGE SCANNER {
+  style.fill: "#fffbeb"
+  style.stroke: "#f59e0b"
+  style.stroke-dash: 5
+  style.border-radius: 10
+
+  dutch: Dutch Book\n\nscan_kalshi_overround\nYES sum below 1.00 = profit {
+    style.fill: "#fffbeb"
+    style.stroke: "#f59e0b"
+  }
+  bias: Fav-Longshot Bias\n\nscan_kalshi_bias\n75-92% underpriced +5% {
+    style.fill: "#fffbeb"
+    style.stroke: "#f59e0b"
+  }
+  candidates: get_prediction_candidates\n\nRanks best markets\nbias edge + volume {
+    style.fill: "#fffbeb"
+    style.stroke: "#f59e0b"
+  }
+  arb_exec: execute_kalshi_arb_trade\n\nMulti-leg atomic\nmax 250 per bundle, 15% cap {
+    style.fill: "#fffbeb"
+    style.stroke: "#f59e0b"
+  }
+
+  dutch -> candidates
+  bias -> candidates
+  candidates -> arb_exec
+}
+
+# ══════════════════════════════════════════════════════════════
+# LIVE RISK + SAFETY
+# ══════════════════════════════════════════════════════════════
+
+risk: LIVE RISK + SAFETY — Beacon Platform inspired {
+  style.fill: "#fef2f2"
+  style.stroke: "#ef4444"
+  style.stroke-dash: 5
+  style.border-radius: 10
+
+  live: get_live_risk\n\nGREEN: all clear\nYELLOW: no new buys\nORANGE: sell only\nRED: auto kill switch {
+    style.fill: "#fef2f2"
+    style.stroke: "#ef4444"
+  }
+
+  monitors: Monitors\n\nDaily P&L limits\nATR stop distances\nVIX spike detection\nCash reserve % {
+    style.fill: "#fef2f2"
+    style.stroke: "#ef4444"
+  }
+
+  hook: Pre-Trade Hook + Kill Switch\n\nPositions, Concentration\nCash reserve, Drawdown 10% {
+    style.fill: "#fef2f2"
+    style.stroke: "#fca5a5"
+  }
+
+  sizer: Position Sizer\n\nKelly / ATR / Inverse-ATR {
+    style.fill: "#f0fdf4"
+    style.stroke: "#86efac"
+  }
+
+  monitors -> live: feeds
+  live -> hook: RED triggers
+}
+
+# ══════════════════════════════════════════════════════════════
+# DATA + PERSISTENCE
+# ══════════════════════════════════════════════════════════════
+
+data: DATA + PERSISTENCE {
+  style.fill: "#faf5ff"
+  style.stroke: "#8b5cf6"
+  style.stroke-dash: 5
+  style.border-radius: 10
+
+  market: Market Data (cached)\n\nyfinance: OHLCV, fundamentals\nReddit + StockTwits: sentiment\nWebSearch: real-time news\nKalshi API: events, orderbooks\n\n60s price / 15m sent / 1h news {
+    style.fill: "#fffbeb"
+    style.stroke: "#fcd34d"
+  }
+
+  db: SQLite Database\n\npositions, trades, wiki_pages\nticker_state, quant_scores\nkalshi_positions, arb_scans\nintraday_risk, signal_scores {
+    style.fill: "#f5f3ff"
+    style.stroke: "#c4b5fd"
+  }
+
+  persist: Persistence Layer\n\nWiki: analysis pages\nMemory: 5 session files\nAudit: MCP call JSONL\nBacktest: quant IC replay {
+    style.fill: "#fff"
+    style.stroke: "#e5e7eb"
+  }
+
+  math: Deterministic Math Layer\n\n9 sector scorers / Altman Z / FCF\nVaR, CVaR / Kelly, ATR sizing\nBrier, Log Score / PF, SQN\nALL math is deterministic Python {
+    style.fill: "#f0fdf4"
+    style.stroke: "#86efac"
+  }
+
+  market -> db: writes
+  db -> persist: syncs
+}
+
+# ══════════════════════════════════════════════════════════════
+# CONNECTIONS BETWEEN SECTIONS (simplified)
+# ══════════════════════════════════════════════════════════════
+
+runtime -> council: stock analysis {style.stroke-dash: 3}
+runtime -> predictions: prediction mkts {style.stroke-dash: 3}
+runtime -> arb: arb scanning {style.stroke-dash: 3}
+council -> risk: validates {style.stroke-dash: 3}
+predictions -> risk: validates {style.stroke-dash: 3}
+data -> council: feeds {style.stroke-dash: 3}
+data -> predictions: feeds {style.stroke-dash: 3}
