@@ -1,6 +1,6 @@
 # TradingAgents
 
-Autonomous paper trading system powered by Claude Code. Four specialist AI analysts run in parallel, debate, and execute trades — all through your Claude subscription. No API keys needed.
+Autonomous paper trading system powered by Claude Code. Specialist AI analysts run in parallel, debate, and execute trades — all through your Claude subscription. No API keys needed.
 
 Based on [TauricResearch/TradingAgents](https://github.com/TauricResearch/TradingAgents) ([arXiv:2412.20138](https://arxiv.org/abs/2412.20138)).
 
@@ -13,9 +13,11 @@ Based on [TauricResearch/TradingAgents](https://github.com/TauricResearch/Tradin
 ### Key Design Decisions
 
 - **Model tiering**: Analysts run on Haiku (fast, cheap). Chairman runs on Opus (deep reasoning). Cuts cost ~75% vs all-Opus.
-- **Delta-aware cycles**: `get_ticker_deltas` checks price movement, news staleness, regime shifts. Unchanged tickers carry forward prior scores — no wasted subagent spawns.
-- **Deterministic scoring**: `score_council` is code, not LLM reasoning. Hard-coded veto conditions (fundamental collapse, 2-2 split) prevent emotional overrides.
+- **Sector-aware analysis**: 7 domain-specific analyst skills (tech, financials, healthcare, consumer, cyclical, bonds, commodities) — each with focused metrics and prompt templates.
+- **Delta-aware cycles**: `get_ticker_deltas` checks price movement, news staleness, regime shifts. Unchanged tickers carry forward prior scores.
+- **Deterministic scoring**: `score_council` is code, not LLM reasoning. Quant pre-screen (Altman Z, FCF yield, regime-conditional technicals) anchors LLM scores with auditable math.
 - **Pre-trade hooks**: Risk validation runs as a Claude Code hook — the model literally cannot bypass it.
+- **Live intraday risk**: Circuit breakers (GREEN/YELLOW/ORANGE/RED) with auto kill switch on daily loss > 3% or VIX > 30.
 
 ---
 
@@ -29,122 +31,94 @@ tradingagents health        # verify everything works
 
 Then in Claude Code:
 ```
-/trading-day                # full day: immediate cycle + 30-min loop until close
-/trading-council            # single council cycle
+/trading-council            # 4 parallel analyst subagents (recommended)
+/prediction-council         # Kalshi prediction markets (2-agent superforecaster)
+/trading-day                # full day: immediate cycle + scheduled follow-ups
 /loop /trading-council      # continuous 30-min delta-aware cycles
+/prediction-arb-scan        # scan Kalshi for Dutch book + bias arbitrage
+/market-monitor             # background regime/position monitoring (use with /loop)
 ```
 
 ---
 
 ## Claude Code Harness
 
-The system is built on Claude Code's native capabilities — not custom infrastructure.
-
-### Skills (8)
+### Skills (20+)
 
 | Skill | Model | Purpose |
 |-------|-------|---------|
-| `/trading-council` | Opus (chairman) | Full council: delta check → 4 parallel analysts → score → execute |
-| `/trading-cycle` | Opus | Simpler single-agent mode |
-| `/trading-day` | Opus | Schedule a full trading day (CronCreate) |
+| `/trading-council` | Opus | Full council: delta check -> 4 parallel analysts -> score -> execute |
+| `/prediction-council` | Opus | 2-agent superforecaster council for Kalshi binary markets |
+| `/prediction-arb-scan` | Opus | Dutch book overround + favorite-longshot bias scanner |
+| `/trading-day` | Opus | Schedule a full trading day (CronCreate + Kalshi monitor) |
 | `/market-monitor` | Opus | Background regime/position monitoring (use with /loop) |
-| `analyst-technical` | Haiku | Price action, RSI, MACD, SMA. **Restricted to get_stock_data + get_indicators** |
-| `analyst-fundamental` | Haiku | PE, margins, FCF, earnings. **Restricted to get_fundamentals + get_financial_statements** |
-| `analyst-sentiment` | Haiku | StockTwits, Reddit, insider activity. **Restricted to sentiment tools** |
-| `analyst-news` | Haiku | Real-time web search + regime. **Restricted to WebSearch + get_market_regime** |
+| `/trading-cycle` | Opus | Simpler single-agent mode |
+| `/backtest` | Opus | Run backtests in isolated git worktrees |
+| `analyst-technical` | Haiku | Price action, RSI, MACD, SMA. **Restricted tools** |
+| `analyst-sector-tech` | Haiku | SaaS metrics, R&D, TAM, AI exposure |
+| `analyst-sector-financials` | Haiku | NIM, credit quality, CET1, ROE |
+| `analyst-sector-healthcare` | Haiku | Drug pipeline, FDA catalysts, patent cliffs |
+| `analyst-sector-consumer` | Haiku | Brand moat, pricing power, same-store sales |
+| `analyst-sector-cyclical` | Haiku | Capex cycles, commodity exposure, order backlogs |
+| `analyst-bonds` | Haiku | Yield curve, duration, credit spreads |
+| `analyst-commodities` | Haiku | Supply/demand, contango, geopolitical risk |
+| `analyst-sentiment` | Haiku | StockTwits, Reddit, insider activity |
+| `analyst-news` | Haiku | Real-time web search + regime |
+| `analyst-events` | Haiku | Superforecaster probability estimation for Kalshi |
+| `analyst-fundamental` | Haiku | Generic valuation fallback |
 
 ### Hooks
 
 | Event | Hook | What It Does |
 |-------|------|-------------|
-| `PreToolUse` | `pre_trade_validate.py` | Blocks trades that violate risk rules (positions, concentration, cash reserve, kill switch) |
-| `PostToolUse` | `post_tool_audit.py` | Logs every MCP tool call to `~/.tradingagents/audit/tool_calls.jsonl` |
+| `PreToolUse` | `pre_trade_validate.py` | Blocks trades violating risk rules |
+| `PostToolUse` | `post_tool_audit.py` | Logs every MCP tool call to audit trail |
 | `SubagentStop` | `post_tool_audit.py` | Logs analyst subagent completions |
+| `SessionStart` | `session_start.py` | Auto-injects portfolio state + regime |
+| `Stop` | `session_end.py` | Auto-saves portfolio state to memory |
 
-### MCP Tools (34)
+### MCP Tools (50)
 
-Data (13): get_stock_data, get_indicators, get_fundamentals, get_financial_statements, get_news, get_global_news, get_reddit_sentiment, get_stocktwits_sentiment, get_insider_transactions, get_insider_clusters, get_market_regime, get_sector_rotation, get_earnings_calendar
-
-Portfolio (5): get_portfolio, get_trades, get_watchlist, add_to_watchlist, remove_from_watchlist
-
-Execution (1): execute_paper_trade
-
-Safety (2): kill_switch, get_rules
-
-Council (6): get_autonomous_tickers, get_full_ticker_data, save_analysis_to_wiki, save_trade_report, get_trade_reports, score_council
-
-State & Cache (3): get_ticker_state, get_ticker_deltas, get_cache_stats
-
-Wiki (4): search_wiki, get_wiki_page, prune_wiki, get_analytics_summary
-
-### Data Caching (TTL per category)
-
-| Category | TTL | Why |
-|----------|-----|-----|
-| Price / Technicals | 60s | Changes every minute |
-| Regime (VIX/DXY) | 5 min | Intraday macro shifts |
-| Sentiment | 15 min | StockTwits shifts frequently |
-| News | 1 hour | Headlines change hourly |
-| Sector Rotation | 1 hour | Sector ETF returns |
-| Fundamentals | 24 hours | PE/margins change quarterly |
-| Insider Activity | 24 hours | Daily filings at most |
-| Earnings Calendar | 24 hours | Dates change rarely |
+| Category | Count | Tools |
+|----------|-------|-------|
+| Data | 13 | get_stock_data, get_indicators, get_fundamentals, get_financial_statements, get_news, get_global_news, get_reddit_sentiment, get_stocktwits_sentiment, get_insider_transactions, get_insider_clusters, get_market_regime, get_sector_rotation, get_earnings_calendar |
+| Portfolio | 5 | get_portfolio, get_trades, get_watchlist, add_to_watchlist, remove_from_watchlist |
+| Execution | 1 | execute_paper_trade |
+| Safety | 2 | kill_switch, get_rules |
+| Council | 6 | get_autonomous_tickers, get_full_ticker_data, save_analysis_to_wiki, save_trade_report, get_trade_reports, score_council |
+| State & Cache | 4 | get_ticker_state, get_ticker_deltas, get_cache_stats, get_asset_info |
+| Quant & Risk | 3 | get_quant_scores, get_portfolio_risk, get_live_risk |
+| Kalshi | 7 | get_kalshi_markets, get_kalshi_market, get_kalshi_orderbook, get_kalshi_events, get_kalshi_event, execute_kalshi_paper_trade, get_kalshi_positions |
+| Kalshi Arb | 5 | scan_kalshi_overround, scan_kalshi_bias, get_dutch_book_detail, execute_kalshi_arb_trade, get_prediction_candidates |
+| Maintenance | 4 | prune_wiki, get_analytics_summary, search_wiki, get_wiki_page |
 
 ### Automation
 
-- **macOS launchd agent** fires at 9:30 AM EDT every weekday
-- Starts Claude Code → runs `/loop /trading-council`
-- Loop self-paces every 30 min via `ScheduleWakeup`
-- At 4 PM market close, loop stops automatically
-- Config: `~/Library/LaunchAgents/com.tradingagents.daily.plist`
+Runs fully unattended via macOS launchd + `claude -p` (subscription, not API):
+
+| Time | Cycle |
+|------|-------|
+| 9:30 AM | Market open: council + Kalshi position check |
+| 1:30 PM | Midday rebalance |
+| 3:30 PM | Late afternoon |
+| 4:15 PM | EOD report + memory update |
+
+Each cycle is independent — state persists via MCP (SQLite + wiki + memory files). Logs: `~/.tradingagents/logs/trading-YYYY-MM-DD.log`.
 
 ---
 
 ## Architecture
 
 ```
-.
-├── .mcp.json                          # MCP server config (Claude Code reads this)
-├── .claude/
-│   ├── settings.json                  # Hooks, permissions, env vars
-│   ├── hooks/
-│   │   ├── pre_trade_validate.py      # Risk gate (blocking)
-│   │   └── post_tool_audit.py         # Audit trail (logging)
-│   └── skills/
-│       ├── trading-council/SKILL.md   # Main council skill
-│       ├── trading-day/SKILL.md       # Full-day scheduling
-│       ├── trading-cycle/SKILL.md     # Single-agent mode
-│       ├── market-monitor/SKILL.md    # Background monitoring
-│       ├── analyst-technical/SKILL.md # Haiku + allowed-tools enforced
-│       ├── analyst-fundamental/SKILL.md
-│       ├── analyst-sentiment/SKILL.md
-│       └── analyst-news/SKILL.md
-├── tradingagents/
-│   ├── mcp/server.py                  # 34 MCP tools
-│   ├── council/
-│   │   ├── compact_summary.py         # Delta detection + compact summaries
-│   │   └── prompts/                   # Analyst prompt templates
-│   ├── dataflows/
-│   │   ├── cache.py                   # TTL caching (cached_config decorator)
-│   │   ├── y_finance.py               # Price, fundamentals, financials
-│   │   ├── regime.py                  # VIX/DXY/yield regime detector
-│   │   ├── sector_rotation.py         # Sector ETF relative strength
-│   │   ├── insider_clustering.py      # Insider transaction clusters
-│   │   ├── earnings_calendar.py       # Earnings date proximity
-│   │   ├── reddit.py                  # Reddit sentiment
-│   │   └── stocktwits.py              # StockTwits sentiment
-│   ├── execution/
-│   │   ├── broker/paper_client.py     # Paper broker + spread/slippage model
-│   │   ├── executor.py                # Trade execution engine
-│   │   ├── position_sizer.py          # Kelly criterion, correlation-aware
-│   │   ├── safety.py                  # Kill switch, drawdown monitor
-│   │   ├── db.py                      # SQLite schema + ticker_state helpers
-│   │   └── analytics.py               # Sharpe, Sortino, alpha, drawdown
-│   ├── wiki/                          # Knowledge base writer
-│   └── dashboard_v3/                  # Flask + Tailwind web dashboard (5 pages)
-├── scripts/
-│   └── start-trading-day.sh           # Auto-start script (launchd)
-└── tests/
+tradingagents/
+  mcp/             — MCP server (50 tools)
+  council/         — Council skills + 11 analyst prompts (4 universal + 7 domain)
+  dataflows/       — Market data with TTL caching (yfinance, Reddit, StockTwits, regime, arb scanner)
+  execution/       — Paper broker, safety (live risk + circuit breakers), contracts, position sizer, analytics
+  quant/           — Deterministic scoring (14 files): Altman Z, FCF yield, technicals, 9 sector scorers, vetoes
+  backtest/        — Quant score replay: historical IC computation, signal validation
+  dashboard_v3/    — Flask + Tailwind dashboard (6 pages)
+  wiki/            — Knowledge base (run pages, digests, ticker summaries)
 ```
 
 ---
@@ -152,21 +126,54 @@ Wiki (4): search_wiki, get_wiki_page, prune_wiki, get_analytics_summary
 ## Dashboard
 
 ```bash
-tradingagents                          # launches dashboard on http://127.0.0.1:5050
+tradingagents                          # launches on http://127.0.0.1:5050
 ```
 
-5 pages: Trading (KPIs, positions, regime, activity), Council (scores, deep dive, reports), Performance (equity curve, Sharpe, win rates, slippage), Research (wiki browser, trade reports, daily digest), Pipeline (cycles, deltas, DAG, cache, sectors, insider clusters).
+6 pages:
+- **Trading**: KPIs, positions, regime bar, live risk status (GREEN/YELLOW/ORANGE/RED), activity feed
+- **Council**: Analyst scores, deep dive, trade reports
+- **Predictions**: Kalshi positions, arb scans, event calendar, council candidates, cross-platform comparison, forecast calibration (Brier/Log score)
+- **Performance**: Sharpe, Sortino, Calmar, profit factor, expectancy, SQN, equity curve, win rates
+- **Research**: Wiki browser, trade reports, daily digest
+- **Pipeline**: Cycle timeline, ticker deltas, decision DAG (with quant pre-screen step), cache stats, slippage, sectors, insider clusters
 
 ---
 
 ## Safety
 
-1. **PreToolUse hook** blocks trades violating: max positions, ticker concentration (25%), cash reserve (10%), blocked tickers, kill switch
-2. **`score_council` vetoes**: fundamental score 1 = no buys, all analysts <=2 = forced sell, 2-2 split = forced hold
-3. **Kill switch** halts all trading via `kill_switch` tool or `tradingagents reset-kill-switch`
-4. **`rules.json`** blocks specific tickers (e.g. employer stock)
-5. **Audit trail** logs every tool call to `~/.tradingagents/audit/tool_calls.jsonl`
-6. **Spread/slippage model** simulates realistic fills (feature-flagged)
+1. **PreToolUse hook** blocks trades violating: max positions, ticker concentration (25%), cash reserve (20%), blocked tickers, kill switch
+2. **`score_council` vetoes**: fundamental collapse, unanimous bearish, 2-2 split + 12 quant hard vetoes (Altman Z, FCF streak, RSI extreme, penny stock, etc.)
+3. **Live intraday risk** (`get_live_risk`): circuit breakers with tiered response — YELLOW (no new buys), ORANGE (sell-only), RED (auto kill switch). Monitors daily P&L, intraday drawdown, ATR stop distances, VIX spikes.
+4. **Kill switch** halts all trading — persists across restarts until manually reset
+5. **`rules.json`** blocks specific tickers (e.g. employer stock)
+6. **Audit trail** logs every tool call to `~/.tradingagents/audit/tool_calls.jsonl`
+7. **Spread/slippage model** simulates realistic fills (feature-flagged)
+8. **Futures**: notional exposure tracking, max leverage (3.0x), margin checks, contract expiry warnings
+
+---
+
+## Quantitative Scoring
+
+The quant layer provides deterministic, auditable scores that anchor LLM analysis:
+
+| Scorer | Assets | Key Metrics |
+|--------|--------|-------------|
+| `fundamental.py` | All equities | Altman Z, FCF yield, PE, PEG, margins, ROE |
+| `tech_sector.py` | Tech stocks | Rule of 40, R&D intensity, gross margin |
+| `financials.py` | Banks | NIM, P/TBV, provision trend, efficiency ratio |
+| `healthcare.py` | Biotech/pharma | R&D growth, cash runway, margin trajectory |
+| `consumer.py` | Consumer/REITs | Pricing power, P/FFO, dividend coverage |
+| `cyclical.py` | Energy/industrial | Capex/revenue, margin cyclicality, D/E |
+| `bond_etf.py` | Bond ETFs | Duration x yield direction x regime x credit tier |
+| `commodity_etf.py` | Commodity ETFs | Trend vs SMA200, DXY impact, commodity type |
+| `futures_score.py` | Futures | Vol percentile, DTE penalty, term structure proxy |
+| `technical.py` | All | RSI, MACD, SMA, Bollinger, volume — regime-conditional thresholds |
+
+**Trade quality metrics**: Profit Factor, Expectancy, SQN (Van Tharp), Sharpe, Sortino, Calmar, VaR, CVaR, alpha/beta.
+
+**Prediction calibration**: Brier Score, Log Score for resolved Kalshi positions.
+
+**Backtesting**: `replay_quant_scores()` replays technical scores over historical dates, computes IC (Information Coefficient) vs actual forward returns.
 
 ---
 
@@ -180,6 +187,14 @@ TRADINGAGENTS_MAX_DRAWDOWN_PCT=0.10
 TRADINGAGENTS_MAX_POSITION_PCT=0.25
 TRADINGAGENTS_MAX_SINGLE_TICKER_PCT=0.25
 TRADINGAGENTS_MAX_OPEN_POSITIONS=6
+```
+
+---
+
+## Testing
+
+```bash
+pytest tests/ -m unit    # 136 tests
 ```
 
 ---

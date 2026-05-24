@@ -119,8 +119,9 @@ tradingagents/
   council/         — Council skills + 11 analyst prompts (4 universal + 7 domain) + compact_summary.py
   wiki/            — Knowledge base (run pages, digests, ticker pages, regimes)
   dataflows/       — Market data with TTL caching (yfinance, Reddit, StockTwits, regime, sectors)
-  execution/       — Paper broker (with spread model + futures multiplier), safety (notional exposure + VaR), contracts registry, ATR/Kelly position sizer
+  execution/       — Paper broker (with spread model + futures multiplier), safety (notional exposure + VaR + live intraday risk), contracts registry, ATR/Kelly position sizer
   quant/           — Deterministic scoring layer (14 files): Altman Z, FCF yield, regime-conditional technicals, 9 sector-specific scorers, 12 hard vetoes
+  backtest/        — Quant score replay engine: historical IC computation, signal validation
   dashboard_v3/    — Flask + Tailwind monitoring dashboard (6 pages: Trading, Council, Predictions, Performance, Research, Pipeline)
 ```
 
@@ -143,7 +144,7 @@ tradingagents/
 | `~/.tradingagents/wiki/` | Analysis pages, digests, ticker summaries |
 | `scripts/start-trading-day.sh` | Auto-start script (called by launchd at 9:30 AM) |
 
-## MCP Tools (49)
+## MCP Tools (50)
 
 Data: get_stock_data, get_indicators, get_fundamentals, get_financial_statements, get_news, get_global_news, get_reddit_sentiment, get_stocktwits_sentiment, get_insider_transactions, get_insider_clusters, get_market_regime, get_sector_rotation, get_earnings_calendar
 
@@ -157,7 +158,7 @@ Council: get_autonomous_tickers, get_full_ticker_data, save_analysis_to_wiki, sa
 
 State & Cache: get_ticker_state, get_ticker_deltas, get_cache_stats, get_asset_info
 
-Quant: get_quant_scores, get_portfolio_risk
+Quant & Risk: get_quant_scores, get_portfolio_risk, get_live_risk
 
 Kalshi: get_kalshi_markets, get_kalshi_market, get_kalshi_orderbook, get_kalshi_events, get_kalshi_event, execute_kalshi_paper_trade, get_kalshi_positions
 
@@ -170,6 +171,7 @@ Maintenance: prune_wiki, get_analytics_summary, search_wiki, get_wiki_page
 - Pre-trade hook enforces: max positions, concentration limits, cash reserve, blocked tickers, kill switch
 - `score_council` tool has hard veto conditions (domain score collapse, unanimous bearish, 2-2 split) — auto-detects asset type for context-aware veto messages
 - `kill_switch` tool halts all trading immediately
+- `get_live_risk` tool: intraday circuit breakers (GREEN/YELLOW/ORANGE/RED) — daily P&L limits, ATR stop distances, VIX spike detection. RED auto-triggers kill switch.
 - `rules.json` lets you block specific tickers (e.g. your employer's stock)
 - Audit trail logs every MCP tool call to `~/.tradingagents/audit/`
 - Spread/slippage model simulates realistic fill prices (feature-flagged)
