@@ -48,6 +48,7 @@ CREATE TABLE IF NOT EXISTS paper_positions (
     quantity    INTEGER NOT NULL DEFAULT 0,
     avg_cost    REAL    NOT NULL DEFAULT 0.0,
     multiplier  INTEGER NOT NULL DEFAULT 1,
+    trailing_high REAL,
     updated_at  TEXT    NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -318,12 +319,16 @@ def get_db(config: Optional[Dict[str, Any]] = None) -> sqlite3.Connection:
         conn.executescript(_SCHEMA_SQL)
         conn.commit()
 
-        # Migrate: add council_probability column if missing
-        try:
-            conn.execute("ALTER TABLE kalshi_positions ADD COLUMN council_probability REAL")
-            conn.commit()
-        except sqlite3.OperationalError:
-            pass  # Column already exists
+        # Migrate: add columns if missing
+        for migration in [
+            "ALTER TABLE kalshi_positions ADD COLUMN council_probability REAL",
+            "ALTER TABLE paper_positions ADD COLUMN trailing_high REAL",
+        ]:
+            try:
+                conn.execute(migration)
+                conn.commit()
+            except sqlite3.OperationalError:
+                pass  # Column already exists
 
         _connections[key] = conn
 

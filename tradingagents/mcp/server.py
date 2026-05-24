@@ -897,6 +897,13 @@ def _handle_tool(name: str, args: dict) -> str:
             if abs(v - mean_score) >= 2.0:
                 outlier_notes.append(f"{label} is an outlier ({v:.1f} vs mean {mean_score:.1f})")
 
+        # ── Regime-conditional thresholds ──
+        regime_key = regime.lower() if regime else "risk_on"
+        regime_strategies = config.get("regime_strategy", {})
+        strat = regime_strategies.get(regime_key, regime_strategies.get("risk_on", {}))
+        buy_thresh = strat.get("buy_threshold", 3.5)
+        sell_thresh = strat.get("sell_threshold", 2.5)
+
         # ── Determine signal ──
         if vetoes:
             if is_held:
@@ -907,10 +914,10 @@ def _handle_tool(name: str, args: dict) -> str:
         elif split_note:
             signal = "Hold"
             confidence = 0.3
-        elif final_score > 3.5:
+        elif final_score > buy_thresh:
             signal = "Overweight" if is_held else "Buy"
             confidence = min(1.0, (final_score - 1) / 4)
-        elif final_score < 2.5:
+        elif final_score < sell_thresh:
             signal = "Sell" if is_held else "Hold"
             confidence = min(1.0, (5 - final_score) / 4)
         else:
@@ -952,6 +959,16 @@ def _handle_tool(name: str, args: dict) -> str:
             save_ticker_state(config, ticker, scores, signal, confidence, final_score, price, regime)
         except Exception as exc:
             logger.warning("Failed to save ticker state: %s", exc)
+
+        # Save signal scores for IC tracking (enables adaptive weights after 50+ trades)
+        try:
+            from tradingagents.execution.db import save_signal_score
+            save_signal_score(config, ticker, {
+                "technical": t, "fundamental": f,
+                "sentiment": s, "news": n,
+            }, final_score)
+        except Exception as exc:
+            logger.warning("Failed to save signal score: %s", exc)
 
         return "\n".join(lines)
 
@@ -1258,6 +1275,21 @@ def _handle_tool(name: str, args: dict) -> str:
             ])
             for s in risk["stops_breached"]:
                 lines.append(f"- **{s['ticker']}**: price ${s['current_price']} < stop ${s['stop_price']}")
+
+        if risk.get("exit_signals"):
+            lines.extend([f"", f"## Exit Signals"])
+            for ex in risk["exit_signals"]:
+                urgency_tag = "SELL NOW" if ex["urgency"] == "immediate" else "REVIEW"
+                lines.append(f"- [{urgency_tag}] **{ex['ticker']}**: {ex['reason']}")
+
+        if risk.get("sell_recommendations"):
+            lines.extend([
+                f"",
+                f"## !! SELL RECOMMENDATIONS",
+                f"Execute these sells immediately before running analysis:",
+            ])
+            for sr in risk["sell_recommendations"]:
+                lines.append(f"- **{sr['ticker']}**: {sr['reason']}")
 
         return "\n".join(lines)
 

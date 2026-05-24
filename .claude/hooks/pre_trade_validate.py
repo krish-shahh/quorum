@@ -88,13 +88,23 @@ if signal in ("Buy", "Overweight"):
     if account.account_value > 0 and current_val / account.account_value >= max_pct:
         errors.append(f"{ticker} at {current_val/account.account_value:.0%} (max {max_pct:.0%})")
 
-# ── Rule 5: Cash reserve (10% minimum) ──
+# ── Rule 5: Cash reserve (regime-conditional) ──
 if signal in ("Buy", "Overweight"):
     trade_cost = account.account_value * float(config.get("max_position_pct", 0.05))
     cash_after = account.cash_balance - trade_cost
-    min_reserve = account.account_value * 0.10
+    # Regime-conditional cash target
+    cash_target = 0.10  # base minimum
+    try:
+        from tradingagents.dataflows.regime import CrossAssetRegimeDetector
+        regime_result = CrossAssetRegimeDetector().detect()
+        regime_key = regime_result.get("regime", "risk_on").lower() if isinstance(regime_result, dict) else "risk_on"
+        regime_strategies = config.get("regime_strategy", {})
+        cash_target = regime_strategies.get(regime_key, {}).get("cash_target", 0.10)
+    except Exception:
+        pass
+    min_reserve = account.account_value * cash_target
     if cash_after < min_reserve:
-        errors.append(f"Would leave ${cash_after:,.0f} cash, below 10% reserve")
+        errors.append(f"Would leave ${cash_after:,.0f} cash, below {cash_target:.0%} reserve (regime: {regime_key})")
 
 # ── Rule 6: No doubling losers >10% ──
 if signal == "Buy":

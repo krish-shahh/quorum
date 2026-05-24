@@ -399,6 +399,22 @@ def compute_live_risk(config: Dict[str, Any]) -> Dict[str, Any]:
         except Exception:
             pass
 
+    # --- Exit signals (trailing stops, profit targets, time decay) ---
+    exit_signals = check_exit_conditions(config, positions, position_stops)
+
+    # --- Sell recommendations (stops breached = actionable sells) ---
+    sell_recommendations = []
+    for s in position_stops:
+        if s["breached"]:
+            sell_recommendations.append({
+                "ticker": s["ticker"],
+                "reason": f"ATR stop breached: ${s['current_price']} < stop ${s['stop_price']}",
+                "urgency": "immediate",
+            })
+    for ex in exit_signals:
+        if ex["urgency"] == "immediate":
+            sell_recommendations.append(ex)
+
     return {
         "risk_level": risk_level,
         "daily_pnl": round(daily_pnl, 2),
@@ -413,4 +429,102 @@ def compute_live_risk(config: Dict[str, Any]) -> Dict[str, Any]:
         "vix": vix,
         "position_stops": position_stops,
         "stops_breached": [s for s in position_stops if s["breached"]],
+        "exit_signals": exit_signals,
+        "sell_recommendations": sell_recommendations,
     }
+
+
+# ---------------------------------------------------------------------------
+# Exit condition checks (trailing stops, profit targets, time decay)
+# ---------------------------------------------------------------------------
+
+
+def check_exit_conditions(
+    config: Dict[str, Any],
+    positions: list,
+    position_stops: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Check positions for exit signals beyond basic ATR stops.
+
+    Returns list of exit signals with ticker, reason, and urgency.
+    """
+    from tradingagents.execution.db import get_db
+
+    signals: List[Dict[str, Any]] = []
+    conn = get_db(config)
+
+    for p in positions:
+        ticker = p.ticker if hasattr(p, "ticker") else p.get("ticker", "")
+        qty = p.quantity if hasattr(p, "quantity") else p.get("quantity", 0)
+        avg_cost = p.avg_cost if hasattr(p, "avg_cost") else p.get("avg_cost", 0)
+        market_value = p.market_value if hasattr(p, "market_value") else p.get("market_value", 0)
+        if qty <= 0 or avg_cost <= 0:
+            continue
+        current_price = market_value / qty
+
+        # --- Trailing stop (ratchet up after 5% gain) ---
+        pnl_pct = (current_price - avg_cost) / avg_cost
+        atr = None
+        for ps in position_stops:
+            if ps["ticker"] == ticker:
+                atr = ps.get("atr")
+                break
+
+        try:
+            row = conn.execute(
+                "SELECT trailing_high FROM paper_positions WHERE ticker = ?",
+                (ticker,),
+            ).fetchone()
+            trailing_high = float(row["trailing_high"]) if row and row["trailing_high"] else avg_cost
+        except Exception:
+            trailing_high = avg_cost
+
+        if current_price > trailing_high:
+            trailing_high = current_price
+            try:
+                conn.execute(
+                    "UPDATE paper_positions SET trailing_high = ? WHERE ticker = ?",
+                    (trailing_high, ticker),
+                )
+                conn.commit()
+            except Exception:
+                pass
+
+        if pnl_pct > 0.05 and atr and atr > 0:
+            trailing_stop = trailing_high - (2 * atr)
+            if current_price <= trailing_stop:
+                signals.append({
+                    "ticker": ticker,
+                    "reason": f"Trailing stop hit: ${current_price:.2f} < ${trailing_stop:.2f} (high: ${trailing_high:.2f})",
+                    "urgency": "immediate",
+                })
+
+        # --- Profit target review (at +15%, flag for re-analysis) ---
+        if pnl_pct >= 0.15:
+            signals.append({
+                "ticker": ticker,
+                "reason": f"Profit target +{pnl_pct:.0%} reached — review for take-profit",
+                "urgency": "review",
+            })
+
+        # --- Time decay (flat for 15+ trading days) ---
+        try:
+            trade_row = conn.execute(
+                "SELECT timestamp FROM trades WHERE ticker = ? AND action_taken = 'executed' "
+                "ORDER BY timestamp DESC LIMIT 1",
+                (ticker,),
+            ).fetchone()
+            if trade_row:
+                from datetime import datetime as _dt
+                trade_date = _dt.fromisoformat(trade_row["timestamp"][:19])
+                days_held = (datetime.now() - trade_date).days
+                if days_held >= 15 and abs(pnl_pct) < 0.02:
+                    signals.append({
+                        "ticker": ticker,
+                        "reason": f"Time decay: held {days_held} days, only {pnl_pct:+.1%} — thesis may be stale",
+                        "urgency": "review",
+                    })
+        except Exception:
+            pass
+
+    return signals

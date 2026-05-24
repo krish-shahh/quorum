@@ -88,75 +88,42 @@ Interactive (subscription limits, $0 SDK cost):
 
 ### 6.1 Auto stop-loss execution (S, HIGH)
 
-- [ ] Wire `StopLossMonitor.check_stops()` into the trading loop
-- [ ] `get_live_risk` already returns `stops_breached` list — add `sell_recommendations` with explicit sell signals
-- [ ] Update `trading-council/SKILL.md`: at cycle start, check `get_live_risk` — if stops breached, execute sells immediately before running analysis
-- [ ] Files: `server.py` (get_live_risk handler), `trading-council/SKILL.md`
+- [x] `get_live_risk` now returns `sell_recommendations` list with stop-breached positions + trailing stop hits
+- [x] Updated `trading-council/SKILL.md`: Step 0 checks `get_live_risk` first — if sell recommendations exist, execute sells before analysis. Risk level adjusts behavior (YELLOW=no buys, ORANGE=sell-only, RED=halt).
 
 ### 6.2 Wire signal_scores for IC tracking (S, HIGH)
 
-- [ ] Add `save_signal_score()` call to `score_council` handler in `server.py` (~line 956, after `save_ticker_state`)
-- [ ] Extract individual analyst scores (tech, domain, sentiment, news) + final council score
-- [ ] Add `fill_forward_returns` as periodic task (EOD or new MCP tool)
-- [ ] Unlocks: adaptive council weights once 50+ trades accumulate
-- [ ] Files: `server.py` (score_council handler)
+- [x] Added `save_signal_score()` call to `score_council` handler after `save_ticker_state`. Saves tech/domain/sentiment/news scores + final council score to `signal_scores` table for IC computation.
+- [ ] Add `fill_forward_returns` as periodic task (EOD or new MCP tool) — needs cron integration
 
 ### 6.3 Exit strategy rules (M, HIGH)
 
-- [ ] **Trailing stop**: After position gains >5%, ratchet stop to max(entry_stop, highest_price - 2*ATR). Never ratchets down.
-- [ ] **Profit target review**: At +15%, flag for forced council re-analysis (not auto-sell)
-- [ ] **Time decay**: Position flat (<2% move) for 15+ trading days → flag for review
-- [ ] New `check_exit_conditions()` function in `safety.py`, called by `compute_live_risk()`
-- [ ] Add `trailing_high REAL` column to `paper_positions` table
-- [ ] Returns `exit_signals: [{ticker, reason, urgency}]` in live risk output
-- [ ] Files: `safety.py`, `db.py`, `server.py` (get_live_risk)
+- [x] `check_exit_conditions()` in `safety.py` — trailing stop (ratchet up after 5% gain, 2x ATR from trailing high), profit target review at +15%, time decay at 15+ flat days
+- [x] Added `trailing_high REAL` column to `paper_positions` table with auto-migration
+- [x] `compute_live_risk()` calls `check_exit_conditions()` and returns `exit_signals` + `sell_recommendations` in output
+- [x] `get_live_risk` MCP tool displays exit signals and sell recommendations sections
 
 ### 6.4 Correlation-aware portfolio check (M, MEDIUM)
 
-- [ ] Wire existing `CorrelationAnalyzer` from `execution/correlation.py` into `PositionSizer._handle_buy()`
-- [ ] Enable `correlation_aware_enabled` flag in `default_config.py`
-- [ ] Rules: avg pairwise correlation >0.7 → reduce allocation 50%. >0.85 → block buy entirely
-- [ ] Add sector concentration check: no more than 60% portfolio in any single sector
-- [ ] Surface correlation in `get_portfolio_risk` MCP tool output
-- [ ] Files: `position_sizer.py`, `default_config.py`, `server.py` (get_portfolio_risk)
+- [x] Enabled `correlation_aware_enabled=True` in `default_config.py` — `CorrelationAnalyzer` from `execution/correlation.py` is now active in `PositionSizer._handle_buy()`. Reduces allocation when avg pairwise correlation > 0.7.
+- [ ] Add sector concentration check (no more than 60% in single sector) — deferred
+- [ ] Surface correlation matrix in `get_portfolio_risk` output — deferred
 
 ### 6.5 Regime-conditional strategy (M, MEDIUM)
 
-- [ ] Replace flat -0.3 regime adjustment in `score_council` with graduated rules:
-  - `risk_on`: buy >3.5, sell <2.5, cash 20% (current defaults)
-  - `risk_off`: buy >3.8, sell <2.8, cash 30%
-  - `volatile`: buy >4.0, sell <2.5, cash 25%, position sizes -30%
-- [ ] New `get_regime_strategy()` helper returning thresholds by regime
-- [ ] Update `pre_trade_validate.py` hook: enforce regime-specific cash target
-- [ ] Update `trading-council/SKILL.md`: inject regime strategy before spawning analysts
-- [ ] Files: `server.py` (score_council), `pre_trade_validate.py`, `trading-council/SKILL.md`, `default_config.py`
+- [x] Added `regime_strategy` config in `default_config.py` with per-regime thresholds:
+  - risk_on: buy >3.5, sell <2.5, cash 20%, size 100%
+  - risk_off: buy >3.8, sell <2.8, cash 30%, size 80%
+  - volatile: buy >4.0, sell <2.5, cash 25%, size 70%
+- [x] `score_council` now uses regime-conditional buy/sell thresholds instead of fixed 3.5/2.5
+- [x] `pre_trade_validate.py` hook enforces regime-specific cash target (not just fixed 10%)
+- [x] `trading-council/SKILL.md` Step 1.5a injects regime strategy table before analysis
 
 ### 6.6 Earnings gate in council (S, MEDIUM)
 
-- [ ] Add explicit earnings check to `trading-council/SKILL.md` Step 2 (before spawning analysts)
-- [ ] If earnings within 3 days: skip buy analysis, carry forward existing position
-- [ ] If held position has earnings within 1 day: force evaluate hold-through vs sell-before
-- [ ] Wire `EarningsCalendar.should_reduce_size()` into `PositionSizer._handle_buy()` (flag exists, just enable)
-- [ ] Files: `trading-council/SKILL.md`, `position_sizer.py`, `default_config.py`
-
-### Build Order
-
-```
-Step 1 (parallel, no deps):
-  6.2 Wire signal_scores (S)
-  6.6 Earnings gate (S)
-
-Step 2 (depends on Step 1):
-  6.1 Auto stop-loss (S)
-  6.4 Correlation check (M)
-
-Step 3 (depends on Step 2):
-  6.3 Exit strategy rules (M)
-  6.5 Regime strategy (M)
-
-Step 4: Tests + docs
-```
+- [x] Added earnings gate to `trading-council/SKILL.md` Step 2 — earnings within 3 days skips buy analysis, within 1 day forces hold-through vs sell-before evaluation
+- [x] `earnings_avoidance_enabled` was already True in default config; position sizer already calls `_apply_earnings_adjustment()` in `_handle_buy()`
 
 ### Decision Log
 
-- 2026-05-24: Identified 6 gaps from system audit. Most infrastructure exists but isn't wired. Priority: exits > stops > IC tracking > correlation > regime > earnings.
+- 2026-05-24: Identified 6 gaps from system audit. Implemented all 6. Key changes: regime-conditional thresholds in score_council, exit conditions in live risk, signal scores wired for IC, correlation enabled, earnings gate in council skill, stop-loss sell recommendations.

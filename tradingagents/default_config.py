@@ -255,8 +255,15 @@ DEFAULT_CONFIG = _apply_env_overrides({
     # Execution edge features
     # ------------------------------------------------------------------
     "kelly_sizing_enabled": False,          # opt-in: uses historical win rate
-    "correlation_aware_enabled": False,     # opt-in: reduces correlated positions
+    "correlation_aware_enabled": True,      # reduces allocation when correlated with holdings (>0.7)
     "correlation_threshold": 0.7,
+    # Regime-conditional strategy thresholds
+    "regime_strategy": {
+        "risk_on":    {"buy_threshold": 3.5, "sell_threshold": 2.5, "cash_target": 0.20, "size_mult": 1.0},
+        "risk_off":   {"buy_threshold": 3.8, "sell_threshold": 2.8, "cash_target": 0.30, "size_mult": 0.8},
+        "volatile":   {"buy_threshold": 4.0, "sell_threshold": 2.5, "cash_target": 0.25, "size_mult": 0.7},
+        "transition": {"buy_threshold": 3.5, "sell_threshold": 2.5, "cash_target": 0.20, "size_mult": 1.0},
+    },
     "vwap_enabled": False,                  # opt-in: split large orders
     "vwap_slice_threshold": 100,            # shares above which VWAP is used
     # ------------------------------------------------------------------
