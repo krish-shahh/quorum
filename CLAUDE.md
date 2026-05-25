@@ -74,6 +74,7 @@ For manual sessions, use `/trading-day` to schedule cycles via CronCreate (sessi
 
 ```
 You (Chairman, Opus)
+  LAYER 1 — ANALYSTS (parallel, Haiku, with MCP tools)
   ├── Technical Analyst (Haiku)    → MCP: get_stock_data, get_indicators
   ├── Domain Analyst (Haiku)       → Sector-specific (see below)
   ├── Sentiment Analyst (Haiku)    → MCP: get_reddit/stocktwits, get_insider_*
@@ -91,8 +92,23 @@ You (Chairman, Opus)
   
   All 4 run in PARALLEL → return structured reports with 1-5 scores
   
-  You synthesize: peer review → score_council (deterministic) → execute_paper_trade
+  peer review → score_council (deterministic) → DEBATE GATE
   
+  LAYER 2 — DEBATE (conditional: score 2.8-4.2, analyst disagreement, new positions)
+  ├── Bull Researcher (Haiku)     ─┐ PARALLEL: argue FOR/AGAINST using analyst reports
+  ├── Bear Researcher (Haiku)     ─┘
+  ├── Research Manager (Sonnet)    → Judges debate, picks winner, produces plan
+  └── Trader Agent (Haiku)         → Entry price, stop loss, position sizing
+  
+  LAYER 3 — RISK DEBATE (conditional: same trigger as Layer 2)
+  ├── Aggressive Analyst (Haiku)  ─┐
+  ├── Conservative Analyst (Haiku) ├ PARALLEL: debate the trader's proposal
+  ├── Neutral Analyst (Haiku)     ─┘
+  └── Portfolio Manager (Sonnet)   → Final decision (can override score_council)
+  
+  Layers 2-3 skip when consensus is clear (score <2.5 or >4.2, analysts agree)
+  
+  Self-reflection: get_trade_reflections → past outcome lessons injected into PM
   Delta detection: get_ticker_deltas → skip unchanged tickers → 30-min loop
 
 Prediction Markets (Kalshi):
@@ -115,8 +131,8 @@ Scheduled Monitoring:
 
 ```
 tradingagents/
-  mcp/             — MCP server (35 tools: data, portfolio, execution, wiki, safety, state, asset info)
-  council/         — Council skills + 11 analyst prompts (4 universal + 7 domain) + compact_summary.py
+  mcp/             — MCP server (51 tools: data, portfolio, execution, wiki, safety, state, asset info, reflections)
+  council/         — Council skills + 19 analyst/debate prompts (4 universal + 7 domain + 8 debate) + compact_summary.py
   wiki/            — Knowledge base (run pages, digests, ticker pages, regimes)
   dataflows/       — Market data with TTL caching (yfinance, Reddit, StockTwits, regime, sectors)
   execution/       — Paper broker (with spread model + futures multiplier), safety (notional exposure + VaR + live intraday risk), contracts registry, ATR/Kelly position sizer
@@ -133,10 +149,12 @@ tradingagents/
 | `.claude/settings.json` | Hooks, permissions, env vars (NOT MCP — that's in .mcp.json) |
 | `.claude/hooks/pre_trade_validate.py` | Pre-trade risk validation (deterministic, blocking) |
 | `.claude/hooks/post_tool_audit.py` | Audit trail for all MCP tool calls + subagent stops |
-| `.claude/skills/trading-council/` | Main council skill (delta check, 4 subagents, scoring) |
+| `.claude/skills/trading-council/` | Main council skill (3-layer: analysts, debate, risk debate) |
 | `.claude/skills/trading-day/` | Full-day scheduling skill |
 | `.claude/skills/market-monitor/` | Background monitoring skill for /loop |
 | `.claude/skills/analyst-*/` | 11 analyst skills (4 universal + 7 domain) with model:haiku + allowed-tools |
+| `.claude/skills/debate-*/` | 8 debate skills (bull, bear, research-manager, trader, 3 risk, portfolio-manager) |
+| `tradingagents/execution/reflection.py` | Self-reflection engine: generates lessons from past trade outcomes |
 | `tradingagents/execution/contracts.py` | Futures contract spec registry (22 contracts: multiplier, margin, expiry) |
 | `~/.tradingagents/tickers.txt` | Your watchlist (one ticker per line) |
 | `~/.tradingagents/rules.json` | Trading restrictions (blocked tickers, max trade value) |
@@ -144,7 +162,7 @@ tradingagents/
 | `~/.tradingagents/wiki/` | Analysis pages, digests, ticker summaries |
 | `scripts/start-trading-day.sh` | Auto-start script (called by launchd at 9:30 AM) |
 
-## MCP Tools (50)
+## MCP Tools (51)
 
 Data: get_stock_data, get_indicators, get_fundamentals, get_financial_statements, get_news, get_global_news, get_reddit_sentiment, get_stocktwits_sentiment, get_insider_transactions, get_insider_clusters, get_market_regime, get_sector_rotation, get_earnings_calendar
 
@@ -159,6 +177,8 @@ Council: get_autonomous_tickers, get_full_ticker_data, save_analysis_to_wiki, sa
 State & Cache: get_ticker_state, get_ticker_deltas, get_cache_stats, get_asset_info
 
 Quant & Risk: get_quant_scores, get_portfolio_risk, get_live_risk
+
+Reflection: get_trade_reflections (past outcome lessons for PM prompt injection)
 
 Kalshi: get_kalshi_markets, get_kalshi_market, get_kalshi_orderbook, get_kalshi_events, get_kalshi_event, execute_kalshi_paper_trade, get_kalshi_positions
 

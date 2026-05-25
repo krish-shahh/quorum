@@ -21,7 +21,7 @@ runtime: RUNTIME {
     style.fill: "#f0fdf4"
     style.stroke: "#10b981"
   }
-  tools: 50 Python Tools\n(data + execution) {
+  tools: 51 Python Tools\n(data + execution + reflection) {
     style.fill: "#f0fdf4"
     style.stroke: "#10b981"
   }
@@ -45,7 +45,7 @@ runtime: RUNTIME {
 # STOCK TRADING COUNCIL
 # ══════════════════════════════════════════════════════════════
 
-council: STOCK TRADING COUNCIL — 4 parallel Haiku analysts orchestrated by Opus {
+council: STOCK TRADING COUNCIL — up to 12 subagents across 3 layers {
   style.fill: "#f0fdf4"
   style.stroke: "#10b981"
   style.stroke-dash: 5
@@ -61,32 +61,98 @@ council: STOCK TRADING COUNCIL — 4 parallel Haiku analysts orchestrated by Opu
     style.stroke: "#8b5cf6"
   }
 
-  analysts: 4 Haiku Subagents in Parallel {
+  analysts: LAYER 1 — 4 Haiku Analysts (parallel) {
     style.fill: "#f8fafc"
     style.stroke: "#d1d5db"
     style.border-radius: 8
 
-    tech: Technical Analyst\n\nmodel: haiku\nRSI, MACD, SMA, ATR\nRegime-conditional {
+    tech: Technical\n\nhaiku\nRSI, MACD, SMA\nATR, Bollinger {
       style.fill: "#eff6ff"
       style.stroke: "#3b82f6"
     }
-    domain: Domain Analyst\n\nmodel: haiku\n7 sector specialists\nTech Fin HC Con Cyc Bnd Cmd {
+    domain: Domain\n\nhaiku\n7 sector specs\nTech Fin HC\nCon Cyc Bnd Cmd {
       style.fill: "#eff6ff"
       style.stroke: "#3b82f6"
     }
-    sentiment: Sentiment Analyst\n\nmodel: haiku\nReddit, StockTwits\nInsider clusters {
+    sentiment: Sentiment\n\nhaiku\nReddit, StockTwits\nInsider clusters {
       style.fill: "#eff6ff"
       style.stroke: "#3b82f6"
     }
-    news: News/Macro Analyst\n\nmodel: haiku\nWebSearch + regime\nFOMC, CPI, earnings {
+    news: News/Macro\n\nhaiku\nWebSearch\nFOMC, CPI, earnings {
       style.fill: "#eff6ff"
       style.stroke: "#3b82f6"
     }
   }
 
-  score: score_council\n\n25% tech + 25% domain\n20% sent + 20% news\nRegime-conditional thresholds\nSignal scores saved for IC {
+  score: score_council\n\nDeterministic scoring\nRegime-conditional\nHard vetoes + tiebreakers {
     style.fill: "#f0fdf4"
     style.stroke: "#10b981"
+  }
+
+  gate: DEBATE GATE\n\nTrigger: score 2.8-4.2\nanalyst spread > 2.0\n2-2 split, new position\n\nSkip: clear consensus {
+    style.fill: "#faf5ff"
+    style.stroke: "#a78bfa"
+  }
+
+  debate: LAYER 2 — Investment Debate (conditional) {
+    style.fill: "#faf5ff"
+    style.stroke: "#8b5cf6"
+    style.stroke-dash: 3
+    style.border-radius: 8
+
+    bull: Bull Researcher\n(haiku, parallel) {
+      style.fill: "#f0fdf4"
+      style.stroke: "#10b981"
+    }
+    bear: Bear Researcher\n(haiku, parallel) {
+      style.fill: "#fef2f2"
+      style.stroke: "#ef4444"
+    }
+    rm: Research Manager\n(sonnet)\nJudges debate\nPicks winner {
+      style.fill: "#eff6ff"
+      style.stroke: "#3b82f6"
+    }
+    trader: Trader Agent\n(haiku)\nEntry, Stop, Size {
+      style.fill: "#eff6ff"
+      style.stroke: "#3b82f6"
+    }
+
+    bull -> rm: argues FOR
+    bear -> rm: argues AGAINST
+    rm -> trader: plan
+  }
+
+  risk_debate: LAYER 3 — Risk Debate (conditional) {
+    style.fill: "#fef2f2"
+    style.stroke: "#ef4444"
+    style.stroke-dash: 3
+    style.border-radius: 8
+
+    agg: Aggressive\n(haiku) {
+      style.fill: "#fffbeb"
+      style.stroke: "#f59e0b"
+    }
+    cons: Conservative\n(haiku) {
+      style.fill: "#f0fdf4"
+      style.stroke: "#10b981"
+    }
+    neut: Neutral\n(haiku) {
+      style.fill: "#f8fafc"
+      style.stroke: "#6b7280"
+    }
+    pm: Portfolio Manager\n(sonnet)\nFinal decision\nCan override score {
+      style.fill: "#eff6ff"
+      style.stroke: "#3b82f6"
+    }
+
+    agg -> pm
+    cons -> pm
+    neut -> pm
+  }
+
+  reflection: Self-Reflection\n\nget_trade_reflections\nPast outcomes + lessons\nInjected into PM prompt {
+    style.fill: "#fff"
+    style.stroke: "#e5e7eb"
   }
 
   execute: execute_paper_trade\n\npre-trade hook validates\nspread + slippage model {
@@ -96,8 +162,13 @@ council: STOCK TRADING COUNCIL — 4 parallel Haiku analysts orchestrated by Opu
 
   delta -> quant
   quant -> analysts
-  analysts -> score: 4 scores
-  score -> execute: signal
+  analysts -> score: 4 scores (1-5)
+  score -> gate
+  gate -> debate: ambiguous {style.stroke: "#8b5cf6"}
+  gate -> execute: clear consensus {style.stroke: "#10b981"}
+  debate -> risk_debate: proposal
+  risk_debate -> execute: PM signal
+  reflection -> risk_debate.pm: lessons {style.stroke-dash: 3}
 }
 
 # ══════════════════════════════════════════════════════════════
@@ -225,12 +296,12 @@ data: DATA + PERSISTENCE {
     style.stroke: "#c4b5fd"
   }
 
-  wiki: Wiki Knowledge Base\n\nPer-ticker analysis pages\nDaily digest summaries\nRegime change records\nCouncil run archives\nAccumulates over time\n(Karpathy LLM context pattern) {
+  wiki: Wiki Knowledge Base\n\nPer-ticker analysis pages\nBull/Bear debate archives\nDaily digest summaries\nTrade reflections + lessons\nRegime change records\nAccumulates over time {
     style.fill: "#fff"
     style.stroke: "#e5e7eb"
   }
 
-  persist: Persistence Layer\n\nMemory: 5 cross-session files\nAudit: MCP call JSONL\nBacktest: quant IC replay {
+  persist: Persistence Layer\n\nMemory: 5 cross-session files\nAudit: MCP call JSONL\nLearning: outcome tracking\nBacktest: quant IC replay {
     style.fill: "#fff"
     style.stroke: "#e5e7eb"
   }

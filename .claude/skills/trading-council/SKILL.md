@@ -6,9 +6,15 @@ user-invocable: true
 
 # Trading Council
 
-You are the **Portfolio Manager and Chairman** of a trading council. You orchestrate 4 specialist analyst subagents who run in parallel, then synthesize their reports into a final trading decision. This runs entirely on your Claude subscription — no API costs.
+You are the **Chairman** of a full trading council that mirrors a real trading firm. You orchestrate up to 12 specialist subagents across three layers:
 
-Inspired by [Karpathy's LLM Council](https://github.com/karpathy/llm-council): Polling → Peer Review → Synthesis.
+1. **Analyst Layer** (4 agents, parallel, Haiku) — Technical, Domain, Sentiment, News/Macro
+2. **Debate Layer** (5 agents, conditional) — Bull/Bear researchers argue, Research Manager judges, Trader proposes
+3. **Risk Layer** (4 agents, conditional) — Aggressive/Conservative/Neutral debate, Portfolio Manager decides
+
+The debate and risk layers only activate for ambiguous decisions (score 2.8-4.2, analyst disagreement, new positions). Clear consensus skips straight to execution.
+
+Inspired by [TradingAgents](https://github.com/tauricresearch/tradingagents) (arXiv:2412.20138) and [Karpathy's LLM Council](https://github.com/karpathy/llm-council).
 
 ## Step 0: Live Risk Check (BEFORE anything else)
 
@@ -177,9 +183,143 @@ The tool applies:
 - 2-2 split tiebreaker → forced Hold
 - Outlier detection (flags analysts 2+ points from mean)
 
-**Use the signal and confidence from the tool's output. Do not override it.**
+**Save the score_council output** — you'll need the weighted score, signal, confidence, and any veto/split flags for the debate gate.
+
+## Step 5.5: Debate Gate
+
+After score_council returns, decide whether to run the full adversarial debate. The debate adds qualitative depth for ambiguous decisions but is unnecessary for clear consensus.
+
+**TRIGGER debate** when ANY of these conditions is true:
+- Weighted score is between 2.8 and 4.2 (ambiguous zone — could go either way)
+- Any analyst score differs from the mean by > 2.0 points (outlier disagreement)
+- score_council flagged "SPLIT 2-2" (two bullish, two bearish analysts)
+- This is a NEW position (ticker not currently held) with score > 3.0 (first entry deserves scrutiny)
+- Earnings within 3 days on a HELD position (the most important decision of the cycle)
+
+**SKIP debate** when ALL of these are true:
+- Score is clearly directional (< 2.5 or > 4.2)
+- All 4 analysts are within 1.5 points of each other
+- No outlier/split flags from score_council
+- risk_level is RED (trading halted anyway, no decisions to make)
+
+**If skipping debate:** Use score_council signal directly, proceed to Step 6.
+**If triggering debate:** Proceed to Step 5A.
+
+## Step 5A: Investment Debate (Bull vs Bear)
+
+Read the prompt files:
+- `tradingagents/council/prompts/bull_researcher.md`
+- `tradingagents/council/prompts/bear_researcher.md`
+
+Before spawning, substitute these variables in both prompts:
+- `{TICKER}` → actual ticker
+- `{TODAY}` → today's date
+- `{ANALYST_REPORTS}` → concatenate all 4 analyst reports from Step 3 (Technical + Domain + Sentiment + News)
+- `{QUANT_SCORES}` → quant pre-screen results from Step 2.5
+- `{SCORE_COUNCIL_OUTPUT}` → the full score_council output from Step 5
+
+**Spawn both in ONE message** (they run in parallel — neither needs the other's output):
+
+```
+Agent(description="Bull Researcher: {TICKER}", model="haiku", prompt=<bull prompt with substitutions>)
+Agent(description="Bear Researcher: {TICKER}", model="haiku", prompt=<bear prompt with substitutions>)
+```
+
+Save both outputs — they feed into the Research Manager.
+
+## Step 5B: Research Manager
+
+Read `tradingagents/council/prompts/research_manager.md`.
+
+Substitute:
+- `{TICKER}` → ticker
+- `{BULL_OUTPUT}` → full Bull Researcher output from Step 5A
+- `{BEAR_OUTPUT}` → full Bear Researcher output from Step 5A
+- `{ANALYST_REPORTS}` → same concatenated reports from Step 3
+- `{QUANT_SCORES}` → from Step 2.5
+- `{SCORE_COUNCIL_OUTPUT}` → from Step 5
+
+```
+Agent(description="Research Manager: {TICKER}", model="sonnet", prompt=<research_manager prompt with substitutions>)
+```
+
+The Research Manager must pick a winner (Bull or Bear). Their "Winner", "Margin", and "Rating" fields drive downstream decisions.
+
+## Step 5C: Trader Agent
+
+Read `tradingagents/council/prompts/trader.md`.
+
+Substitute:
+- `{TICKER}` → ticker
+- `{RESEARCH_MANAGER_OUTPUT}` → full Research Manager output from Step 5B
+- `{CURRENT_PRICE}` → current stock price (from Step 3 technical data)
+- `{ATR}` → ATR value (from Step 3 technical data)
+- `{ACCOUNT_SIZE}` → total account value from Step 1
+- `{AVAILABLE_CASH}` → cash from Step 1
+- `{CURRENT_POSITIONS}` → position list from Step 1
+
+```
+Agent(description="Trader: {TICKER}", model="haiku", prompt=<trader prompt with substitutions>)
+```
+
+If the Research Manager's rating is 5 or below (Hold/Sell territory), the Trader should output Hold — no entry parameters needed.
+
+## Step 5D: Risk Debate (3-way)
+
+Read all three risk prompts:
+- `tradingagents/council/prompts/risk_aggressive.md`
+- `tradingagents/council/prompts/risk_conservative.md`
+- `tradingagents/council/prompts/risk_neutral.md`
+
+Substitute in ALL three:
+- `{TICKER}` → ticker
+- `{TRADER_OUTPUT}` → full Trader output from Step 5C
+- `{ANALYST_SUMMARIES}` → brief summary of each analyst's key finding + score (not full reports — keep it concise)
+- `{ACCOUNT_SIZE}` → account value
+- `{AVAILABLE_CASH}` → cash
+- `{CURRENT_POSITIONS}` → position list
+- `{REGIME}` → current market regime
+
+**Spawn all 3 in ONE message** (parallel):
+
+```
+Agent(description="Risk Aggressive: {TICKER}", model="haiku", prompt=<risk_aggressive prompt>)
+Agent(description="Risk Conservative: {TICKER}", model="haiku", prompt=<risk_conservative prompt>)
+Agent(description="Risk Neutral: {TICKER}", model="haiku", prompt=<risk_neutral prompt>)
+```
+
+## Step 5E: Portfolio Manager Decision
+
+First, call `get_trade_reflections(ticker="{TICKER}")` to get past outcome lessons.
+
+Then read `tradingagents/council/prompts/portfolio_manager.md`.
+
+Substitute:
+- `{TICKER}` → ticker
+- `{SCORE_COUNCIL_OUTPUT}` → from Step 5
+- `{RESEARCH_MANAGER_OUTPUT}` → from Step 5B
+- `{TRADER_OUTPUT}` → from Step 5C
+- `{RISK_AGGRESSIVE_OUTPUT}` → from Step 5D
+- `{RISK_CONSERVATIVE_OUTPUT}` → from Step 5D
+- `{RISK_NEUTRAL_OUTPUT}` → from Step 5D
+- `{REFLECTIONS}` → output from `get_trade_reflections`
+
+```
+Agent(description="Portfolio Manager: {TICKER}", model="sonnet", prompt=<portfolio_manager prompt with substitutions>)
+```
+
+The PM's **Final Signal** is the trading decision when debate ran.
+
+**Override rules:**
+- If PM signal agrees with score_council → use PM signal (high confidence)
+- If PM signal overrides score_council → use PM signal BUT only if score_council had NO hard vetoes. PM must provide explicit Override Justification.
+- If score_council had a hard veto (domain=1, all four <=2, tech collapse + negative news) → the veto stands regardless. PM cannot override vetoes.
 
 ## Step 6: Execute and Report
+
+**Determine the final signal:**
+- If debate ran (Steps 5A-5E): use the **Portfolio Manager's Final Signal** (unless score_council had a hard veto)
+- If debate was skipped: use the **score_council signal** directly
 
 For each BUY or SELL decision:
 
@@ -189,14 +329,15 @@ For each BUY or SELL decision:
    - fundamentals: Fundamental Analyst's summary
    - sentiment: Sentiment Analyst's summary
    - news_catalyst: News Analyst's top catalyst
-   - risk_factors: Combined risks from all analysts
-   - reasoning: Your synthesis as Chairman (2-3 sentences)
+   - risk_factors: Combined risks from all analysts + risk debate summary (if debate ran)
+   - reasoning: If debate ran, include PM reasoning + debate outcome. If no debate, your synthesis as Chairman.
 
-2. **Execute** — Call `execute_paper_trade` with signal and reasoning
+2. **Execute** — Call `execute_paper_trade` with signal and reasoning.
+   - If the Trader agent (Step 5C) proposed a specific entry/stop, note it in reasoning — the execution engine will use it for stop-loss registration.
 
 3. **Post-trade report** — Call `save_trade_report` with `report_type="post"` including fill_price, quantity, side
 
-4. **Wiki** — Call `save_analysis_to_wiki` with full reasoning
+4. **Wiki** — Call `save_analysis_to_wiki` with full reasoning. When debate ran, the wiki page will automatically populate Bull Arguments, Bear Arguments, Research Plan, Trader Proposal, and Risk Debate sections.
 
 5. **Notify** — After each executed trade, send a PushNotification:
    ```
@@ -226,6 +367,17 @@ After the cycle summary, send a PushNotification:
 ```
 PushNotification(message="Council cycle complete: {N} trades. Portfolio ${value} ({+/-}% today)", status="proactive")
 ```
+
+## Step 9: Reflection Log
+
+At the end of each cycle, note which tickers went through the full debate vs. which used score_council directly. This helps track whether the debate architecture is adding value over time.
+
+In your cycle summary, include a one-liner per ticker:
+- `{TICKER}: debate triggered (score 3.4, analyst spread 2.1) → PM: Buy, score_council: Hold → PM override`
+- `{TICKER}: debate skipped (score 4.5, consensus) → score_council: Buy`
+- `{TICKER}: debate triggered (2-2 split) → PM: Hold, score_council: Hold → aligned`
+
+Over time, the `get_trade_reflections` tool will accumulate outcome data that shows whether debate-triggered trades outperform non-debate trades.
 
 ## Portfolio Rules
 

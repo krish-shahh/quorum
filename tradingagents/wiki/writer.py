@@ -545,6 +545,26 @@ class WikiWriter:
                 parts.append(f"- {tag} ({count})")
             parts.append("")
 
+        # Trade reflections (lessons from past outcomes)
+        try:
+            from tradingagents.execution.learning import LearningEngine
+            from tradingagents.execution.reflection import ReflectionEngine
+            learner = LearningEngine(self.config)
+            reflector = ReflectionEngine(learner, self.config)
+            reflections = reflector.get_reflections(ticker, include_sector=False, limit=5)
+            # Only add section if there are actual resolved trades
+            if "No resolved trades yet" not in reflections:
+                parts.append("## Trade Reflections")
+                parts.append("")
+                # Strip the title line (already have a section header)
+                refl_lines = reflections.split("\n")
+                for line in refl_lines:
+                    if not line.startswith("# Trade Reflections"):
+                        parts.append(line)
+                parts.append("")
+        except Exception:
+            pass
+
         # Recent run timeline (last 20)
         parts.append("## Recent Runs")
         parts.append("")

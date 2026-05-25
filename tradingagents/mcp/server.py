@@ -73,7 +73,7 @@ def create_server():
         # Autonomous cycle (subscription-powered — YOU are the analyst)
         Tool(name="get_full_ticker_data", description="Get ALL data for a ticker in one call: price history (30d), key technicals (RSI, MACD, SMA50, SMA200, Bollinger, ATR), fundamentals, recent news, Reddit sentiment, StockTwits sentiment, insider activity, and earnings calendar. Use this to analyze a ticker yourself instead of calling the multi-agent pipeline.", inputSchema={"type": "object", "properties": {"ticker": {"type": "string", "description": "Stock ticker symbol"}}, "required": ["ticker"]}),
         Tool(name="get_autonomous_tickers", description="Start an autonomous trading cycle. Returns your watchlist tickers, current portfolio (positions + cash), and market regime. Your job is to actively manage the portfolio: BUY tickers with strong setups, SELL positions whose thesis has deteriorated, and HOLD the rest. The watchlist is what you monitor — the portfolio is what you own.", inputSchema={"type": "object", "properties": {}}),
-        Tool(name="save_analysis_to_wiki", description="Save your analysis of a ticker to the wiki knowledge base. Call this after you analyze a ticker so the dashboard can display it and future analyses can reference it.", inputSchema={"type": "object", "properties": {"ticker": {"type": "string"}, "signal": {"type": "string", "enum": ["Buy", "Sell", "Overweight", "Underweight", "Hold"]}, "confidence": {"type": "number", "description": "Your confidence 0.0-1.0"}, "reasoning": {"type": "string", "description": "Your full analysis reasoning"}}, "required": ["ticker", "signal", "reasoning"]}),
+        Tool(name="save_analysis_to_wiki", description="Save your analysis of a ticker to the wiki knowledge base. Call this after you analyze a ticker so the dashboard can display it and future analyses can reference it. When debate ran, include the debate fields to populate wiki debate sections.", inputSchema={"type": "object", "properties": {"ticker": {"type": "string"}, "signal": {"type": "string", "enum": ["Buy", "Sell", "Overweight", "Underweight", "Hold"]}, "confidence": {"type": "number", "description": "Your confidence 0.0-1.0"}, "reasoning": {"type": "string", "description": "Your full analysis reasoning"}, "bull_case": {"type": "string", "description": "Bull researcher output (from debate)"}, "bear_case": {"type": "string", "description": "Bear researcher output (from debate)"}, "research_plan": {"type": "string", "description": "Research Manager plan (from debate)"}, "trader_proposal": {"type": "string", "description": "Trader Agent proposal (from debate)"}, "risk_debate": {"type": "string", "description": "Combined risk debate output (from debate)"}, "debate_triggered": {"type": "boolean", "description": "Whether the debate was triggered for this ticker", "default": false}}, "required": ["ticker", "signal", "reasoning"]}),
         Tool(name="save_trade_report", description="Save a structured pre-trade or post-trade report. Call with report_type='pre' BEFORE executing a trade (your analysis), and report_type='post' AFTER execution (fill details + P&L). These show up in the dashboard Activity page.", inputSchema={"type": "object", "properties": {"ticker": {"type": "string"}, "report_type": {"type": "string", "enum": ["pre", "post"], "description": "pre = before trade (analysis), post = after trade (execution details)"}, "signal": {"type": "string", "enum": ["Buy", "Sell", "Overweight", "Underweight", "Hold"]}, "confidence": {"type": "number", "description": "0.0-1.0"}, "technicals": {"type": "string", "description": "Technical analysis summary (RSI, MACD, SMA, etc.)"}, "fundamentals": {"type": "string", "description": "Fundamental analysis summary (PE, revenue, margins)"}, "sentiment": {"type": "string", "description": "Sentiment summary (Reddit, StockTwits %)"}, "news_catalyst": {"type": "string", "description": "Key news or catalyst driving the decision"}, "risk_factors": {"type": "string", "description": "Risks: earnings proximity, regime, correlation, etc."}, "reasoning": {"type": "string", "description": "Overall reasoning for the decision"}, "fill_price": {"type": "number", "description": "(post only) Execution fill price"}, "quantity": {"type": "integer", "description": "(post only) Shares traded"}, "side": {"type": "string", "description": "(post only) buy or sell"}, "pnl": {"type": "number", "description": "(post only) P&L impact on account"}}, "required": ["ticker", "report_type", "signal", "reasoning"]}),
         Tool(name="get_trade_reports", description="Get pre-trade and post-trade reports for display. Filter by ticker or get all recent reports.", inputSchema={"type": "object", "properties": {"ticker": {"type": "string", "description": "Filter by ticker (optional)"}, "limit": {"type": "integer", "default": 20}}}),
         # Wiki
@@ -85,6 +85,8 @@ def create_server():
         Tool(name="prune_wiki", description="Archive wiki pages older than N days. Keeps the injected context sharp by removing stale analyses. Returns count of archived pages.", inputSchema={"type": "object", "properties": {"max_age_days": {"type": "integer", "default": 30, "description": "Archive pages older than this (default 30)"}}}),
         # Analytics
         Tool(name="get_analytics_summary", description="Get portfolio analytics: Sharpe ratio, Sortino ratio, drawdown, win rate, alpha vs SPY.", inputSchema={"type": "object", "properties": {}}),
+        # Trade reflections (self-reflection for Portfolio Manager)
+        Tool(name="get_trade_reflections", description="Get past trade outcomes and lessons for a ticker. Returns resolved trades, win/loss patterns, and generated insights. Used by the Portfolio Manager to learn from past decisions and avoid repeating mistakes.", inputSchema={"type": "object", "properties": {"ticker": {"type": "string", "description": "Ticker symbol to get reflections for"}, "include_sector": {"type": "boolean", "default": True, "description": "Include same-sector pattern analysis"}, "limit": {"type": "integer", "default": 5, "description": "Max outcomes to show per section"}}, "required": ["ticker"]}),
         # Cache stats
         Tool(name="get_cache_stats", description="Get data cache hit/miss stats per function and active entry counts. Use to verify caching is working and identify expensive fetches.", inputSchema={"type": "object", "properties": {}}),
         # Ticker state (delta-aware cycles)
@@ -563,7 +565,15 @@ def _handle_tool(name: str, args: dict) -> str:
         confidence = float(args.get("confidence", 0.5))
         reasoning = args.get("reasoning", "")
 
-        # Build a synthetic final_state so the wiki writer can produce a page
+        # Debate fields (populated when debate ran, empty when skipped)
+        bull_case = args.get("bull_case", "")
+        bear_case = args.get("bear_case", "")
+        research_plan = args.get("research_plan", "")
+        trader_proposal = args.get("trader_proposal", "")
+        risk_debate = args.get("risk_debate", "")
+        debate_triggered = args.get("debate_triggered", False)
+
+        # Build final_state so the wiki writer can produce a full page
         final_state = {
             "trade_date": today,
             "company_of_interest": ticker,
@@ -571,14 +581,40 @@ def _handle_tool(name: str, args: dict) -> str:
             "sentiment_report": "",
             "news_report": "",
             "fundamentals_report": "",
-            "investment_debate_state": {"bull_history": "", "bear_history": ""},
-            "investment_plan": "",
-            "trader_investment_plan": f"**Action:** {signal}\n\n**Reasoning:** {reasoning}",
-            "risk_debate_state": {"history": ""},
+            "investment_debate_state": {
+                "bull_history": bull_case,
+                "bear_history": bear_case,
+            },
+            "investment_plan": research_plan,
+            "trader_investment_plan": trader_proposal or f"**Action:** {signal}\n\n**Reasoning:** {reasoning}",
+            "risk_debate_state": {"history": risk_debate},
             "final_trade_decision": f"**{signal}** — {reasoning}",
+            "debate_triggered": debate_triggered,
         }
         path = wiki.write_run_page(ticker, today, final_state, signal)
-        return f"Analysis saved to wiki: {path}"
+
+        # Mark the ticker_state as debate-triggered for dashboard tracking
+        if debate_triggered:
+            from tradingagents.execution.db import mark_debate_triggered
+            mark_debate_triggered(config, ticker)
+
+        # Include reflections in the wiki page if debate ran
+        if debate_triggered:
+            from tradingagents.execution.learning import LearningEngine
+            from tradingagents.execution.reflection import ReflectionEngine
+            learner = LearningEngine(config)
+            reflector = ReflectionEngine(learner, config)
+            reflections = reflector.get_reflections(ticker, limit=3)
+            # Append reflections to the wiki page
+            page_path = wiki.wiki_dir / path
+            if page_path.exists():
+                content = page_path.read_text(encoding="utf-8")
+                content += f"\n## Trade Reflections\n\n{reflections}\n"
+                page_path.write_text(content, encoding="utf-8")
+
+        return f"Analysis saved to wiki: {path}" + (
+            " (with debate sections)" if debate_triggered else ""
+        )
 
     if name == "save_trade_report":
         from tradingagents.execution.db import get_db
@@ -1292,6 +1328,19 @@ def _handle_tool(name: str, args: dict) -> str:
                 lines.append(f"- **{sr['ticker']}**: {sr['reason']}")
 
         return "\n".join(lines)
+
+    # ── Trade Reflections (self-reflection for PM) ─────────────────
+    if name == "get_trade_reflections":
+        from tradingagents.execution.learning import LearningEngine
+        from tradingagents.execution.reflection import ReflectionEngine
+
+        learner = LearningEngine(config)
+        reflector = ReflectionEngine(learner, config)
+        return reflector.get_reflections(
+            ticker=args["ticker"],
+            include_sector=args.get("include_sector", True),
+            limit=int(args.get("limit", 5)),
+        )
 
     # ── Kalshi Prediction Markets ──────────────────────────────────
     if name == "get_kalshi_markets":

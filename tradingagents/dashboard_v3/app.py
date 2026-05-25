@@ -331,6 +331,7 @@ def get_ticker_states():
                 "analyzed_at": s["analyzed_at"][:16],
                 "asset_class": asset_info["asset_class"],
                 "sector": asset_info["sector"],
+                "debate_triggered": bool(s.get("debate_triggered", 0)),
             })
         return results
     except Exception as e:
@@ -358,6 +359,7 @@ def get_ticker_detail(ticker):
                 "analyzed_at": h["analyzed_at"][:16],
                 "asset_class": asset_info["asset_class"],
                 "sector": asset_info["sector"],
+                "debate_triggered": bool(h.get("debate_triggered", 0)),
             }
             for h in history
         ]
@@ -383,6 +385,20 @@ def get_ticker_detail(ticker):
     except Exception as e:
         print(f"[v3] ticker detail error: {e}")
         return {"detail": {}, "history": [], "quant": {}}
+
+
+def get_ticker_reflections(ticker):
+    """Get trade reflections for a ticker (past outcome lessons)."""
+    try:
+        config = _cfg()
+        from tradingagents.execution.learning import LearningEngine
+        from tradingagents.execution.reflection import ReflectionEngine
+        learner = LearningEngine(config)
+        reflector = ReflectionEngine(learner, config)
+        return reflector.get_reflections(ticker, include_sector=True, limit=5)
+    except Exception as e:
+        print(f"[v3] reflections error: {e}")
+        return ""
 
 
 def get_trade_reports(limit=30):
@@ -1321,9 +1337,11 @@ def create_app():
         states = get_ticker_states()
         detail = get_ticker_detail(ticker) if ticker else None
         reports = get_trade_reports(limit=30)
+        reflections = get_ticker_reflections(ticker) if ticker else ""
         return render_template("council.html",
                                states=states, ticker=ticker, detail=detail,
-                               reports=reports, page="council")
+                               reports=reports, reflections=reflections,
+                               page="council")
 
     @app.route("/performance")
     def performance():

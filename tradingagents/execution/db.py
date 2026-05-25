@@ -160,6 +160,7 @@ CREATE TABLE IF NOT EXISTS ticker_state (
     weighted_score    REAL    NOT NULL DEFAULT 3.0,
     price_at_analysis REAL,
     regime_at_analysis TEXT   NOT NULL DEFAULT '',
+    debate_triggered  INTEGER NOT NULL DEFAULT 0,
     analyzed_at       TEXT    NOT NULL DEFAULT (datetime('now')),
     UNIQUE(ticker, analyzed_at)
 );
@@ -323,6 +324,7 @@ def get_db(config: Optional[Dict[str, Any]] = None) -> sqlite3.Connection:
         for migration in [
             "ALTER TABLE kalshi_positions ADD COLUMN council_probability REAL",
             "ALTER TABLE paper_positions ADD COLUMN trailing_high REAL",
+            "ALTER TABLE ticker_state ADD COLUMN debate_triggered INTEGER NOT NULL DEFAULT 0",
         ]:
             try:
                 conn.execute(migration)
@@ -611,6 +613,20 @@ def save_ticker_state(
             price,
             regime,
         ),
+    )
+    conn.commit()
+
+
+def mark_debate_triggered(
+    config: Optional[Dict[str, Any]], ticker: str
+) -> None:
+    """Mark the most recent ticker_state row as debate-triggered."""
+    conn = get_db(config)
+    conn.execute(
+        "UPDATE ticker_state SET debate_triggered = 1 "
+        "WHERE id = (SELECT id FROM ticker_state WHERE ticker = ? "
+        "ORDER BY analyzed_at DESC LIMIT 1)",
+        (ticker,),
     )
     conn.commit()
 

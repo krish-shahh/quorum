@@ -267,6 +267,15 @@ DEFAULT_CONFIG = _apply_env_overrides({
     "vwap_enabled": False,                  # opt-in: split large orders
     "vwap_slice_threshold": 100,            # shares above which VWAP is used
     # ------------------------------------------------------------------
+    # Debate architecture (bull/bear + risk debate layers)
+    # ------------------------------------------------------------------
+    "debate_enabled": True,
+    "debate_trigger_score_min": 2.8,        # lower bound of ambiguous zone
+    "debate_trigger_score_max": 4.2,        # upper bound of ambiguous zone
+    "debate_trigger_spread": 2.0,           # analyst spread threshold
+    "debate_force_on_new_position": True,   # always debate before first entry
+    "debate_force_on_earnings": True,       # always debate near-earnings decisions
+    # ------------------------------------------------------------------
     # Push notifications (VAPID web push)
     # ------------------------------------------------------------------
     "push_notifications_enabled": False,

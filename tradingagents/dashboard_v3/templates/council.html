@@ -55,9 +55,14 @@
         <span class="text-xs text-gray-400">${{ "%.2f"|format(s.price) if s.price else '—' }}</span>
         <span class="text-lg font-bold font-mono text-gray-900">{{ "%.2f"|format(s.weighted) if s.weighted else '—' }}</span>
       </div>
-      {# Bottom: timestamp + mini scores #}
+      {# Bottom: timestamp + mini scores + debate badge #}
       <div class="flex items-center justify-between">
-        <span class="text-[9px] text-gray-300 font-mono">{{ s.analyzed_at[:16] if s.analyzed_at else '' }}</span>
+        <div class="flex items-center gap-1">
+          <span class="text-[9px] text-gray-300 font-mono">{{ s.analyzed_at[:16] if s.analyzed_at else '' }}</span>
+          {% if s.debate_triggered %}
+          <span class="text-[7px] font-bold px-1 py-0.5 rounded bg-violet-50 text-violet-600" title="Full debate ran for this ticker">DBT</span>
+          {% endif %}
+        </div>
         <span class="text-[9px] text-gray-400 font-mono">
           T:{{ s.technical }} {{ s | domain_abbr }}:{{ s.fundamental }} S:{{ s.sentiment }} N:{{ s.news }}
         </span>
@@ -149,6 +154,14 @@
           <span class="text-xs text-gray-400">Last Analyzed</span>
           <span class="text-[11px] font-mono text-gray-500">{{ detail.detail.analyzed_at or '—' }}</span>
         </div>
+        <div class="flex items-center gap-2">
+          <span class="text-xs text-gray-400">Debate</span>
+          {% if detail.detail.debate_triggered %}
+          <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-violet-50 text-violet-700">Triggered</span>
+          {% else %}
+          <span class="text-[10px] font-medium px-1.5 py-0.5 rounded bg-gray-50 text-gray-400">Skipped</span>
+          {% endif %}
+        </div>
       </div>
     </div>
 
@@ -168,6 +181,7 @@
               <th class="text-right py-1.5 px-2 font-semibold text-gray-500 uppercase text-[10px] tracking-wider">S</th>
               <th class="text-right py-1.5 px-2 font-semibold text-gray-500 uppercase text-[10px] tracking-wider">N</th>
               <th class="text-right py-1.5 px-2 font-semibold text-gray-500 uppercase text-[10px] tracking-wider">Price</th>
+              <th class="text-center py-1.5 px-2 font-semibold text-gray-500 uppercase text-[10px] tracking-wider">Debate</th>
             </tr>
           </thead>
           <tbody>
@@ -181,11 +195,26 @@
               <td class="py-1.5 px-2 text-right font-mono text-gray-600">{{ h.sentiment }}</td>
               <td class="py-1.5 px-2 text-right font-mono text-gray-600">{{ h.news }}</td>
               <td class="py-1.5 px-2 text-right font-mono text-gray-600">${{ "%.2f"|format(h.price) if h.price else '—' }}</td>
+              <td class="py-1.5 px-2 text-center">
+                {% if h.debate_triggered %}
+                <span class="text-[8px] font-bold px-1 py-0.5 rounded bg-violet-50 text-violet-600">DBT</span>
+                {% else %}
+                <span class="text-[8px] text-gray-300">--</span>
+                {% endif %}
+              </td>
             </tr>
             {% endfor %}
           </tbody>
         </table>
       </div>
+    </div>
+    {% endif %}
+
+    {# Reflections panel #}
+    {% if reflections %}
+    <div class="mt-6 border-t border-gray-100 pt-4">
+      <h3 class="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-2">Trade Reflections</h3>
+      <div class="bg-gray-50 rounded-lg p-4 text-xs text-gray-600 font-mono whitespace-pre-wrap leading-relaxed max-h-64 overflow-y-auto">{{ reflections }}</div>
     </div>
     {% endif %}
   </div>
