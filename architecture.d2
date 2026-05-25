@@ -1,330 +1,440 @@
-direction: right
+direction: down
 
 # ══════════════════════════════════════════════════════════════
-# RUNTIME
+# RUNTIME HARNESS
 # ══════════════════════════════════════════════════════════════
 
-runtime: RUNTIME {
+runtime: RUNTIME HARNESS {
   style.fill: "#f9fafb"
   style.stroke: "#d1d5db"
   style.border-radius: 8
 
-  you: You\n(terminal) {
+  you: You (terminal or headless) {
     style.fill: "#fff"
     style.stroke: "#d1d5db"
   }
-  claude: Claude Code\n(Opus orchestrator) {
+  claude: Claude Code (Opus 4)\nOrchestrator + Chairman {
     style.fill: "#eff6ff"
     style.stroke: "#3b82f6"
   }
-  mcp: MCP Server\n(stdio protocol) {
+  mcp: MCP Server (stdio)\n51 Python tools {
     style.fill: "#f0fdf4"
     style.stroke: "#10b981"
   }
-  tools: 51 Python Tools\n(data + execution + reflection) {
-    style.fill: "#f0fdf4"
-    style.stroke: "#10b981"
-  }
-  dashboard: Flask Dashboard\n(6 pages + live risk) {
+  dashboard: Flask Dashboard\n6 pages + HTMX + Tailwind {
     style.fill: "#eff6ff"
     style.stroke: "#3b82f6"
   }
-  launchd: launchd\n(4x daily headless) {
+  launchd: launchd (macOS)\n9:30 / 1:30 / 3:30 / 4:15 {
     style.fill: "#fffbeb"
     style.stroke: "#f59e0b"
   }
+  hooks: Hooks\npre_trade_validate.py\npost_tool_audit.py {
+    style.fill: "#fef2f2"
+    style.stroke: "#fca5a5"
+  }
 
-  you -> claude: terminal
-  claude -> mcp: stdio
-  mcp -> tools: python
-  tools -> dashboard
-  launchd -> claude: claude -p
+  you -> claude: /trading-council
+  claude -> mcp: stdio JSON-RPC
+  mcp -> dashboard: SQLite + wiki
+  launchd -> claude: claude -p (headless)
+  claude -> hooks: pre/post tool
 }
 
 # ══════════════════════════════════════════════════════════════
-# STOCK TRADING COUNCIL
+# PRE-ANALYSIS PIPELINE
 # ══════════════════════════════════════════════════════════════
 
-council: STOCK TRADING COUNCIL — up to 12 subagents across 3 layers {
+preanalysis: PRE-ANALYSIS PIPELINE {
   style.fill: "#f0fdf4"
   style.stroke: "#10b981"
   style.stroke-dash: 5
   style.border-radius: 10
 
-  delta: Delta Check\n\nskip unchanged tickers\nprice <1%, regime same {
+  risk_check: Step 0: get_live_risk\n\nGREEN / YELLOW / ORANGE / RED\n2x ATR stop breach → auto sell\nProfit targets, time decay\nDaily P&L circuit breakers {
+    style.fill: "#fef2f2"
+    style.stroke: "#ef4444"
+  }
+
+  portfolio: Step 1: get_autonomous_tickers\n\nPositions + P&L\nWatchlist (tickers.txt)\nRegime + VIX + DXY\nCash balance {
     style.fill: "#f0fdf4"
     style.stroke: "#10b981"
   }
 
-  quant: Quant Pre-Screen\n\nget_quant_scores\n12 hard vetoes\nAltman Z, FCF, RSI {
+  delta: Step 1.5: get_ticker_deltas\n\nCompares vs last analysis:\nPrice move > 1%?\nNews TTL expired?\nRegime shifted?\n\n→ RE-ANALYZE or CARRY FORWARD {
+    style.fill: "#f0fdf4"
+    style.stroke: "#10b981"
+  }
+
+  asset_info: Step 2: get_asset_info\n\nDetects asset_class:\nstock, etf_bond, etf_commodity\n\nDetects sector:\ntech, financials, healthcare\nconsumer, cyclical {
+    style.fill: "#eff6ff"
+    style.stroke: "#3b82f6"
+  }
+
+  earnings: Earnings Gate\n\nget_earnings_calendar\n< 3 days + not held → skip\n< 1 day + held → force eval\n2-3 days + held → proceed {
+    style.fill: "#fffbeb"
+    style.stroke: "#f59e0b"
+  }
+
+  quant: Step 2.5: get_quant_scores\n\nDeterministic Python math:\n• Altman Z-score\n• FCF yield (4Q trailing)\n• RSI regime-conditional\n• Sector-specific scorer\n\n12 hard vetoes\nData quality 0-1 {
     style.fill: "#f5f3ff"
     style.stroke: "#8b5cf6"
   }
 
-  analysts: LAYER 1 — 4 Haiku Analysts (parallel) {
+  risk_check -> portfolio
+  portfolio -> delta
+  delta -> asset_info
+  asset_info -> earnings
+  earnings -> quant
+}
+
+# ══════════════════════════════════════════════════════════════
+# LAYER 1 — ANALYST COUNCIL (4 parallel Haiku agents)
+# ══════════════════════════════════════════════════════════════
+
+layer1: "LAYER 1 — ANALYST COUNCIL (4 Haiku agents, parallel)" {
+  style.fill: "#eff6ff"
+  style.stroke: "#3b82f6"
+  style.stroke-dash: 5
+  style.border-radius: 10
+
+  tech: Technical Analyst\n(model: haiku) {
+    style.fill: "#eff6ff"
+    style.stroke: "#3b82f6"
+    style.border-radius: 6
+  }
+  tech_tools: MCP Tools:\n• get_stock_data (30d OHLCV)\n• get_indicators:\n  RSI, MACD, SMA50/200\n  Bollinger, ATR, VWMA {
+    style.fill: "#f0fdf4"
+    style.stroke: "#86efac"
+  }
+
+  domain_router: Domain Analyst Router\n(get_asset_info → select prompt) {
+    style.fill: "#f8fafc"
+    style.stroke: "#6b7280"
+    style.border-radius: 6
+  }
+
+  domain_specs: 7 Domain Specialist Prompts {
     style.fill: "#f8fafc"
     style.stroke: "#d1d5db"
     style.border-radius: 8
 
-    tech: Technical\n\nhaiku\nRSI, MACD, SMA\nATR, Bollinger {
+    d_tech: Tech Sector\n\nSaaS metrics\nR&D intensity\nRule of 40\nAI/cloud exposure {
+      style.fill: "#f5f3ff"
+      style.stroke: "#8b5cf6"
+    }
+    d_fin: Financials\n\nNIM, NII\nCredit quality\nCET1 capital\nFee income, ROE {
+      style.fill: "#ecfdf5"
+      style.stroke: "#10b981"
+    }
+    d_hc: Healthcare\n\nDrug pipeline\nPatent cliffs\nFDA catalysts\nPayer mix {
+      style.fill: "#fef2f2"
+      style.stroke: "#ef4444"
+    }
+    d_con: Consumer\n\nBrand moat\nPricing power\nSame-store sales\nMargin trends {
+      style.fill: "#fffbeb"
+      style.stroke: "#f59e0b"
+    }
+    d_cyc: Cyclical\n\nCommodity exp\nCapex cycles\nOrder backlogs\nCapacity util {
+      style.fill: "#f8fafc"
+      style.stroke: "#6b7280"
+    }
+    d_bond: Bonds/FI\n\nYield curve\nDuration risk\nCredit spreads\nFed sensitivity {
       style.fill: "#eff6ff"
       style.stroke: "#3b82f6"
     }
-    domain: Domain\n\nhaiku\n7 sector specs\nTech Fin HC\nCon Cyc Bnd Cmd {
-      style.fill: "#eff6ff"
-      style.stroke: "#3b82f6"
-    }
-    sentiment: Sentiment\n\nhaiku\nReddit, StockTwits\nInsider clusters {
-      style.fill: "#eff6ff"
-      style.stroke: "#3b82f6"
-    }
-    news: News/Macro\n\nhaiku\nWebSearch\nFOMC, CPI, earnings {
-      style.fill: "#eff6ff"
-      style.stroke: "#3b82f6"
+    d_cmd: Commodities\n\nSupply/demand\nContango/backw\nSeasonal patterns\nGeopolitical risk {
+      style.fill: "#fffbeb"
+      style.stroke: "#f59e0b"
     }
   }
 
-  score: score_council\n\nDeterministic scoring\nRegime-conditional\nHard vetoes + tiebreakers {
+  sentiment: Sentiment Analyst\n(model: haiku) {
+    style.fill: "#eff6ff"
+    style.stroke: "#3b82f6"
+    style.border-radius: 6
+  }
+  sent_tools: MCP Tools:\n• get_reddit_sentiment\n• get_stocktwits_sentiment\n• get_insider_transactions\n• get_insider_clusters {
+    style.fill: "#f0fdf4"
+    style.stroke: "#86efac"
+  }
+
+  news: News/Macro Analyst\n(model: haiku) {
+    style.fill: "#eff6ff"
+    style.stroke: "#3b82f6"
+    style.border-radius: 6
+  }
+  news_tools: Tools:\n• WebSearch (real-time)\n• get_market_regime\n\nSearches: analyst targets\nSEC filings, macro data\nFOMC, CPI, NFP dates {
+    style.fill: "#f0fdf4"
+    style.stroke: "#86efac"
+  }
+
+  tech -> tech_tools
+  domain_router -> domain_specs: routes by sector
+  sentiment -> sent_tools
+  news -> news_tools
+
+  output: Each Returns:\n\n• Trend/Outlook (1 sentence)\n• Bull Case (2-3 sentences)\n• Bear Case (2-3 sentences)\n• Key Data Points\n• Score: 1-5 {
+    style.fill: "#fff"
+    style.stroke: "#e5e7eb"
+  }
+}
+
+# ══════════════════════════════════════════════════════════════
+# SCORING + DEBATE GATE
+# ══════════════════════════════════════════════════════════════
+
+scoring: DETERMINISTIC SCORING {
+  style.fill: "#f0fdf4"
+  style.stroke: "#10b981"
+  style.stroke-dash: 5
+  style.border-radius: 10
+
+  score_tool: score_council (MCP tool)\n\nWeighted average:\n  Tech 25% + Domain 25%\n  Sent 20% + News 20% + Risk 10%\n\nQuant blending by data quality:\n  High (>0.7): 70% quant / 30% analyst\n  Medium: 50/50\n  Low (<0.5): 30% quant / 70% analyst\n\nRisk adjustments:\n  risk_off/volatile: -0.3\n  earnings < 3 days: -0.5\n  5+ positions: -0.3 {
     style.fill: "#f0fdf4"
     style.stroke: "#10b981"
   }
 
-  gate: DEBATE GATE\n\nTrigger: score 2.8-4.2\nanalyst spread > 2.0\n2-2 split, new position\n\nSkip: clear consensus {
+  vetoes: Hard Vetoes (non-negotiable)\n\n• Technical ≤1.0 AND News ≤2.0\n• Domain/Fundamental ≤1.0\n• All 4 scores ≤2.0\n• 2-2 split → forced Hold {
+    style.fill: "#fef2f2"
+    style.stroke: "#ef4444"
+  }
+
+  gate: DEBATE GATE\n\nTRIGGER when ANY:\n  • Score 2.8-4.2 (ambiguous)\n  • Analyst spread > 2.0 points\n  • 2-2 split flagged\n  • New position + score > 3.0\n  • Held + earnings < 3 days\n\nSKIP when ALL:\n  • Score < 2.5 or > 4.2\n  • All analysts within 1.5 pts\n  • No outlier/split flags {
     style.fill: "#faf5ff"
     style.stroke: "#a78bfa"
   }
 
-  debate: LAYER 2 — Investment Debate (conditional) {
-    style.fill: "#faf5ff"
-    style.stroke: "#8b5cf6"
-    style.stroke-dash: 3
-    style.border-radius: 8
+  score_tool -> vetoes
+  vetoes -> gate
+}
 
-    bull: Bull Researcher\n(haiku, parallel) {
-      style.fill: "#f0fdf4"
-      style.stroke: "#10b981"
-    }
-    bear: Bear Researcher\n(haiku, parallel) {
-      style.fill: "#fef2f2"
-      style.stroke: "#ef4444"
-    }
-    rm: Research Manager\n(sonnet)\nJudges debate\nPicks winner {
-      style.fill: "#eff6ff"
-      style.stroke: "#3b82f6"
-    }
-    trader: Trader Agent\n(haiku)\nEntry, Stop, Size {
-      style.fill: "#eff6ff"
-      style.stroke: "#3b82f6"
-    }
+# ══════════════════════════════════════════════════════════════
+# LAYER 2 — INVESTMENT DEBATE (conditional)
+# ══════════════════════════════════════════════════════════════
 
-    bull -> rm: argues FOR
-    bear -> rm: argues AGAINST
-    rm -> trader: plan
-  }
+layer2: "LAYER 2 — INVESTMENT DEBATE (conditional, no tools)" {
+  style.fill: "#faf5ff"
+  style.stroke: "#8b5cf6"
+  style.stroke-dash: 5
+  style.border-radius: 10
 
-  risk_debate: LAYER 3 — Risk Debate (conditional) {
-    style.fill: "#fef2f2"
-    style.stroke: "#ef4444"
-    style.stroke-dash: 3
-    style.border-radius: 8
-
-    agg: Aggressive\n(haiku) {
-      style.fill: "#fffbeb"
-      style.stroke: "#f59e0b"
-    }
-    cons: Conservative\n(haiku) {
-      style.fill: "#f0fdf4"
-      style.stroke: "#10b981"
-    }
-    neut: Neutral\n(haiku) {
-      style.fill: "#f8fafc"
-      style.stroke: "#6b7280"
-    }
-    pm: Portfolio Manager\n(sonnet)\nFinal decision\nCan override score {
-      style.fill: "#eff6ff"
-      style.stroke: "#3b82f6"
-    }
-
-    agg -> pm
-    cons -> pm
-    neut -> pm
-  }
-
-  reflection: Self-Reflection\n\nget_trade_reflections\nPast outcomes + lessons\nInjected into PM prompt {
-    style.fill: "#fff"
-    style.stroke: "#e5e7eb"
-  }
-
-  execute: execute_paper_trade\n\npre-trade hook validates\nspread + slippage model {
+  bull: Bull Researcher (haiku)\n\nArgues FOR the investment\nCites analyst data\n3 numbered arguments\nRebuttal to bears\nTarget upside %\nConviction 1-10 {
     style.fill: "#f0fdf4"
     style.stroke: "#10b981"
   }
 
-  delta -> quant
-  quant -> analysts
-  analysts -> score: 4 scores (1-5)
-  score -> gate
-  gate -> debate: ambiguous {style.stroke: "#8b5cf6"}
-  gate -> execute: clear consensus {style.stroke: "#10b981"}
-  debate -> risk_debate: proposal
-  risk_debate -> execute: PM signal
-  reflection -> risk_debate.pm: lessons {style.stroke-dash: 3}
+  bear: Bear Researcher (haiku)\n\nArgues AGAINST\nCites analyst data\n3 numbered risks\nRebuttal to bulls\nDownside risk %\nConviction 1-10 {
+    style.fill: "#fef2f2"
+    style.stroke: "#ef4444"
+  }
+
+  rm: Research Manager (sonnet)\n\nJudges the debate\nFact-checks both sides\nMUST pick winner: Bull or Bear\n\nOutput:\n  Winner + Margin\n  Rating 1-10\n  Strategic Actions\n  Key Risk to Monitor\n\nMargin keywords feed\nconfidence.py scoring {
+    style.fill: "#eff6ff"
+    style.stroke: "#3b82f6"
+  }
+
+  trader_agent: Trader Agent (haiku)\n\nConverts plan → execution:\n  Entry Price (market/limit)\n  Stop Loss (Nx ATR)\n  Position Size (% + shares)\n  Target (R:R ≥ 2:1)\n  Time Horizon\n\nFeeds position_sizer.py {
+    style.fill: "#eff6ff"
+    style.stroke: "#3b82f6"
+  }
+
+  bull -> rm: argues FOR {style.stroke: "#10b981"}
+  bear -> rm: argues AGAINST {style.stroke: "#ef4444"}
+  rm -> trader_agent: plan
+}
+
+# ══════════════════════════════════════════════════════════════
+# LAYER 3 — RISK DEBATE (conditional)
+# ══════════════════════════════════════════════════════════════
+
+layer3: "LAYER 3 — RISK DEBATE + PORTFOLIO MANAGER (conditional, no tools)" {
+  style.fill: "#fef2f2"
+  style.stroke: "#ef4444"
+  style.stroke-dash: 5
+  style.border-radius: 10
+
+  agg: Aggressive Analyst (haiku)\n\nBias: capture upside\nOpportunity cost of not trading\nArgues for larger size\nWider stops\nVerdict: Approve/Increase/Reject {
+    style.fill: "#fffbeb"
+    style.stroke: "#f59e0b"
+  }
+
+  cons: Conservative Analyst (haiku)\n\nBias: preserve capital\nMax dollar loss at stop\nCorrelation with holdings\nCash reserve check (20%)\nVerdict: Approve/Reduce/Reject {
+    style.fill: "#f0fdf4"
+    style.stroke: "#10b981"
+  }
+
+  neut: Neutral Analyst (haiku)\n\nEvidence-based tiebreaker\nExpected value math\nR:R ratio validation\nPortfolio diversification\nVerdict: Approve/Reduce/Reject {
+    style.fill: "#f8fafc"
+    style.stroke: "#6b7280"
+  }
+
+  pm: Portfolio Manager (sonnet)\n\nFINAL DECISION MAKER\n\nSynthesizes:\n  Risk debate (3 verdicts)\n  Research Manager plan\n  Trader proposal\n  score_council output\n  Past trade reflections\n\nOutput:\n  Signal: Buy/Overweight/Hold/\n          Underweight/Sell\n  Conviction level\n  Position size override\n  Override justification\n\nKeywords (unanimous/majority/\ndivided) feed confidence.py\n\nCan override score_council\n(but NOT hard vetoes) {
+    style.fill: "#eff6ff"
+    style.stroke: "#3b82f6"
+  }
+
+  reflection: Self-Reflection Engine\n\nget_trade_reflections MCP tool\n\n• Past outcomes for ticker\n• Sector win rate patterns\n• Confidence bucket accuracy\n• Avg holding periods\n• Lessons (1-line per trade)\n\nInjected into PM prompt {
+    style.fill: "#fff"
+    style.stroke: "#e5e7eb"
+  }
+
+  agg -> pm {style.stroke: "#f59e0b"}
+  cons -> pm {style.stroke: "#10b981"}
+  neut -> pm {style.stroke: "#6b7280"}
+  reflection -> pm: past lessons {style.stroke-dash: 3}
+}
+
+# ══════════════════════════════════════════════════════════════
+# EXECUTION + SAFETY
+# ══════════════════════════════════════════════════════════════
+
+execution: EXECUTION + SAFETY {
+  style.fill: "#f0fdf4"
+  style.stroke: "#10b981"
+  style.stroke-dash: 5
+  style.border-radius: 10
+
+  pre_hook: Pre-Trade Hook (blocking)\n\n• Max 6 positions\n• Single ticker cap 25%\n• Cash reserve 10% min\n• Kill switch check\n• Blocked tickers (rules.json)\n• Notional exposure (futures) {
+    style.fill: "#fef2f2"
+    style.stroke: "#fca5a5"
+  }
+
+  broker: Paper Broker\n\nSpread/slippage model:\n  Under 10: 1.0% half-spread\n  Under 100: 0.3%\n  Over 100: 0.1%\n+ Market impact (1bp per 1%)\n\nDual persistence:\n  SQLite + JSON backup {
+    style.fill: "#f0fdf4"
+    style.stroke: "#10b981"
+  }
+
+  sizer: Position Sizer\n\n• ATR-based (risk 2% per trade)\n• Fixed % (5% default)\n• Kelly criterion (opt-in)\n• Correlation reduction (>0.7)\n• Earnings avoidance (-50%)\n• Macro event adjustment\n• Trader proposal override {
+    style.fill: "#f0fdf4"
+    style.stroke: "#10b981"
+  }
+
+  report: Post-Execution\n\n• save_trade_report (pre + post)\n• save_analysis_to_wiki\n  (debate sections auto-fill)\n• PushNotification\n• LearningEngine.record_entry\n• Confidence scoring\n• Stop-loss registration {
+    style.fill: "#fff"
+    style.stroke: "#e5e7eb"
+  }
+
+  pre_hook -> sizer
+  sizer -> broker
+  broker -> report
 }
 
 # ══════════════════════════════════════════════════════════════
 # PREDICTION MARKETS
 # ══════════════════════════════════════════════════════════════
 
-predictions: PREDICTION MARKETS — Kalshi superforecaster (Tetlock) {
+predictions: PREDICTION MARKETS (Kalshi) {
   style.fill: "#faf5ff"
   style.stroke: "#8b5cf6"
   style.stroke-dash: 5
   style.border-radius: 10
 
-  pred_analysts: 2 Haiku Subagents in Parallel {
-    style.fill: "#f8fafc"
-    style.stroke: "#d1d5db"
-    style.border-radius: 8
-
-    event: Event Analyst (haiku)\n\nDecompose + base rates\nWebSearch + Kalshi tools\nProbability estimate {
-      style.fill: "#eff6ff"
-      style.stroke: "#3b82f6"
-    }
-    news_pred: News Analyst (haiku)\n\nLatest via WebSearch\nWhat market hasn't priced in\nEvidence score (1-5) {
-      style.fill: "#eff6ff"
-      style.stroke: "#3b82f6"
-    }
+  event_analyst: Event Analyst (haiku)\n\nSuperforecaster method:\n  Decompose into sub-Qs\n  Base rates (outside view)\n  Specific evidence (inside)\n  Dragonfly Eye (causal forces)\n  Calibration vs market\n\nTools: WebSearch, Kalshi tools {
+    style.fill: "#eff6ff"
+    style.stroke: "#3b82f6"
   }
 
-  forecaster: Chief Forecaster (Opus)\n\nBayesian synthesis\nedge > 10% = trade\nquarter-Kelly sizing\nBrier + Log Score calibration {
+  news_analyst: News Analyst (haiku)\n\nWebSearch + get_market_regime\n\nWhat has the market NOT\npriced in yet?\nEvidence score 1-5 {
+    style.fill: "#eff6ff"
+    style.stroke: "#3b82f6"
+  }
+
+  forecaster: Chief Forecaster (Opus)\n\nBayesian synthesis:\n  Prior = market price\n  Update with analyst evidence\n\nEdge = |my_prob - market_prob|\nEdge > 10 pct → trade\nQuarter-Kelly sizing\nMax 250 per market, 15% cap {
     style.fill: "#f5f3ff"
     style.stroke: "#8b5cf6"
   }
 
-  kalshi_trade: Kalshi Paper Trade\n\nYES/NO contracts\nmax 250 per market {
-    style.fill: "#f5f3ff"
-    style.stroke: "#8b5cf6"
+  arb: Arbitrage Scanner\n\nscan_kalshi_overround:\n  Dutch book (sum < 1.00)\nscan_kalshi_bias:\n  Favorites 75-92% underpriced\nget_prediction_candidates:\n  Ranked by edge × volume\nexecute_kalshi_arb_trade:\n  Multi-leg atomic {
+    style.fill: "#fffbeb"
+    style.stroke: "#f59e0b"
   }
 
-  pred_analysts -> forecaster: estimates
-  forecaster -> kalshi_trade: edge > 10%
+  event_analyst -> forecaster: probability
+  news_analyst -> forecaster: evidence
+  forecaster -> arb: positions inform
 }
 
 # ══════════════════════════════════════════════════════════════
-# ARBITRAGE SCANNER
+# DATA LAYER
 # ══════════════════════════════════════════════════════════════
 
-arb: ARBITRAGE SCANNER {
+data: DATA LAYER {
   style.fill: "#fffbeb"
   style.stroke: "#f59e0b"
   style.stroke-dash: 5
   style.border-radius: 10
 
-  dutch: Dutch Book\n\nscan_kalshi_overround\nYES sum below 1.00 = profit {
-    style.fill: "#fffbeb"
-    style.stroke: "#f59e0b"
-  }
-  bias: Fav-Longshot Bias\n\nscan_kalshi_bias\n75-92% underpriced +5% {
-    style.fill: "#fffbeb"
-    style.stroke: "#f59e0b"
-  }
-  candidates: get_prediction_candidates\n\nRanks best markets\nbias edge + volume {
-    style.fill: "#fffbeb"
-    style.stroke: "#f59e0b"
-  }
-  arb_exec: execute_kalshi_arb_trade\n\nMulti-leg atomic\nmax 250 per bundle, 15% cap {
-    style.fill: "#fffbeb"
-    style.stroke: "#f59e0b"
-  }
-
-  dutch -> candidates
-  bias -> candidates
-  candidates -> arb_exec
-}
-
-# ══════════════════════════════════════════════════════════════
-# LIVE RISK + SAFETY
-# ══════════════════════════════════════════════════════════════
-
-risk: LIVE RISK + SAFETY {
-  style.fill: "#fef2f2"
-  style.stroke: "#ef4444"
-  style.stroke-dash: 5
-  style.border-radius: 10
-
-  live: get_live_risk\n\nGREEN: all clear\nYELLOW: no new buys\nORANGE: sell only\nRED: auto kill switch\n+ exit signals + sell recs {
-    style.fill: "#fef2f2"
-    style.stroke: "#ef4444"
-  }
-
-  monitors: Monitors\n\nDaily P&L limits\nATR + trailing stops\nVIX spike detection\nProfit targets / time decay {
-    style.fill: "#fef2f2"
-    style.stroke: "#ef4444"
-  }
-
-  hook: Pre-Trade Hook + Kill Switch\n\nPositions, Concentration\nRegime-conditional cash target\nDrawdown 10%, Earnings gate {
-    style.fill: "#fef2f2"
-    style.stroke: "#fca5a5"
-  }
-
-  sizer: Position Sizer\n\nKelly / ATR / Inverse-ATR\nCorrelation-aware\nEarnings avoidance {
-    style.fill: "#f0fdf4"
-    style.stroke: "#86efac"
-  }
-
-  monitors -> live: feeds
-  live -> hook: RED triggers
-}
-
-# ══════════════════════════════════════════════════════════════
-# DATA + PERSISTENCE
-# ══════════════════════════════════════════════════════════════
-
-data: DATA + PERSISTENCE {
-  style.fill: "#faf5ff"
-  style.stroke: "#8b5cf6"
-  style.stroke-dash: 5
-  style.border-radius: 10
-
-  market: Market Data (cached)\n\nyfinance: OHLCV, fundamentals\nReddit + StockTwits: sentiment\nWebSearch: real-time news\nKalshi API: events, orderbooks\n\n60s price / 15m sent / 1h news {
+  yfinance: yfinance\n\nOHLCV, fundamentals\nBalance sheet, cashflow\nIncome statement\nInsider transactions\nEarnings calendar {
     style.fill: "#fffbeb"
     style.stroke: "#fcd34d"
   }
+  social: Social/Alt Data\n\nReddit (WSB, stocks, investing)\nStockTwits (cashtag stream)\nInsider cluster detection\nSector rotation signals {
+    style.fill: "#fffbeb"
+    style.stroke: "#fcd34d"
+  }
+  websearch: WebSearch\n\nReal-time news\nAnalyst targets\nSEC filings\nMacro data releases {
+    style.fill: "#fffbeb"
+    style.stroke: "#fcd34d"
+  }
+  kalshi_api: Kalshi API\n\nEvents, markets\nOrderbooks, positions\nHistorical resolution {
+    style.fill: "#f5f3ff"
+    style.stroke: "#c4b5fd"
+  }
+  cache: TTL Cache Layer\n\nprice: 60s\ntechnicals: 60s\nfundamentals: 86400s\nnews: 3600s\nsentiment: 900s\nregime: 300s {
+    style.fill: "#fff"
+    style.stroke: "#e5e7eb"
+  }
+}
 
-  db: SQLite Database\n\npositions, trades, wiki_pages\nticker_state, quant_scores\nkalshi_positions, arb_scans\nintraday_risk, signal_scores {
+# ══════════════════════════════════════════════════════════════
+# PERSISTENCE LAYER
+# ══════════════════════════════════════════════════════════════
+
+persistence: PERSISTENCE + KNOWLEDGE {
+  style.fill: "#f8fafc"
+  style.stroke: "#d1d5db"
+  style.stroke-dash: 5
+  style.border-radius: 10
+
+  db: SQLite Database\n\nTables:\n  paper_account, paper_positions\n  trades, trade_reports\n  ticker_state (+ debate_triggered)\n  wiki_pages, quant_scores\n  kalshi_positions, arb_scans\n  signal_scores (IC tracking) {
     style.fill: "#f5f3ff"
     style.stroke: "#c4b5fd"
   }
 
-  wiki: Wiki Knowledge Base\n\nPer-ticker analysis pages\nBull/Bear debate archives\nDaily digest summaries\nTrade reflections + lessons\nRegime change records\nAccumulates over time {
+  wiki: Wiki Knowledge Base\n\nPage types:\n  runs/ — per-ticker per-date\n    (Bull/Bear/Risk debate sections)\n  daily/ — digest summaries\n  tickers/ — rolling summaries\n    (+ trade reflections)\n  regimes/ — regime analysis\n  reports/ — monthly/quarterly\n\nTag extraction, narratives\nCross-ticker references {
     style.fill: "#fff"
     style.stroke: "#e5e7eb"
   }
 
-  persist: Persistence Layer\n\nMemory: 5 cross-session files\nAudit: MCP call JSONL\nLearning: outcome tracking\nBacktest: quant IC replay {
+  learning: Learning Engine\n\nTradeOutcome tracking:\n  entry/exit/P&L/holding days\nEMA weight updates:\n  signal_weights, ticker_weights\nReflection generation:\n  lessons per resolved trade\nMonthly/quarterly reports {
     style.fill: "#fff"
     style.stroke: "#e5e7eb"
   }
 
-  math: Deterministic Math Layer\n\n9 sector scorers / Altman Z / FCF\nVaR, CVaR / Kelly, ATR sizing\nBrier, Log Score / PF, SQN\nALL math is deterministic Python {
+  memory: Claude Memory Files\n\nportfolio_state.md\nmarket_regime.md\ntrading_decisions.md\nwatchlist_notes.md\nsubscription_plan.md {
+    style.fill: "#fff"
+    style.stroke: "#e5e7eb"
+  }
+
+  quant_math: Quant Math (deterministic)\n\n9 sector scorers\nAltman Z-score\nFCF yield\nRegime-conditional RSI\nVaR, CVaR\nKelly criterion\nBrier score, Log score\nIC (information coefficient)\nProfit factor, SQN {
     style.fill: "#f0fdf4"
     style.stroke: "#86efac"
   }
-
-  market -> db: writes
-  db -> wiki: analysis pages
-  db -> persist: syncs
 }
 
 # ══════════════════════════════════════════════════════════════
-# CONNECTIONS BETWEEN SECTIONS (simplified)
+# FLOW CONNECTIONS
 # ══════════════════════════════════════════════════════════════
 
-runtime -> council: stock analysis {style.stroke-dash: 3}
-runtime -> predictions: prediction mkts {style.stroke-dash: 3}
-runtime -> arb: arb scanning {style.stroke-dash: 3}
-risk -> council: Step 0 check {style.stroke-dash: 3}
-council -> risk: validates {style.stroke-dash: 3}
-predictions -> risk: validates {style.stroke-dash: 3}
-data -> council: feeds {style.stroke-dash: 3}
-data -> predictions: feeds {style.stroke-dash: 3}
+runtime -> preanalysis: Step 0-2.5 {style.stroke-dash: 3}
+preanalysis -> layer1: spawn 4 agents {style.stroke: "#3b82f6"}
+layer1 -> scoring: 4 scores (1-5) {style.stroke: "#10b981"}
+scoring -> layer2: ambiguous → debate {style.stroke: "#8b5cf6"}
+scoring -> execution: clear → execute {style.stroke: "#10b981"}
+layer2 -> layer3: trader proposal {style.stroke: "#8b5cf6"}
+layer3 -> execution: PM final signal {style.stroke: "#ef4444"}
+data -> layer1: market data {style.stroke-dash: 3}
+data -> predictions: Kalshi + news {style.stroke-dash: 3}
+execution -> persistence: writes {style.stroke-dash: 3}
+persistence -> layer3.reflection: outcome lessons {style.stroke-dash: 3}
