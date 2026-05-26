@@ -106,7 +106,7 @@ import os
 msg = MIMEText('$SUMMARY')
 msg['From'] = os.environ.get('TRADINGAGENTS_ALERT_EMAIL_FROM', '')
 msg['To'] = os.environ.get('TRADINGAGENTS_ALERT_EMAIL_TO', '')
-msg['Subject'] = '$CYCLE $TIMESTAMP'
+msg['Subject'] = ''
 
 try:
     with smtplib.SMTP('smtp.gmail.com', 587) as s:
