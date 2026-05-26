@@ -71,10 +71,10 @@ cd "$PROJECT_DIR"
 # -p              = print mode (non-interactive, uses subscription)
 # --dangerously-skip-permissions = no permission prompts (required for headless)
 # Output goes to both stdout (launchd log) and our trading log
-"$CLAUDE_BIN" -p "$PROMPT" \
+OUTPUT=$("$CLAUDE_BIN" -p "$PROMPT" \
     --dangerously-skip-permissions \
     --output-format text \
-    2>&1 | tee -a "$LOG_DIR/trading-$DATE.log"
+    2>&1 | tee -a "$LOG_DIR/trading-$DATE.log")
 
 EXIT_CODE=${PIPESTATUS[0]}
 
@@ -82,4 +82,38 @@ if [ $EXIT_CODE -eq 0 ]; then
     log "=== Cycle $CYCLE completed successfully ==="
 else
     log "=== Cycle $CYCLE FAILED (exit code: $EXIT_CODE) ==="
+fi
+
+# ── SMS cycle summary via email-to-SMS gateway ──
+# Sends a short text after every cycle (max 160 chars for SMS)
+if [ -n "$TRADINGAGENTS_ALERT_EMAIL_TO" ] && [ -n "$TRADINGAGENTS_ALERT_SMTP_PASSWORD" ]; then
+    # Extract last few lines for a summary (the council skill ends with a summary)
+    SUMMARY=$(echo "$OUTPUT" | tail -20 | grep -iE "trade|buy|sell|hold|portfolio|P&L|no material|all quiet" | head -3 | tr '\n' ' ' | cut -c1-140)
+    if [ -z "$SUMMARY" ]; then
+        if [ $EXIT_CODE -eq 0 ]; then
+            SUMMARY="Cycle $CYCLE ($TIMESTAMP) completed. Check dashboard for details."
+        else
+            SUMMARY="Cycle $CYCLE ($TIMESTAMP) FAILED (exit $EXIT_CODE). Check logs."
+        fi
+    fi
+
+    # Send via Python (uses the existing SMTP config from env vars)
+    python3 -c "
+import smtplib
+from email.mime.text import MIMEText
+import os
+
+msg = MIMEText('$SUMMARY')
+msg['From'] = os.environ.get('TRADINGAGENTS_ALERT_EMAIL_FROM', '')
+msg['To'] = os.environ.get('TRADINGAGENTS_ALERT_EMAIL_TO', '')
+msg['Subject'] = '$CYCLE $TIMESTAMP'
+
+try:
+    with smtplib.SMTP('smtp.gmail.com', 587) as s:
+        s.starttls()
+        s.login(os.environ['TRADINGAGENTS_ALERT_SMTP_USER'], os.environ['TRADINGAGENTS_ALERT_SMTP_PASSWORD'])
+        s.sendmail(msg['From'], [msg['To']], msg.as_string())
+except Exception as e:
+    print(f'SMS alert failed: {e}')
+" 2>&1 | tee -a "$LOG_DIR/trading-$DATE.log"
 fi
