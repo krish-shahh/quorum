@@ -103,10 +103,10 @@ import smtplib
 from email.mime.text import MIMEText
 import os
 
-msg = MIMEText('$SUMMARY')
+msg = MIMEText('')
 msg['From'] = os.environ.get('TRADINGAGENTS_ALERT_EMAIL_FROM', '')
 msg['To'] = os.environ.get('TRADINGAGENTS_ALERT_EMAIL_TO', '')
-msg['Subject'] = ''
+msg['Subject'] = '$SUMMARY'
 
 try:
     with smtplib.SMTP('smtp.gmail.com', 587) as s:
