@@ -84,8 +84,11 @@ else
     log "=== Cycle $CYCLE FAILED (exit code: $EXIT_CODE) ==="
 fi
 
-# ── iMessage cycle summary ──
-# Sends a short iMessage after every cycle via osascript (free, instant, no rate limits)
+# ── Push notification via ntfy.sh ──
+# Free, instant push notifications — no rate limits, no API keys
+# Install ntfy app on phone + subscribe to the topic to receive alerts
+NTFY_TOPIC="tradingagents-23a6f73a"
+
 SUMMARY=$(echo "$OUTPUT" | tail -20 | grep -iE "trade|buy|sell|hold|portfolio|P&L|no material|all quiet" | head -3 | tr '\n' ' ' | cut -c1-250)
 if [ -z "$SUMMARY" ]; then
     if [ $EXIT_CODE -eq 0 ]; then
@@ -95,4 +98,9 @@ if [ -z "$SUMMARY" ]; then
     fi
 fi
 
-osascript -e "tell application \"Messages\" to send \"$SUMMARY\" to buddy \"+16095568516\"" 2>&1 | tee -a "$LOG_DIR/trading-$DATE.log" || true
+curl -s \
+    -H "Title: $CYCLE $TIMESTAMP" \
+    -H "Priority: $([ \"$CYCLE\" = 'eod' ] && echo 'high' || echo 'default')" \
+    -H "Tags: $([ $EXIT_CODE -eq 0 ] && echo 'chart_with_upwards_trend' || echo 'warning')" \
+    -d "$SUMMARY" \
+    "ntfy.sh/$NTFY_TOPIC" >> "$LOG_DIR/trading-$DATE.log" 2>&1 || true
