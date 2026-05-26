@@ -50,7 +50,10 @@ Before spawning agents, substitute these variables in the event analyst prompt:
 - `{EVENT_TICKER}` → the event ticker
 - `{KEY_TOPIC}` → the core topic for base rate research
 
-For the news analyst, substitute `{TICKER}` with the market topic (not a stock ticker), and adjust the search queries to be about the event topic.
+For the news analyst, substitute `{TICKER}` with the market topic (not a stock ticker), and adjust the search queries to be about the event topic. **Add these Twitter/X queries** to the news analyst prompt:
+- `site:x.com "{KEY_TOPIC}" breaking OR update` — Breaking developments on X
+- `site:x.com "{KEY_TOPIC}" prediction OR forecast` — Pundit forecasts on X
+These catch expert takes and breaking news that may not have hit traditional media yet. Instruct the news analyst to weight verified/expert accounts over random opinions.
 
 ```
 Agent(description="Event Analyst: {MARKET_TITLE}", model="haiku", prompt=<events prompt with substitutions>)
