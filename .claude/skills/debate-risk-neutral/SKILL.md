@@ -2,7 +2,7 @@
 name: debate-risk-neutral
 description: Neutral risk analyst — evaluates trade proposals from a balanced, evidence-based perspective. Pure reasoning, no MCP tools.
 user-invocable: false
-model: haiku
+model: sonnet
 allowed-tools: []
 ---
 

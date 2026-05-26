@@ -187,6 +187,78 @@ def get_stock_stats_indicators_window(
     return result_str
 
 
+def get_stock_stats_indicators_bulk(
+    symbol: Annotated[str, "ticker symbol of the company"],
+    indicators: Annotated[list, "list of technical indicators to calculate"],
+    curr_date: Annotated[str, "The current trading date, YYYY-mm-dd"],
+    look_back_days: Annotated[int, "how many days to look back"],
+) -> str:
+    """Fetch all requested indicators in a single pass — one OHLCV load,
+    one stockstats wrap, multiple indicator extractions.
+
+    Returns a combined markdown string with all indicator sections.
+    """
+    from stockstats import wrap as stockstats_wrap
+
+    best_ind_params = {
+        "close_50_sma": "50 SMA: Medium-term trend indicator.",
+        "close_200_sma": "200 SMA: Long-term trend benchmark.",
+        "close_10_ema": "10 EMA: Responsive short-term average.",
+        "macd": "MACD: Momentum via EMA differences.",
+        "macds": "MACD Signal: EMA smoothing of MACD.",
+        "macdh": "MACD Histogram: Gap between MACD and signal.",
+        "rsi": "RSI: Overbought/oversold momentum (70/30 thresholds).",
+        "boll": "Bollinger Middle: 20 SMA basis for bands.",
+        "boll_ub": "Bollinger Upper: 2 std dev above middle.",
+        "boll_lb": "Bollinger Lower: 2 std dev below middle.",
+        "atr": "ATR: Average true range volatility measure.",
+        "vwma": "VWMA: Volume-weighted moving average.",
+        "mfi": "MFI: Money Flow Index (overbought >80, oversold <20).",
+    }
+
+    curr_date_dt = datetime.strptime(curr_date, "%Y-%m-%d")
+    before = curr_date_dt - relativedelta(days=look_back_days)
+
+    # Load OHLCV once and wrap with stockstats once
+    data = load_ohlcv(symbol, curr_date)
+    df = stockstats_wrap(data)
+    df["Date"] = df["Date"].dt.strftime("%Y-%m-%d")
+
+    sections = []
+    for indicator in indicators:
+        # Handle comma-separated indicators (e.g. "boll_ub,boll_lb")
+        sub_indicators = [i.strip() for i in indicator.split(",")]
+
+        for sub_ind in sub_indicators:
+            try:
+                # Trigger stockstats calculation
+                df[sub_ind]
+
+                # Build date->value mapping for the look-back window
+                ind_string = ""
+                current_dt = curr_date_dt
+                while current_dt >= before:
+                    date_str = current_dt.strftime("%Y-%m-%d")
+                    mask = df["Date"] == date_str
+                    if mask.any():
+                        val = df.loc[mask, sub_ind].iloc[0]
+                        val_str = "N/A" if pd.isna(val) else str(val)
+                    else:
+                        val_str = "N/A: Not a trading day"
+                    ind_string += f"{date_str}: {val_str}\n"
+                    current_dt = current_dt - relativedelta(days=1)
+
+                desc = best_ind_params.get(sub_ind, "")
+                sections.append(
+                    f"## {sub_ind} values from {before.strftime('%Y-%m-%d')} to {curr_date}:\n\n"
+                    + ind_string + "\n" + desc
+                )
+            except Exception as e:
+                sections.append(f"## {sub_ind}\nError: {e}")
+
+    return "\n\n".join(sections)
+
+
 def _get_stock_stats_bulk(
     symbol: Annotated[str, "ticker symbol of the company"],
     indicator: Annotated[str, "technical indicator to calculate"],

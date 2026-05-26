@@ -339,9 +339,11 @@ For each BUY or SELL decision:
 
 4. **Wiki** — Call `save_analysis_to_wiki` with full reasoning. When debate ran, the wiki page will automatically populate Bull Arguments, Bear Arguments, Research Plan, Trader Proposal, and Risk Debate sections.
 
-5. **Notify** — After each executed trade, send a PushNotification:
-   ```
-   PushNotification(message="{SIDE} {TICKER}: {shares} shares @ ${price} | {1-sentence thesis}", status="proactive")
+5. **Notify** — After each executed trade, send via ntfy.sh:
+   ```bash
+   curl -s -H "Title: {SIDE} {TICKER}" -H "Tags: moneybag" -H "Priority: high" \
+     -d "{SIDE} {shares} shares @ ${price} | {1-sentence thesis}" \
+     "ntfy.sh/tradingagents-23a6f73a"
    ```
 
 For HOLD decisions, save the wiki page only (no trade report needed).
@@ -363,10 +365,32 @@ After completing the cycle, update the native memory files so the next session h
 3. **trading_decisions.md** — Prepend each decision from this cycle (keep last 10 entries)
 4. **watchlist_notes.md** — Add any new per-ticker observations (approaching thresholds, catalyst dates, etc.)
 
-After the cycle summary, send a PushNotification:
+After the cycle summary, send the full summary via **ntfy.sh** in plaintext (no markdown — it doesn't render on phone push):
+
+```bash
+curl -s \
+  -H "Title: Council {TODAY}" \
+  -H "Priority: default" \
+  -H "Tags: chart_with_upwards_trend" \
+  -d "{PLAINTEXT_SUMMARY}" \
+  "ntfy.sh/tradingagents-23a6f73a"
 ```
-PushNotification(message="Council cycle complete: {N} trades. Portfolio ${value} ({+/-}% today)", status="proactive")
+
+The `{PLAINTEXT_SUMMARY}` format (use fixed-width alignment):
 ```
+{SIDE} {TICKER}: {shares} shares @ ${price} ({P&L})
+Reason: {1-sentence thesis}
+
+Portfolio:
+  {TICKER}  {qty} @ ${cost}  {P&L%}  {weight%}
+  {TICKER}  {qty} @ ${cost}  {P&L%}  {weight%}
+  Cash      ${amount}        {weight%}
+
+Account ${value} | {REGIME} (VIX {X})
+Watch: {upcoming catalysts + tickers near thresholds}
+```
+
+If no trades executed, replace the trade line with "No trades. All positions held."
 
 ## Step 9: Reflection Log
 

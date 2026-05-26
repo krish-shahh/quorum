@@ -2,7 +2,7 @@
 name: analyst-sector-healthcare
 description: Healthcare sector analyst subagent — evaluates drug pipeline, patent cliffs, FDA catalysts, and payer mix. Restricted to fundamentals/financials MCP tools only.
 user-invocable: false
-model: haiku
+model: sonnet
 allowed-tools:
   - mcp__tradingagents__get_fundamentals
   - mcp__tradingagents__get_financial_statements

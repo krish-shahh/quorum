@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 _DEFAULT_TTL = 3600  # 1 hour
 
-_cache: dict[str, tuple[float, Any]] = {}
+_cache: dict[str, tuple[float, float, Any]] = {}  # key -> (timestamp, ttl, value)
 _lock = threading.Lock()
 _stats: dict[str, dict[str, int]] = {}  # func_name -> {hits, misses}
 
@@ -44,8 +44,8 @@ def cached(ttl: Optional[int] = None):
 
             with _lock:
                 if key in _cache:
-                    ts, val = _cache[key]
-                    if now - ts < cache_ttl:
+                    ts, stored_ttl, val = _cache[key]
+                    if now - ts < stored_ttl:
                         _track_hit(func.__name__)
                         return val
 
@@ -53,7 +53,7 @@ def cached(ttl: Optional[int] = None):
             result = func(*args, **kwargs)
 
             with _lock:
-                _cache[key] = (now, result)
+                _cache[key] = (now, cache_ttl, result)
 
             return result
 
@@ -93,8 +93,8 @@ def cached_config(category: str):
 
             with _lock:
                 if key in _cache:
-                    ts, val = _cache[key]
-                    if now - ts < cache_ttl:
+                    ts, stored_ttl, val = _cache[key]
+                    if now - ts < stored_ttl:
                         _track_hit(func.__name__)
                         return val
 
@@ -102,7 +102,7 @@ def cached_config(category: str):
             result = func(*args, **kwargs)
 
             with _lock:
-                _cache[key] = (now, result)
+                _cache[key] = (now, cache_ttl, result)
 
             return result
 
@@ -132,7 +132,7 @@ def cache_stats() -> dict[str, Any]:
     with _lock:
         now = time.monotonic()
         total = len(_cache)
-        expired = sum(1 for ts, _ in _cache.values() if now - ts >= _DEFAULT_TTL)
+        expired = sum(1 for ts, ttl, _ in _cache.values() if now - ts >= ttl)
         return {
             "total_entries": total,
             "expired": expired,

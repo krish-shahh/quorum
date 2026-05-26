@@ -2,7 +2,7 @@
 name: debate-trader
 description: Trader agent — converts a research plan into a concrete trade proposal with entry, stop, sizing, and target. Pure reasoning, no MCP tools.
 user-invocable: false
-model: haiku
+model: sonnet
 allowed-tools: []
 ---
 

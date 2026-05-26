@@ -2,7 +2,7 @@
 name: debate-risk-aggressive
 description: Aggressive risk analyst — evaluates trade proposals with a bias toward capturing upside. Pure reasoning, no MCP tools.
 user-invocable: false
-model: haiku
+model: sonnet
 allowed-tools: []
 ---
 

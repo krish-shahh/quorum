@@ -2,7 +2,7 @@
 name: analyst-commodities
 description: Commodity ETF analyst subagent — evaluates supply/demand dynamics, contango/backwardation, seasonal patterns, and geopolitical risk. Restricted to price/indicator and regime MCP tools plus WebSearch.
 user-invocable: false
-model: haiku
+model: sonnet
 allowed-tools:
   - mcp__tradingagents__get_stock_data
   - mcp__tradingagents__get_indicators

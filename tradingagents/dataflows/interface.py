@@ -4,6 +4,7 @@ from typing import Annotated
 from .y_finance import (
     get_YFin_data_online,
     get_stock_stats_indicators_window,
+    get_stock_stats_indicators_bulk,
     get_fundamentals as get_yfinance_fundamentals,
     get_balance_sheet as get_yfinance_balance_sheet,
     get_cashflow as get_yfinance_cashflow,
@@ -38,7 +39,8 @@ TOOLS_CATEGORIES = {
     "technical_indicators": {
         "description": "Technical analysis indicators",
         "tools": [
-            "get_indicators"
+            "get_indicators",
+            "get_indicators_bulk"
         ]
     },
     "fundamental_data": {
@@ -76,6 +78,9 @@ VENDOR_METHODS = {
     "get_indicators": {
         "alpha_vantage": get_alpha_vantage_indicator,
         "yfinance": get_stock_stats_indicators_window,
+    },
+    "get_indicators_bulk": {
+        "yfinance": get_stock_stats_indicators_bulk,
     },
     # fundamental_data
     "get_fundamentals": {

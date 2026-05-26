@@ -2,7 +2,7 @@
 name: analyst-fundamental
 description: Fundamental analyst subagent — assesses intrinsic value, financial health, and growth trajectory. Restricted to fundamentals/financials MCP tools only.
 user-invocable: false
-model: haiku
+model: sonnet
 allowed-tools:
   - mcp__tradingagents__get_fundamentals
   - mcp__tradingagents__get_financial_statements

@@ -2,7 +2,7 @@
 name: analyst-events
 description: Event/prediction market analyst subagent — estimates true probability of binary outcomes using superforecaster decomposition, base rates, and evidence weighting. Uses WebSearch for real-time research.
 user-invocable: false
-model: haiku
+model: sonnet
 allowed-tools:
   - WebSearch
   - mcp__tradingagents__get_kalshi_market

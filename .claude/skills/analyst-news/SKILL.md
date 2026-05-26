@@ -2,7 +2,7 @@
 name: analyst-news
 description: News/macro analyst subagent — finds latest real-time information using web search. Restricted to WebSearch and market regime tool only.
 user-invocable: false
-model: haiku
+model: sonnet
 allowed-tools:
   - WebSearch
   - mcp__tradingagents__get_market_regime

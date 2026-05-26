@@ -2,7 +2,7 @@
 name: debate-risk-conservative
 description: Conservative risk analyst — evaluates trade proposals with a bias toward capital preservation. Pure reasoning, no MCP tools.
 user-invocable: false
-model: haiku
+model: sonnet
 allowed-tools: []
 ---
 

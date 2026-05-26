@@ -48,6 +48,7 @@ def create_server():
         # Market data
         Tool(name="get_stock_data", description="Get OHLCV price data for a stock/ETF. Returns CSV format.", inputSchema={"type": "object", "properties": {"ticker": {"type": "string", "description": "Stock ticker symbol (e.g., AAPL)"}, "start_date": {"type": "string", "description": "Start date YYYY-MM-DD"}, "end_date": {"type": "string", "description": "End date YYYY-MM-DD"}}, "required": ["ticker", "start_date", "end_date"]}),
         Tool(name="get_indicators", description="Get technical indicators (RSI, MACD, SMA, Bollinger Bands, etc.) for a stock.", inputSchema={"type": "object", "properties": {"ticker": {"type": "string"}, "indicator": {"type": "string", "description": "Indicator name: rsi, macd, close_50_sma, close_200_sma, boll, atr, etc."}, "date": {"type": "string", "description": "Current date YYYY-MM-DD"}, "lookback_days": {"type": "integer", "description": "Days of history (default 30)", "default": 30}}, "required": ["ticker", "indicator", "date"]}),
+        Tool(name="get_indicators_bulk", description="Get ALL technical indicators in one call (much faster than calling get_indicators 6 times). Loads OHLCV once and extracts all indicators in a single pass. Preferred over get_indicators when you need multiple indicators.", inputSchema={"type": "object", "properties": {"ticker": {"type": "string"}, "indicators": {"type": "array", "items": {"type": "string"}, "description": "List of indicator names: rsi, macd, close_50_sma, close_200_sma, boll_ub,boll_lb, atr, etc."}, "date": {"type": "string", "description": "Current date YYYY-MM-DD"}, "lookback_days": {"type": "integer", "description": "Days of history (default 30)", "default": 30}}, "required": ["ticker", "indicators", "date"]}),
         Tool(name="get_fundamentals", description="Get company fundamentals: PE, EPS, revenue, margins, etc.", inputSchema={"type": "object", "properties": {"ticker": {"type": "string"}}, "required": ["ticker"]}),
         Tool(name="get_financial_statements", description="Get balance sheet, income statement, or cash flow.", inputSchema={"type": "object", "properties": {"ticker": {"type": "string"}, "statement": {"type": "string", "enum": ["balance_sheet", "income_statement", "cashflow"]}, "frequency": {"type": "string", "enum": ["quarterly", "annual"], "default": "quarterly"}}, "required": ["ticker", "statement"]}),
         Tool(name="get_news", description="Get recent news for a stock ticker.", inputSchema={"type": "object", "properties": {"ticker": {"type": "string"}, "start_date": {"type": "string"}, "end_date": {"type": "string"}}, "required": ["ticker"]}),
@@ -142,6 +143,10 @@ def _handle_tool(name: str, args: dict) -> str:
     if name == "get_indicators":
         from tradingagents.dataflows.interface import route_to_vendor
         return route_to_vendor("get_indicators", args["ticker"], args["indicator"], args["date"], args.get("lookback_days", 30))
+
+    if name == "get_indicators_bulk":
+        from tradingagents.dataflows.interface import route_to_vendor
+        return route_to_vendor("get_indicators_bulk", args["ticker"], args["indicators"], args["date"], args.get("lookback_days", 30))
 
     if name == "get_fundamentals":
         from tradingagents.dataflows.interface import route_to_vendor
@@ -387,78 +392,71 @@ def _handle_tool(name: str, args: dict) -> str:
     # ── Autonomous (subscription-powered) ────────────────────────
     if name == "get_full_ticker_data":
         ticker = args["ticker"].upper()
+        from concurrent.futures import ThreadPoolExecutor, as_completed
         from datetime import timedelta
         from tradingagents.dataflows.interface import route_to_vendor
+        from tradingagents.dataflows.reddit import fetch_reddit_posts
+        from tradingagents.dataflows.stocktwits import fetch_stocktwits_messages
+        from tradingagents.dataflows.earnings_calendar import get_earnings_calendar
 
         end = today
         start_30d = (date.today() - timedelta(days=30)).isoformat()
         start_7d = (date.today() - timedelta(days=7)).isoformat()
-
-        sections = []
-
-        # Price data
-        try:
-            prices = route_to_vendor("get_stock_data", ticker, start_30d, end)
-            sections.append(f"## Price Data (30d)\n{prices}")
-        except Exception as e:
-            sections.append(f"## Price Data\nError: {e}")
-
-        # Technicals
         indicators = ["rsi", "macd", "close_50_sma", "close_200_sma", "boll_ub,boll_lb", "atr"]
-        tech_parts = []
-        for ind in indicators:
-            try:
-                result = route_to_vendor("get_indicators", ticker, ind, today, 30)
-                tech_parts.append(result)
-            except Exception:
-                pass
-        if tech_parts:
-            sections.append(f"## Technical Indicators\n" + "\n".join(tech_parts))
 
-        # Fundamentals
-        try:
-            fundamentals = route_to_vendor("get_fundamentals", ticker)
-            sections.append(f"## Fundamentals\n{fundamentals}")
-        except Exception as e:
-            sections.append(f"## Fundamentals\nError: {e}")
+        # Define all fetches as (key, callable) — all are independent I/O
+        def _fetch_prices():
+            return route_to_vendor("get_stock_data", ticker, start_30d, end)
 
-        # News
-        try:
-            news = route_to_vendor("get_news", ticker, start_7d, end)
-            sections.append(f"## Recent News\n{news}")
-        except Exception as e:
-            sections.append(f"## News\nError: {e}")
+        def _fetch_technicals():
+            return route_to_vendor("get_indicators_bulk", ticker, indicators, today, 30)
 
-        # Reddit
-        try:
-            from tradingagents.dataflows.reddit import fetch_reddit_posts
-            reddit = fetch_reddit_posts(ticker)
-            sections.append(f"## Reddit Sentiment\n{reddit}")
-        except Exception:
-            pass
+        def _fetch_fundamentals():
+            return route_to_vendor("get_fundamentals", ticker)
 
-        # StockTwits
-        try:
-            from tradingagents.dataflows.stocktwits import fetch_stocktwits_messages
-            stocktwits = fetch_stocktwits_messages(ticker)
-            sections.append(f"## StockTwits Sentiment\n{stocktwits}")
-        except Exception:
-            pass
+        def _fetch_news():
+            return route_to_vendor("get_news", ticker, start_7d, end)
 
-        # Insider activity
-        try:
-            insiders = route_to_vendor("get_insider_transactions", ticker)
-            sections.append(f"## Insider Transactions\n{insiders}")
-        except Exception:
-            pass
+        def _fetch_reddit():
+            return fetch_reddit_posts(ticker)
 
-        # Earnings calendar
-        try:
-            from tradingagents.dataflows.earnings_calendar import get_earnings_calendar
-            earnings = get_earnings_calendar(ticker)
-            sections.append(f"## Earnings Calendar\n{earnings}")
-        except Exception:
-            pass
+        def _fetch_stocktwits():
+            return fetch_stocktwits_messages(ticker)
+
+        def _fetch_insiders():
+            return route_to_vendor("get_insider_transactions", ticker)
+
+        def _fetch_earnings():
+            return get_earnings_calendar(ticker)
+
+        # Run all fetches in parallel
+        fetch_tasks = [
+            ("Price Data (30d)", _fetch_prices),
+            ("Technical Indicators", _fetch_technicals),
+            ("Fundamentals", _fetch_fundamentals),
+            ("Recent News", _fetch_news),
+            ("Reddit Sentiment", _fetch_reddit),
+            ("StockTwits Sentiment", _fetch_stocktwits),
+            ("Insider Transactions", _fetch_insiders),
+            ("Earnings Calendar", _fetch_earnings),
+        ]
+
+        results = {}
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            future_to_key = {pool.submit(fn): key for key, fn in fetch_tasks}
+            for future in as_completed(future_to_key):
+                key = future_to_key[future]
+                try:
+                    results[key] = future.result()
+                except Exception as e:
+                    results[key] = f"Error: {e}"
+
+        # Assemble sections in consistent order
+        sections = []
+        for key, _ in fetch_tasks:
+            val = results.get(key)
+            if val:
+                sections.append(f"## {key}\n{val}")
 
         header = (
             f"# Full Data Report: {ticker} ({today})\n\n"

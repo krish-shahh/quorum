@@ -76,11 +76,11 @@ For manual sessions, use `/trading-day` to schedule cycles via CronCreate (sessi
 
 ```
 You (Chairman, Opus)
-  LAYER 1 — ANALYSTS (parallel, Haiku, with MCP tools)
-  ├── Technical Analyst (Haiku)    → MCP: get_stock_data, get_indicators
-  ├── Domain Analyst (Haiku)       → Sector-specific (see below)
-  ├── Sentiment Analyst (Haiku)    → MCP: get_reddit/stocktwits, get_insider_*
-  └── News/Macro Analyst (Haiku)   → WebSearch + get_market_regime
+  LAYER 1 — ANALYSTS (parallel, Sonnet, with MCP tools)
+  ├── Technical Analyst (Sonnet)   → MCP: get_stock_data, get_indicators_bulk
+  ├── Domain Analyst (Sonnet)      → Sector-specific (see below)
+  ├── Sentiment Analyst (Sonnet)   → MCP: get_reddit/stocktwits, get_insider_*
+  └── News/Macro Analyst (Sonnet)  → WebSearch + get_market_regime
   
   Domain analyst is selected via get_asset_info(ticker):
     stock/tech       → analyst-sector-tech (R&D, margins, AI exposure)
@@ -97,15 +97,15 @@ You (Chairman, Opus)
   peer review → score_council (deterministic) → DEBATE GATE
   
   LAYER 2 — DEBATE (conditional: score 2.8-4.2, analyst disagreement, new positions)
-  ├── Bull Researcher (Haiku)     ─┐ PARALLEL: argue FOR/AGAINST using analyst reports
-  ├── Bear Researcher (Haiku)     ─┘
+  ├── Bull Researcher (Sonnet)    ─┐ PARALLEL: argue FOR/AGAINST using analyst reports
+  ├── Bear Researcher (Sonnet)    ─┘
   ├── Research Manager (Sonnet)    → Judges debate, picks winner, produces plan
-  └── Trader Agent (Haiku)         → Entry price, stop loss, position sizing
+  └── Trader Agent (Sonnet)        → Entry price, stop loss, position sizing
   
   LAYER 3 — RISK DEBATE (conditional: same trigger as Layer 2)
-  ├── Aggressive Analyst (Haiku)  ─┐
-  ├── Conservative Analyst (Haiku) ├ PARALLEL: debate the trader's proposal
-  ├── Neutral Analyst (Haiku)     ─┘
+  ├── Aggressive Analyst (Sonnet) ─┐
+  ├── Conservative Analyst (Sonnet) ├ PARALLEL: debate the trader's proposal
+  ├── Neutral Analyst (Sonnet)    ─┘
   └── Portfolio Manager (Sonnet)   → Final decision (can override score_council)
   
   Layers 2-3 skip when consensus is clear (score <2.5 or >4.2, analysts agree)
@@ -115,8 +115,8 @@ You (Chairman, Opus)
 
 Prediction Markets (Kalshi):
   You (Chief Forecaster, Opus)
-    ├── Event Analyst (Haiku)   → Superforecaster decomposition + WebSearch + Kalshi tools
-    └── News Analyst (Haiku)    → WebSearch + get_market_regime
+    ├── Event Analyst (Sonnet)  → Superforecaster decomposition + WebSearch + Kalshi tools
+    └── News Analyst (Sonnet)   → WebSearch + get_market_regime
   
   2 agents in PARALLEL → probability estimates with edge calculation
   
@@ -164,9 +164,9 @@ tradingagents/
 | `~/.tradingagents/wiki/` | Analysis pages, digests, ticker summaries |
 | `scripts/start-trading-day.sh` | Auto-start script (called by launchd at 9:30 AM) |
 
-## MCP Tools (51)
+## MCP Tools (52)
 
-Data: get_stock_data, get_indicators, get_fundamentals, get_financial_statements, get_news, get_global_news, get_reddit_sentiment, get_stocktwits_sentiment, get_insider_transactions, get_insider_clusters, get_market_regime, get_sector_rotation, get_earnings_calendar
+Data: get_stock_data, get_indicators, get_indicators_bulk, get_fundamentals, get_financial_statements, get_news, get_global_news, get_reddit_sentiment, get_stocktwits_sentiment, get_insider_transactions, get_insider_clusters, get_market_regime, get_sector_rotation, get_earnings_calendar
 
 Portfolio: get_portfolio, get_trades, get_watchlist, add_to_watchlist, remove_from_watchlist
 
