@@ -103,7 +103,7 @@ import smtplib
 from email.mime.text import MIMEText
 import os
 
-msg = MIMEText('')
+msg = MIMEText(' ')
 msg['From'] = os.environ.get('TRADINGAGENTS_ALERT_EMAIL_FROM', '')
 msg['To'] = os.environ.get('TRADINGAGENTS_ALERT_EMAIL_TO', '')
 msg['Subject'] = '$SUMMARY'
