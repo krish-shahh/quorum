@@ -231,6 +231,7 @@ DEFAULT_CONFIG = _apply_env_overrides({
         "news": 3600,           # news refreshes hourly
         "sentiment": 900,       # StockTwits shifts every 15 min
         "insiders": 86400,      # insider txns change daily at most
+        "congressional": 86400, # STOCK Act filings, daily sync
         "earnings": 86400,      # earnings dates change rarely
         "regime": 300,          # VIX/DXY/yields shift intraday
         "sector_rotation": 3600,

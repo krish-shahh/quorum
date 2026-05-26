@@ -629,6 +629,24 @@ def get_insider_clusters(positions, watchlist):
         return []
 
 
+def get_congress_recent(positions, watchlist, days=30):
+    """Get recent congressional trades for held + watchlist tickers."""
+    try:
+        from tradingagents.dataflows.congress import _load_cache
+        from datetime import datetime, timedelta
+        cache = _load_cache()
+        cutoff = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+        tickers = set(p["ticker"] for p in positions) | set(watchlist[:10])
+        trades = [
+            t for t in cache.get("trades", [])
+            if t["ticker"] in tickers and t["date"] >= cutoff
+        ]
+        trades.sort(key=lambda t: t["date"], reverse=True)
+        return trades[:20]
+    except Exception:
+        return []
+
+
 def get_sector_rotation():
     try:
         from tradingagents.dataflows.sector_rotation import SectorRotationModel
@@ -1421,10 +1439,12 @@ def create_app():
         sectors = get_sector_rotation()
         watchlist = get_watchlist()
         clusters = get_insider_clusters(acct["positions"], watchlist)
+        congress = get_congress_recent(acct["positions"], watchlist)
         return render_template("pipeline.html",
                                cache=cache, timeline=timeline, deltas=deltas,
                                slippage=slippage, dag_ticker=dag_ticker, dag=dag,
                                sectors=sectors, clusters=clusters,
+                               congress_trades=congress,
                                page="pipeline")
 
     # ── API / htmx partials ──
@@ -1440,6 +1460,13 @@ def create_app():
         watchlist = get_watchlist()
         clusters = get_insider_clusters(acct["positions"], watchlist)
         return render_template("_insiders.html", clusters=clusters)
+
+    @app.route("/api/scan-congress")
+    def api_scan_congress():
+        acct = get_account_data()
+        watchlist = get_watchlist()
+        trades = get_congress_recent(acct["positions"], watchlist)
+        return render_template("_congress.html", congress_trades=trades)
 
     @app.route("/api/report/<int:report_id>")
     def api_report_detail(report_id):

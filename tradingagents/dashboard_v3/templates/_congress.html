@@ -1,0 +1,19 @@
+{% if congress_trades %}
+<div class="divide-y divide-gray-100">
+  {% for t in congress_trades %}
+  <div class="px-3 py-2 flex items-center gap-3">
+    <span class="text-xs font-bold text-gray-900">{{ t.ticker }}</span>
+    <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded
+      {% if 'Purchase' in t.tx_type %}bg-green-50 text-green-700
+      {% elif 'Sale' in t.tx_type %}bg-red-50 text-red-700
+      {% else %}bg-amber-50 text-amber-700{% endif %}">
+      {{ t.tx_type | upper }}
+    </span>
+    <span class="text-[10px] font-mono text-gray-500">{{ t.member | truncate(25) }}</span>
+    <span class="text-[10px] text-gray-400">{{ t.date }} · {{ t.amount_str }}</span>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<p class="text-xs text-gray-400 py-4 text-center">No recent congressional trades</p>
+{% endif %}

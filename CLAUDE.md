@@ -79,7 +79,7 @@ You (Chairman, Opus)
   LAYER 1 — ANALYSTS (parallel, Sonnet, with MCP tools)
   ├── Technical Analyst (Sonnet)   → MCP: get_stock_data, get_indicators_bulk
   ├── Domain Analyst (Sonnet)      → Sector-specific (see below)
-  ├── Sentiment Analyst (Sonnet)   → MCP: get_reddit/stocktwits, get_insider_*
+  ├── Sentiment Analyst (Sonnet)   → MCP: get_reddit/stocktwits, get_insider_*, get_congress_trades
   └── News/Macro Analyst (Sonnet)  → WebSearch + get_market_regime
   
   Domain analyst is selected via get_asset_info(ticker):
@@ -133,10 +133,10 @@ Scheduled Monitoring:
 
 ```
 tradingagents/
-  mcp/             — MCP server (51 tools: data, portfolio, execution, wiki, safety, state, asset info, reflections)
+  mcp/             — MCP server (54 tools: data, portfolio, execution, wiki, safety, state, asset info, reflections, congress)
   council/         — Council skills + 19 analyst/debate prompts (4 universal + 7 domain + 8 debate) + compact_summary.py
   wiki/            — Knowledge base (run pages, digests, ticker pages, regimes)
-  dataflows/       — Market data with TTL caching (yfinance, Reddit, StockTwits, regime, sectors)
+  dataflows/       — Market data with TTL caching (yfinance, Reddit, StockTwits, regime, sectors, congressional trades)
   execution/       — Paper broker (with spread model + futures multiplier), safety (notional exposure + VaR + live intraday risk), contracts registry, ATR/Kelly position sizer
   quant/           — Deterministic scoring layer (14 files): Altman Z, FCF yield, regime-conditional technicals, 9 sector-specific scorers, 12 hard vetoes
   backtest/        — Quant score replay engine: historical IC computation, signal validation
@@ -154,19 +154,20 @@ tradingagents/
 | `.claude/skills/trading-council/` | Main council skill (3-layer: analysts, debate, risk debate) |
 | `.claude/skills/trading-day/` | Full-day scheduling skill |
 | `.claude/skills/market-monitor/` | Background monitoring skill for /loop |
-| `.claude/skills/analyst-*/` | 11 analyst skills (4 universal + 7 domain) with model:haiku + allowed-tools |
+| `.claude/skills/analyst-*/` | 11 analyst skills (4 universal + 7 domain) with model:sonnet + allowed-tools |
 | `.claude/skills/debate-*/` | 8 debate skills (bull, bear, research-manager, trader, 3 risk, portfolio-manager) |
 | `tradingagents/execution/reflection.py` | Self-reflection engine: generates lessons from past trade outcomes |
 | `tradingagents/execution/contracts.py` | Futures contract spec registry (22 contracts: multiplier, margin, expiry) |
 | `~/.tradingagents/tickers.txt` | Your watchlist (one ticker per line) |
 | `~/.tradingagents/rules.json` | Trading restrictions (blocked tickers, max trade value) |
 | `~/.tradingagents/tradingagents.db` | SQLite: positions, trades, wiki, reports, ticker_state |
+| `~/.tradingagents/congress_trades.json` | Congressional trade cache (House clerk PTR filings, auto-synced daily) |
 | `~/.tradingagents/wiki/` | Analysis pages, digests, ticker summaries |
 | `scripts/start-trading-day.sh` | Auto-start script (called by launchd at 9:30 AM) |
 
-## MCP Tools (52)
+## MCP Tools (54)
 
-Data: get_stock_data, get_indicators, get_indicators_bulk, get_fundamentals, get_financial_statements, get_news, get_global_news, get_reddit_sentiment, get_stocktwits_sentiment, get_insider_transactions, get_insider_clusters, get_market_regime, get_sector_rotation, get_earnings_calendar
+Data: get_stock_data, get_indicators, get_indicators_bulk, get_fundamentals, get_financial_statements, get_news, get_global_news, get_reddit_sentiment, get_stocktwits_sentiment, get_insider_transactions, get_insider_clusters, get_congress_trades, get_congress_summary, get_market_regime, get_sector_rotation, get_earnings_calendar
 
 Portfolio: get_portfolio, get_trades, get_watchlist, add_to_watchlist, remove_from_watchlist
 

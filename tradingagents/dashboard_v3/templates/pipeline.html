@@ -531,6 +531,45 @@
     </div>
   </div>
 
+  {# ── Congress Trades ── #}
+  <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
+    <div class="px-4 py-2.5 border-b border-gray-100 flex items-center justify-between">
+      <h2 class="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Congress Trades (STOCK Act)</h2>
+      <button class="text-[10px] font-medium px-2 py-0.5 rounded border border-gray-200 text-gray-500 hover:bg-gray-50 transition-colors"
+              hx-get="/api/scan-congress"
+              hx-target="#congress-content"
+              hx-swap="innerHTML">
+        Scan
+      </button>
+    </div>
+    <div id="congress-content">
+      {% if congress_trades %}
+      <div class="divide-y divide-gray-100 max-h-80 overflow-y-auto">
+        {% for t in congress_trades %}
+        <div class="px-4 py-2.5 flex items-center justify-between hover:bg-gray-50 transition-colors">
+          <div class="flex items-center gap-2">
+            <span class="text-sm font-bold text-gray-900">{{ t.ticker }}</span>
+            <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded
+              {% if 'Purchase' in t.tx_type %}bg-green-50 text-green-700
+              {% elif 'Sale' in t.tx_type %}bg-red-50 text-red-700
+              {% else %}bg-amber-50 text-amber-700{% endif %}">
+              {{ t.tx_type }}
+            </span>
+          </div>
+          <div class="flex items-center gap-3 text-[10px] text-gray-400">
+            <span>{{ t.member | truncate(25) }}</span>
+            <span class="font-mono">{{ t.date }}</span>
+            <span class="font-mono">{{ t.amount_str }}</span>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="px-4 py-6 text-center text-xs text-gray-400">No congressional trade data — run sync first</div>
+      {% endif %}
+    </div>
+  </div>
+
 </div>
 
 {% endblock %}

@@ -57,6 +57,8 @@ def create_server():
         Tool(name="get_stocktwits_sentiment", description="Get StockTwits messages and sentiment for a ticker.", inputSchema={"type": "object", "properties": {"ticker": {"type": "string"}}, "required": ["ticker"]}),
         Tool(name="get_insider_transactions", description="Get insider buying/selling activity for a stock.", inputSchema={"type": "object", "properties": {"ticker": {"type": "string"}}, "required": ["ticker"]}),
         Tool(name="get_insider_clusters", description="Detect clustered insider buying (3+ insiders within 14 days).", inputSchema={"type": "object", "properties": {"ticker": {"type": "string"}, "window_days": {"type": "integer", "default": 14}, "min_insiders": {"type": "integer", "default": 3}}, "required": ["ticker"]}),
+        Tool(name="get_congress_trades", description="Get congressional stock trades for a ticker from STOCK Act disclosures. Shows which members of Congress bought or sold this stock, when, and how much. Data from official House clerk filings.", inputSchema={"type": "object", "properties": {"ticker": {"type": "string", "description": "Stock ticker symbol"}, "days": {"type": "integer", "default": 90, "description": "Look back N days (default 90)"}}, "required": ["ticker"]}),
+        Tool(name="get_congress_summary", description="Overview of congressional trading activity: most-traded tickers by member count, most active members. Use to discover which stocks Congress is buying/selling.", inputSchema={"type": "object", "properties": {"days": {"type": "integer", "default": 30, "description": "Look back N days (default 30)"}}}),
         Tool(name="get_market_regime", description="Get current market regime (risk_on/risk_off/transition/volatile) from VIX, DXY, 10Y yield.", inputSchema={"type": "object", "properties": {"date": {"type": "string", "description": "Date YYYY-MM-DD (default today)"}}}),
         Tool(name="get_sector_rotation", description="Get sector ETF relative strength and rotation direction.", inputSchema={"type": "object", "properties": {"date": {"type": "string", "description": "Date YYYY-MM-DD (default today)"}}}),
         Tool(name="get_earnings_calendar", description="Check if a stock has upcoming earnings.", inputSchema={"type": "object", "properties": {"ticker": {"type": "string"}}, "required": ["ticker"]}),
@@ -188,6 +190,14 @@ def _handle_tool(name: str, args: dict) -> str:
     if name == "get_insider_clusters":
         from tradingagents.dataflows.insider_clustering import get_insider_clusters
         return get_insider_clusters(args["ticker"], args.get("window_days", 14), args.get("min_insiders", 3))
+
+    if name == "get_congress_trades":
+        from tradingagents.dataflows.congress import get_congress_trades
+        return get_congress_trades(args["ticker"], args.get("days", 90))
+
+    if name == "get_congress_summary":
+        from tradingagents.dataflows.congress import get_congress_summary
+        return get_congress_summary(args.get("days", 30))
 
     if name == "get_market_regime":
         from tradingagents.dataflows.regime import get_market_regime
