@@ -56,11 +56,13 @@ After the final trading cycle each day (or when asked for a summary), produce:
 The system runs fully unattended via macOS launchd + `claude -p` (uses subscription, not API):
 
 ```
-9:30 AM  — Market open council + Kalshi position check
-1:30 PM  — Midday rebalance
-3:30 PM  — Late afternoon
-4:15 PM  — EOD report + memory update
+9:30 AM  — Market open: full council + Kalshi position check
+10:00 AM - 3:30 PM — Every 30 min: delta-aware rapid cycles (skip unchanged tickers)
+4:00 PM  — Final trading cycle (last chance to execute)
+4:15 PM  — EOD report + memory update (no new trades)
 ```
+
+That's **15 cycles per trading day**. Intraday cycles use `get_ticker_deltas` to skip unchanged tickers — most cycles are fast. The debate architecture only triggers on ambiguous scores, so clear consensus tickers execute quickly.
 
 Each cycle is an independent `claude -p` invocation. State persists via MCP (SQLite + wiki + memory files). Logs go to `~/.tradingagents/logs/trading-YYYY-MM-DD.log`.
 
