@@ -408,30 +408,32 @@
         <tr class="bg-gray-50 text-[10px] uppercase tracking-wider text-gray-400 font-semibold">
           <th class="text-left px-4 py-2">Time</th>
           <th class="text-left px-4 py-2">Ticker</th>
-          <th class="text-center px-4 py-2">Side</th>
-          <th class="text-right px-4 py-2">Qty</th>
-          <th class="text-right px-4 py-2">Analysis $</th>
-          <th class="text-right px-4 py-2">Fill $</th>
-          <th class="text-right px-4 py-2">Slippage</th>
-          <th class="text-right px-4 py-2">BPS</th>
+          <th class="text-center px-3 py-2">Side</th>
+          <th class="text-right px-3 py-2">Qty</th>
+          <th class="text-right px-3 py-2">Analysis</th>
+          <th class="text-right px-3 py-2">Fill</th>
+          <th class="text-right px-3 py-2">Slip</th>
+          <th class="text-right px-3 py-2">BPS</th>
         </tr>
       </thead>
       <tbody class="divide-y divide-gray-100">
         {% for s in slippage.data %}
         <tr class="hover:bg-gray-50 transition-colors">
-          <td class="px-4 py-2 font-mono text-gray-500 whitespace-nowrap">{{ s.time }}</td>
+          <td class="px-4 py-2 font-mono text-gray-400 whitespace-nowrap">{{ s.time }}</td>
           <td class="px-4 py-2 font-semibold text-gray-900">{{ s.ticker }}</td>
-          <td class="px-4 py-2 text-center font-semibold
-            {% if s.side|upper == 'BUY' %}text-green-600{% else %}text-red-600{% endif %}">
-            {{ s.side|upper }}
+          <td class="px-3 py-2 text-center">
+            <span class="text-[10px] font-bold px-1.5 py-0.5 rounded
+              {% if s.side|upper == 'BUY' %}bg-green-50 text-green-700{% else %}bg-red-50 text-red-700{% endif %}">
+              {{ s.side|upper }}
+            </span>
           </td>
-          <td class="px-4 py-2 text-right font-mono text-gray-700">{{ s.qty }}</td>
-          <td class="px-4 py-2 text-right font-mono text-gray-700">${{ "%.2f"|format(s.analysis_price) }}</td>
-          <td class="px-4 py-2 text-right font-mono text-gray-700">${{ "%.2f"|format(s.fill_price) }}</td>
-          <td class="px-4 py-2 text-right font-mono {% if s.slippage > 0 %}text-red-600{% elif s.slippage < 0 %}text-green-600{% else %}text-gray-600{% endif %}">
+          <td class="px-3 py-2 text-right font-mono text-gray-700">{{ s.qty }}</td>
+          <td class="px-3 py-2 text-right font-mono text-gray-700">${{ "%.2f"|format(s.analysis_price) }}</td>
+          <td class="px-3 py-2 text-right font-mono text-gray-700">${{ "%.2f"|format(s.fill_price) }}</td>
+          <td class="px-3 py-2 text-right font-mono {% if s.slippage > 0 %}text-red-600{% elif s.slippage < 0 %}text-green-600{% else %}text-gray-600{% endif %}">
             ${{ "%.2f"|format(s.slippage) }}
           </td>
-          <td class="px-4 py-2 text-right font-mono {% if s.slippage_bps > 10 %}text-red-600{% elif s.slippage_bps > 5 %}text-amber-600{% else %}text-gray-600{% endif %}">
+          <td class="px-3 py-2 text-right font-mono {% if s.slippage_bps > 10 %}text-red-600{% elif s.slippage_bps > 5 %}text-amber-600{% else %}text-gray-600{% endif %}">
             {{ "%.1f"|format(s.slippage_bps) }}
           </td>
         </tr>
