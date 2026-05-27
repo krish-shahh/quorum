@@ -832,13 +832,18 @@ def get_kalshi_calibration():
         return None
 
 
+_EXCLUDED_CATEGORIES = {"sports"}
+
+
 def get_kalshi_trending_events():
-    """Get trending Kalshi events with volume."""
+    """Get trending Kalshi events with volume (excludes sports)."""
     try:
         from tradingagents.dataflows.kalshi import get_events
         events = get_events(limit=30, with_nested_markets=True)
         results = []
         for e in events:
+            if (e.category or "").lower() in _EXCLUDED_CATEGORIES:
+                continue
             total_vol = sum(m.volume for m in e.markets)
             if total_vol < 10:
                 continue
@@ -871,7 +876,7 @@ def get_kalshi_trending_events():
 
 
 def get_event_calendar():
-    """Get Kalshi events grouped by resolution timeframe for the calendar view."""
+    """Get Kalshi events grouped by resolution timeframe (excludes sports)."""
     try:
         from tradingagents.dataflows.kalshi import get_events
         from datetime import datetime, timezone
@@ -880,6 +885,8 @@ def get_event_calendar():
         buckets = {"this_week": [], "this_month": [], "this_quarter": [], "this_year": [], "long_dated": []}
         for e in events:
             if not e.markets:
+                continue
+            if (e.category or "").lower() in _EXCLUDED_CATEGORIES:
                 continue
             # Use earliest close_time from nested markets
             close_times = []
@@ -962,6 +969,10 @@ def get_cross_platform_comparison():
         kalshi_markets = kalshi_get_markets(limit=100, status="open")
         poly_markets = poly_list_markets(limit=100, active=True)
 
+        # Pre-filter sports from both sides
+        kalshi_markets = [m for m in kalshi_markets if (m.category or "").lower() not in _EXCLUDED_CATEGORIES]
+        poly_markets = [m for m in poly_markets if (m.category or "").lower() not in _EXCLUDED_CATEGORIES]
+
         pairs = fuzzy_match_markets(kalshi_markets, poly_markets, threshold=0.45)
 
         results = []
@@ -986,13 +997,15 @@ def get_cross_platform_comparison():
 
 
 def get_polymarket_trending(limit=15):
-    """Get top Polymarket markets by volume."""
+    """Get top Polymarket markets by volume (excludes sports)."""
     try:
         from tradingagents.dataflows.polymarket import list_markets
-        markets = list_markets(limit=limit, active=True)
+        markets = list_markets(limit=limit * 2, active=True)
         results = []
         for m in markets:
             if not m.outcome_prices:
+                continue
+            if (m.category or "").lower() in _EXCLUDED_CATEGORIES:
                 continue
             results.append({
                 "question": m.question[:80],
@@ -1004,6 +1017,8 @@ def get_polymarket_trending(limit=15):
                 "category": m.category,
                 "slug": m.slug,
             })
+            if len(results) >= limit:
+                break
         return results
     except Exception as exc:
         print(f"[v3] polymarket error: {exc}")
@@ -1029,6 +1044,7 @@ def get_council_candidates_data():
                 "reason": c.reason,
             }
             for c in candidates
+            if (c.category or "").lower() not in _EXCLUDED_CATEGORIES
         ]
     except Exception as exc:
         print(f"[v3] council candidates error: {exc}")
