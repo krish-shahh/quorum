@@ -324,6 +324,7 @@ def get_db(config: Optional[Dict[str, Any]] = None) -> sqlite3.Connection:
         for migration in [
             "ALTER TABLE kalshi_positions ADD COLUMN council_probability REAL",
             "ALTER TABLE paper_positions ADD COLUMN trailing_high REAL",
+            "ALTER TABLE paper_positions ADD COLUMN multiplier INTEGER NOT NULL DEFAULT 1",
             "ALTER TABLE ticker_state ADD COLUMN debate_triggered INTEGER NOT NULL DEFAULT 0",
         ]:
             try:
