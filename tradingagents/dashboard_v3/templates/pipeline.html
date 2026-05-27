@@ -492,6 +492,38 @@
     </div>
   </div>
 
+  {# ── Plan Adherence ── #}
+  <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
+    <div class="px-4 py-2.5 border-b border-gray-100 flex items-center justify-between">
+      <h2 class="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Plan Adherence</h2>
+      <button class="text-[10px] font-medium px-2 py-0.5 rounded border border-gray-200 text-gray-500 hover:bg-gray-50 transition-colors"
+              hx-get="/api/plan-metrics"
+              hx-target="#plan-content"
+              hx-swap="innerHTML">
+        Refresh
+      </button>
+    </div>
+    <div id="plan-content" class="px-4 py-2.5">
+      {% include "_plan_metrics.html" %}
+    </div>
+  </div>
+
+  {# ── Calibration ── #}
+  <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
+    <div class="px-4 py-2.5 border-b border-gray-100 flex items-center justify-between">
+      <h2 class="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Conviction Calibration</h2>
+      <button class="text-[10px] font-medium px-2 py-0.5 rounded border border-gray-200 text-gray-500 hover:bg-gray-50 transition-colors"
+              hx-get="/api/run-calibration"
+              hx-target="#calibration-content"
+              hx-swap="innerHTML">
+        Run
+      </button>
+    </div>
+    <div id="calibration-content" class="px-4 py-2.5">
+      <p class="text-xs text-gray-400">Click Run to validate conviction scale</p>
+    </div>
+  </div>
+
   {# ── Right: Insider Clusters ── #}
   <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
     <div class="px-4 py-2.5 border-b border-gray-100 flex items-center justify-between">

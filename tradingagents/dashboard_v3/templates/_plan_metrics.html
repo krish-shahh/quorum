@@ -1,0 +1,39 @@
+{% if plan.active %}
+<div class="space-y-2">
+  <div class="flex items-center justify-between">
+    <span class="text-xs text-gray-500">Plan: {{ plan.plan_id or 'unknown' }}</span>
+    <span class="text-[10px] px-1.5 py-0.5 rounded
+      {% if plan.plan_type == 'morning' %}bg-blue-50 text-blue-700
+      {% elif plan.plan_type == 'midday_replan' %}bg-amber-50 text-amber-700
+      {% else %}bg-gray-50 text-gray-700{% endif %}">
+      {{ plan.plan_type or 'manual' }}
+    </span>
+  </div>
+  {% if plan.adherence_rate is not none %}
+  <div class="flex items-center gap-4">
+    <div>
+      <div class="text-[9px] uppercase tracking-wider text-gray-400">Adherence</div>
+      <div class="text-lg font-mono font-semibold
+        {% if plan.adherence_rate >= 0.8 %}text-green-600
+        {% elif plan.adherence_rate >= 0.5 %}text-yellow-600
+        {% else %}text-red-600{% endif %}">
+        {{ "%.0f%%"|format(plan.adherence_rate * 100) }}
+      </div>
+    </div>
+    <div>
+      <div class="text-[9px] uppercase tracking-wider text-gray-400">Slippage</div>
+      <div class="text-lg font-mono font-semibold text-gray-700">
+        {{ "%.1f"|format(plan.avg_slippage_bps) if plan.avg_slippage_bps is not none else 'N/A' }} bps
+      </div>
+    </div>
+    <div class="text-[10px] text-gray-400">
+      {{ plan.executed or 0 }} exec / {{ plan.skipped or 0 }} skip / {{ plan.held or 0 }} hold
+    </div>
+  </div>
+  {% else %}
+  <p class="text-xs text-gray-400">No execution data yet</p>
+  {% endif %}
+</div>
+{% else %}
+<p class="text-xs text-gray-400 py-2">No active plan — run /trading-planner</p>
+{% endif %}

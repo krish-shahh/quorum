@@ -166,7 +166,7 @@ def replay_quant_scores(
 
         close_price = float(hist.iloc[i]["Close"])
 
-        # Forward returns
+        # Forward returns (raw — kept for backward compat)
         fwd_1d = fwd_5d = fwd_20d = None
         if i + 1 < len(hist):
             fwd_1d = float((hist.iloc[min(i + 1, len(hist) - 1)]["Close"] - close_price) / close_price)
@@ -175,6 +175,36 @@ def replay_quant_scores(
         if i + 20 < len(hist):
             fwd_20d = float((hist.iloc[min(i + 20, len(hist) - 1)]["Close"] - close_price) / close_price)
 
+        # Multi-horizon volatility-normalized labels
+        # 3d/7d/15d with weights 0.3/0.5/0.2, normalized by 20-period rolling vol
+        pct_returns = hist["Close"].pct_change()
+        rolling_vol_20 = float(pct_returns.iloc[max(0, i - 19):i + 1].std()) if i >= 19 else None
+
+        fwd_3d_norm = fwd_7d_norm = fwd_15d_norm = composite_label = None
+        if rolling_vol_20 and rolling_vol_20 > 0:
+            for horizon, attr in [(3, "fwd_3d_norm"), (7, "fwd_7d_norm"), (15, "fwd_15d_norm")]:
+                if i + horizon < len(hist):
+                    raw = float((hist.iloc[i + horizon]["Close"] - close_price) / close_price)
+                    normed = raw / (rolling_vol_20 * np.sqrt(horizon))
+                    if attr == "fwd_3d_norm":
+                        fwd_3d_norm = normed
+                    elif attr == "fwd_7d_norm":
+                        fwd_7d_norm = normed
+                    else:
+                        fwd_15d_norm = normed
+
+            # Composite: 0.3 * 3d + 0.5 * 7d + 0.2 * 15d
+            parts = []
+            if fwd_3d_norm is not None:
+                parts.append((0.3, fwd_3d_norm))
+            if fwd_7d_norm is not None:
+                parts.append((0.5, fwd_7d_norm))
+            if fwd_15d_norm is not None:
+                parts.append((0.2, fwd_15d_norm))
+            if parts:
+                total_w = sum(w for w, _ in parts)
+                composite_label = sum(w * v for w, v in parts) / total_w
+
         scores_list.append({
             "date": d.isoformat(),
             "score": round(score, 4),
@@ -182,6 +212,11 @@ def replay_quant_scores(
             "fwd_1d": round(fwd_1d, 6) if fwd_1d is not None else None,
             "fwd_5d": round(fwd_5d, 6) if fwd_5d is not None else None,
             "fwd_20d": round(fwd_20d, 6) if fwd_20d is not None else None,
+            "fwd_3d_norm": round(fwd_3d_norm, 6) if fwd_3d_norm is not None else None,
+            "fwd_7d_norm": round(fwd_7d_norm, 6) if fwd_7d_norm is not None else None,
+            "fwd_15d_norm": round(fwd_15d_norm, 6) if fwd_15d_norm is not None else None,
+            "composite_label": round(composite_label, 6) if composite_label is not None else None,
+            "rolling_vol_20": round(rolling_vol_20, 6) if rolling_vol_20 is not None else None,
         })
 
     if not scores_list:
@@ -192,8 +227,22 @@ def replay_quant_scores(
 
     ic = {}
     scores_arr = np.array([s["score"] for s in scores_list])
+
+    # Raw forward returns (backward compat)
     for horizon, key in [(1, "1d"), (5, "5d"), (20, "20d")]:
         fwd = [s[f"fwd_{key}"] for s in scores_list]
+        valid = [(sc, fw) for sc, fw in zip(scores_arr, fwd) if fw is not None]
+        if len(valid) >= 10:
+            sc_v, fw_v = zip(*valid)
+            corr, pval = spearmanr(sc_v, fw_v)
+            ic[key] = {"ic": round(float(corr), 4), "pval": round(float(pval), 4), "n": len(valid)}
+        else:
+            ic[key] = {"ic": None, "pval": None, "n": len(valid)}
+
+    # Vol-normalized horizons + composite
+    for key in ["3d_norm", "7d_norm", "15d_norm", "composite"]:
+        field = f"fwd_{key}" if key != "composite" else "composite_label"
+        fwd = [s.get(field) for s in scores_list]
         valid = [(sc, fw) for sc, fw in zip(scores_arr, fwd) if fw is not None]
         if len(valid) >= 10:
             sc_v, fw_v = zip(*valid)

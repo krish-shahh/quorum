@@ -7,14 +7,19 @@ Autonomous paper trading system that runs entirely through Claude Code via MCP t
 ## How to Trade
 
 ```
-/trading-council    — 4 parallel analyst subagents (recommended)
-/prediction-council — Kalshi prediction markets (2-agent superforecaster council)
+/trading-planner    — Planner: full council analysis → writes plan file (recommended)
+/trading-executor   — Executor: mechanically executes active plan (no analysis)
+/trading-council    — Legacy monolithic council (use planner+executor instead)
+/prediction-planner — Kalshi planner: 2-agent council → plan file
+/prediction-executor — Kalshi executor: executes prediction plan
+/prediction-council — Legacy monolithic prediction council
 /trading-cycle      — simpler single-agent mode
 /trading-day        — full day: immediate cycle + scheduled follow-ups
 /market-monitor     — background regime/position monitoring (use with /loop)
 /prediction-arb-scan — scan Kalshi for Dutch book + bias arbitrage opportunities
 ```
 
+Flow: `/trading-planner` → plan file → `/trading-executor` → trades
 Or just say: "Run my autonomous trading cycle" or "Analyze Kalshi markets"
 
 ## Session Start Protocol
@@ -51,26 +56,31 @@ After the final trading cycle each day (or when asked for a summary), produce:
 
 ## Scheduling
 
-### Headless Mode (default)
+### Headless Mode (default) — Planner/Executor
 
-The system runs fully unattended via macOS launchd + `claude -p` (uses subscription, not API):
+The system runs fully unattended via macOS launchd + `claude -p` (uses subscription, not API).
+Planner produces a plan file, Executor mechanically executes it. Plans live at `~/.tradingagents/plans/`.
 
 ```
-9:30 AM  — Market open: full council + Kalshi position check
-10:00 AM - 3:30 PM — Every 30 min: delta-aware rapid cycles (skip unchanged tickers)
-4:00 PM  — Final trading cycle (last chance to execute)
-4:15 PM  — EOD report + memory update (no new trades)
+09:30  Planner — morning plan (full council on all tickers)
+10:00  Executor — execute morning plan
+12:00  Planner (conditional) — replan only if regime/risk shifted
+13:30  Executor — execute latest active plan
+15:30  Executor — execute latest active plan
+16:15  Executor — final cycle + EOD report
 ```
 
-That's **15 cycles per trading day**. Intraday cycles use `get_ticker_deltas` to skip unchanged tickers — most cycles are fast. The debate architecture only triggers on ambiguous scores, so clear consensus tickers execute quickly.
+That's **6 cycles per trading day** (down from 15). The Planner runs the full council analysis and writes a structured plan with YAML frontmatter. The Executor reads the active plan and executes mechanically — it cannot improvise trades. If 3+ Executor steps skip (price drifted), it triggers a replan.
 
-Each cycle is an independent `claude -p` invocation. State persists via MCP (SQLite + wiki + memory files). Logs go to `~/.tradingagents/logs/trading-YYYY-MM-DD.log`.
+Each cycle is an independent `claude -p` invocation. State persists via MCP (SQLite + wiki + plan files + memory files). Logs go to `~/.tradingagents/logs/trading-YYYY-MM-DD.log`.
+
+Pre-trade hook enforces plan adherence: `execute_paper_trade` is blocked if the trade doesn't match a step in `~/.tradingagents/plans/active.md`.
 
 Manage: `launchctl list | grep tradingagents` / `launchctl unload ~/Library/LaunchAgents/com.tradingagents.daily.plist`
 
 ### Interactive Mode
 
-For manual sessions, use `/trading-day` to schedule cycles via CronCreate (session-scoped). Kalshi position monitoring runs weekday mornings (8:47 AM) when using this mode.
+For manual sessions, use `/trading-planner` then `/trading-executor`, or `/trading-day` for the legacy schedule.
 
 ## Architecture
 
@@ -151,17 +161,22 @@ tradingagents/
 | `.claude/settings.json` | Hooks, permissions, env vars (NOT MCP — that's in .mcp.json) |
 | `.claude/hooks/pre_trade_validate.py` | Pre-trade risk validation (deterministic, blocking) |
 | `.claude/hooks/post_tool_audit.py` | Audit trail for all MCP tool calls + subagent stops |
-| `.claude/skills/trading-council/` | Main council skill (3-layer: analysts, debate, risk debate) |
+| `.claude/skills/trading-planner/` | Planner skill — council analysis → plan file (no execution tools) |
+| `.claude/skills/trading-executor/` | Executor skill — reads plan, executes mechanically (no analysis tools) |
+| `.claude/skills/trading-council/` | Legacy monolithic council (superseded by planner+executor) |
 | `.claude/skills/trading-day/` | Full-day scheduling skill |
 | `.claude/skills/market-monitor/` | Background monitoring skill for /loop |
 | `.claude/skills/analyst-*/` | 11 analyst skills (4 universal + 7 domain) with model:sonnet + allowed-tools |
 | `.claude/skills/debate-*/` | 8 debate skills (bull, bear, research-manager, trader, 3 risk, portfolio-manager) |
+| `tradingagents/execution/plan.py` | Plan file read/write/validate/metrics for Planner/Executor architecture |
 | `tradingagents/execution/reflection.py` | Self-reflection engine: generates lessons from past trade outcomes |
 | `tradingagents/execution/contracts.py` | Futures contract spec registry (22 contracts: multiplier, margin, expiry) |
 | `~/.tradingagents/tickers.txt` | Your watchlist (one ticker per line) |
 | `~/.tradingagents/rules.json` | Trading restrictions (blocked tickers, max trade value) |
 | `~/.tradingagents/tradingagents.db` | SQLite: positions, trades, wiki, reports, ticker_state |
 | `~/.tradingagents/congress_trades.json` | Congressional trade cache (House clerk PTR filings, auto-synced daily) |
+| `~/.tradingagents/plans/` | Trading plan files (YAML frontmatter + markdown thesis) |
+| `~/.tradingagents/plans/active.md` | Symlink to latest approved plan (Executor reads this) |
 | `~/.tradingagents/wiki/` | Analysis pages, digests, ticker summaries |
 | `scripts/start-trading-day.sh` | Auto-start script (called by launchd at 9:30 AM) |
 

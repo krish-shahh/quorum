@@ -629,6 +629,33 @@ def get_insider_clusters(positions, watchlist):
         return []
 
 
+def get_plan_metrics_data():
+    """Get plan adherence metrics for dashboard."""
+    try:
+        from tradingagents.execution.plan import get_plan_metrics, read_active_plan
+        plan = read_active_plan()
+        if plan is None:
+            return {"active": False}
+        metrics = get_plan_metrics(plan.get("plan_id"))
+        metrics["active"] = True
+        metrics["plan_type"] = plan.get("plan_type", "")
+        metrics["regime"] = plan.get("regime", "")
+        metrics["created_at"] = plan.get("created_at", "")
+        return metrics
+    except Exception:
+        return {"active": False}
+
+
+def run_calibration():
+    """Run conviction calibration and return formatted report."""
+    try:
+        from tradingagents.backtest.calibrate_conviction import calibrate, format_report
+        result = calibrate(days=180)
+        return format_report(result)
+    except Exception as e:
+        return f"Calibration error: {e}"
+
+
 def get_congress_recent(positions, watchlist, days=30):
     """Get recent congressional trades for held + watchlist tickers."""
     try:
@@ -1440,11 +1467,13 @@ def create_app():
         watchlist = get_watchlist()
         clusters = get_insider_clusters(acct["positions"], watchlist)
         congress = get_congress_recent(acct["positions"], watchlist)
+        plan_metrics = get_plan_metrics_data()
         return render_template("pipeline.html",
                                cache=cache, timeline=timeline, deltas=deltas,
                                slippage=slippage, dag_ticker=dag_ticker, dag=dag,
                                sectors=sectors, clusters=clusters,
                                congress_trades=congress,
+                               plan_metrics=plan_metrics,
                                page="pipeline")
 
     # ── API / htmx partials ──
@@ -1467,6 +1496,16 @@ def create_app():
         watchlist = get_watchlist()
         trades = get_congress_recent(acct["positions"], watchlist)
         return render_template("_congress.html", congress_trades=trades)
+
+    @app.route("/api/plan-metrics")
+    def api_plan_metrics():
+        metrics = get_plan_metrics_data()
+        return render_template("_plan_metrics.html", plan=metrics)
+
+    @app.route("/api/run-calibration")
+    def api_run_calibration():
+        report = run_calibration()
+        return f"<pre class='text-xs font-mono text-gray-700 whitespace-pre-wrap'>{report}</pre>"
 
     @app.route("/api/report/<int:report_id>")
     def api_report_detail(report_id):

@@ -121,6 +121,40 @@ if max_trade_val and signal in ("Buy", "Overweight"):
     if trade_cost > float(max_trade_val):
         errors.append(f"Trade value ~${trade_cost:,.0f} exceeds max ${float(max_trade_val):,.0f} (rules.json)")
 
+# ── Rule 8: Trade must match active plan ──
+active_plan = Path.home() / ".tradingagents" / "plans" / "active.md"
+if active_plan.exists() and active_plan.is_symlink():
+    try:
+        plan_text = active_plan.resolve().read_text()
+        if plan_text.startswith("---"):
+            # Parse YAML frontmatter — extract steps list
+            yaml_end = plan_text.index("---", 3)
+            fm = plan_text[3:yaml_end]
+            # Simple parser: find ticker/action pairs in steps
+            import re
+            step_pairs = re.findall(
+                r'ticker:\s*(\S+)\s*\n\s*action:\s*(\S+)', fm, re.IGNORECASE
+            )
+            if step_pairs:
+                buy_actions = {"buy", "strong buy", "strong"}
+                sell_actions = {"sell", "strong sell"}
+                matched = False
+                for step_ticker, step_action in step_pairs:
+                    step_ticker = step_ticker.strip('"').upper()
+                    step_action = step_action.strip('"').lower()
+                    if step_ticker != ticker:
+                        continue
+                    if signal in ("Buy", "Overweight") and step_action in buy_actions:
+                        matched = True
+                        break
+                    if signal in ("Sell", "Underweight") and step_action in sell_actions:
+                        matched = True
+                        break
+                if not matched:
+                    errors.append(f"No matching step in active plan for {signal} {ticker}")
+    except Exception:
+        pass  # Plan parsing failure should not block trades
+
 if errors:
     msg = "TRADE BLOCKED:\n" + "\n".join(f"  - {e}" for e in errors)
     print(msg, file=sys.stderr)
