@@ -1,0 +1,117 @@
+{% set rl = status.risk_level | default('unknown') %}
+{% set risk_border = {
+  'green': 'border-l-green-500',
+  'yellow': 'border-l-amber-500',
+  'orange': 'border-l-orange-500',
+  'red': 'border-l-red-500',
+} %}
+<div class="rounded-lg border border-gray-200 bg-white border-l-4 {{ risk_border.get(rl, 'border-l-gray-300') }} px-4 py-2">
+  <div class="flex flex-wrap items-center gap-x-5 gap-y-1 text-xs">
+
+    {# ── Risk level ── #}
+    {% set risk_styles = {
+      'green': 'bg-green-100 text-green-800',
+      'yellow': 'bg-amber-100 text-amber-800',
+      'orange': 'bg-orange-100 text-orange-800',
+      'red': 'bg-red-100 text-red-800',
+    } %}
+    <span class="text-[10px] font-bold uppercase px-2 py-0.5 rounded {{ risk_styles.get(rl, 'bg-gray-100 text-gray-600') }}">{{ rl | upper }}</span>
+
+    {# ── Regime ── #}
+    {% if status.regime %}
+    <span class="font-mono">
+      <span class="text-[9px] uppercase text-gray-400 mr-0.5">Regime</span>
+      <span class="font-semibold
+        {% if status.regime.regime == 'RISK_ON' %}text-green-700
+        {% elif status.regime.regime == 'RISK_OFF' %}text-red-700
+        {% elif status.regime.regime == 'VOLATILE' %}text-amber-700
+        {% else %}text-gray-700{% endif %}">{{ status.regime.regime }}</span>
+    </span>
+    <span class="font-mono text-gray-600">
+      <span class="text-[9px] text-gray-400">VIX</span> {{ status.regime.vix }}
+      <span class="text-gray-300 mx-0.5">|</span>
+      <span class="text-[9px] text-gray-400">DXY</span> {{ status.regime.dxy }}
+      <span class="text-gray-300 mx-0.5">|</span>
+      <span class="text-[9px] text-gray-400">10Y</span> {{ status.regime.yield_10y }}
+    </span>
+    {% endif %}
+
+    {# ── Live risk metrics ── #}
+    {% if status.live_risk and status.live_risk.risk_level != 'unknown' %}
+    <span class="text-gray-300">|</span>
+    <span class="font-mono">
+      <span class="text-[9px] text-gray-400">Day P&L</span>
+      <span class="font-semibold {% if status.live_risk.daily_pnl >= 0 %}text-green-600{% else %}text-red-600{% endif %}">
+        {{ "$%+.2f"|format(status.live_risk.daily_pnl) }}
+      </span>
+    </span>
+    <span class="font-mono">
+      <span class="text-[9px] text-gray-400">Cash</span>
+      {{ "%.0f"|format(status.live_risk.cash_reserve_pct * 100) }}%
+    </span>
+    {% if status.live_risk.stops_breached %}
+    <span class="text-[10px] font-bold text-red-700">{{ status.live_risk.stops_breached | length }} STOP BREACHED</span>
+    {% endif %}
+    {% endif %}
+
+    {# ── Plan status ── #}
+    {% if status.plan and status.plan.active %}
+    <span class="text-gray-300">|</span>
+    <span class="font-mono">
+      <span class="text-[9px] text-gray-400">Plan</span>
+      <span class="text-gray-700">{{ status.plan.plan_id }}</span>
+    </span>
+    <span class="flex items-center gap-1">
+      {% if status.plan.buy_count %}<span class="text-[9px] font-bold px-1 rounded bg-green-100 text-green-700">{{ status.plan.buy_count }}B</span>{% endif %}
+      {% if status.plan.sell_count %}<span class="text-[9px] font-bold px-1 rounded bg-red-100 text-red-700">{{ status.plan.sell_count }}S</span>{% endif %}
+      {% if status.plan.hold_count %}<span class="text-[9px] font-mono px-1 rounded bg-gray-100 text-gray-500">{{ status.plan.hold_count }}H</span>{% endif %}
+    </span>
+    {% if status.plan.adherence_rate is not none %}
+    <span class="text-[9px] font-mono {% if status.plan.adherence_rate >= 0.8 %}text-green-600{% elif status.plan.adherence_rate >= 0.5 %}text-amber-600{% else %}text-red-600{% endif %}">
+      {{ "%.0f"|format(status.plan.adherence_rate * 100) }}% adh
+    </span>
+    {% endif %}
+    {% elif not status.plan or not status.plan.active %}
+    <span class="text-gray-300">|</span>
+    <span class="text-[9px] text-gray-400 font-mono">No active plan</span>
+    {% endif %}
+
+    {# ── Right-aligned badges ── #}
+    <span class="ml-auto flex items-center gap-1.5">
+      {% if status.kill_switch %}
+      <span class="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-red-100 text-red-700">KILL SWITCH</span>
+      {% endif %}
+      {% if status.execution_mode %}
+      <span class="text-[9px] font-semibold uppercase px-1.5 py-0.5 rounded bg-blue-50 text-blue-600">{{ status.execution_mode }}</span>
+      {% endif %}
+      {% if status.exposure and status.exposure.leverage > 0 %}
+      <span class="text-[9px] font-semibold px-1.5 py-0.5 rounded
+        {% if not status.exposure.within_limits %}bg-red-100 text-red-700
+        {% elif status.exposure.leverage > 1.5 %}bg-amber-50 text-amber-700
+        {% else %}bg-gray-100 text-gray-600{% endif %}">
+        {{ "%.1f"|format(status.exposure.leverage) }}x
+      </span>
+      {% endif %}
+    </span>
+  </div>
+
+  {# ── Position stops (compact, only if breached or close) ── #}
+  {% if status.live_risk and status.live_risk.position_stops %}
+  {% set warn_stops = [] %}
+  {% for s in status.live_risk.position_stops %}
+    {% if s.breached or (s.distance_pct is not none and s.distance_pct < 0.03) %}
+      {% if warn_stops.append(s) %}{% endif %}
+    {% endif %}
+  {% endfor %}
+  {% if warn_stops %}
+  <div class="mt-1 flex flex-wrap gap-1.5">
+    {% for s in warn_stops %}
+    <span class="text-[9px] font-mono px-1.5 py-0.5 rounded
+      {% if s.breached %}bg-red-100 text-red-700 font-bold{% else %}bg-amber-100 text-amber-700{% endif %}">
+      {{ s.ticker }}: ${{ "%.0f"|format(s.stop_price) }} ({{ "%.1f"|format(s.distance_pct * 100) }}%)
+    </span>
+    {% endfor %}
+  </div>
+  {% endif %}
+  {% endif %}
+</div>

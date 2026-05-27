@@ -731,6 +731,20 @@ def _load_exec_log(plan_id: str) -> dict:
         return {}
 
 
+def get_trading_status_data():
+    """Merged status strip: regime + plan + live risk in one call."""
+    acct = get_account_data()
+    return {
+        "regime": get_regime(),
+        "plan": get_plan_status_data(),
+        "live_risk": get_live_risk_data(),
+        "kill_switch": acct.get("kill_switch", False),
+        "execution_mode": acct.get("execution_mode", "paper"),
+        "exposure": acct.get("exposure"),
+        "risk_level": get_live_risk_data().get("risk_level", "unknown"),
+    }
+
+
 def run_calibration():
     """Run conviction calibration and return formatted report."""
     try:
@@ -1465,17 +1479,14 @@ def create_app():
         hist_date = request.args.get("date")
         acct = get_account_data()
         trades = get_trades_data()
-        regime = get_regime()
-        activity = get_activity_feed(trades["recent"])
         dates = get_available_dates()
         historical = get_historical_data(hist_date) if hist_date else None
-        live_risk = get_live_risk_data() if not hist_date else None
-        plan = get_plan_status_data() if not hist_date else {"active": False}
+        status = get_trading_status_data() if not hist_date else None
         return render_template("trading.html",
-                               acct=acct, trades=trades, regime=regime,
-                               activity=activity, dates=dates,
+                               acct=acct, trades=trades,
+                               dates=dates,
                                hist_date=hist_date, historical=historical,
-                               live_risk=live_risk, plan=plan,
+                               status=status,
                                page="trading")
 
     @app.route("/council")
@@ -1614,16 +1625,10 @@ def create_app():
         acct = get_account_data()
         return render_template("_trading_positions.html", acct=acct)
 
-    @app.route("/api/trading-activity")
-    def api_trading_activity():
-        trades = get_trades_data()
-        activity = get_activity_feed(trades["recent"])
-        return render_template("_trading_activity.html", activity=activity)
-
-    @app.route("/api/plan-status")
-    def api_plan_status():
-        plan = get_plan_status_data()
-        return render_template("_trading_plan.html", plan=plan)
+    @app.route("/api/trading-status")
+    def api_trading_status():
+        status = get_trading_status_data()
+        return render_template("_trading_status.html", status=status)
 
     @app.route("/api/run-calibration")
     def api_run_calibration():

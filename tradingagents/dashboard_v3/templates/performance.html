@@ -33,7 +33,7 @@
   </div>
   {% endfor %}
 </div>
-<div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+<div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
   {% set pf_val = trades.analytics.profit_factor|default(0, true) %}
   {% set sqn_val = trades.analytics.sqn|default(0, true) %}
   {% set kpis = [
@@ -41,6 +41,8 @@
     ('EXPECTANCY', '$' + (trades.analytics.expectancy|default(0, true)|string)),
     ('SQN', sqn_val),
     ('TOTAL TRADES', trades.total),
+    ('SLIPPAGE COST', slippage.total_cost|usd if slippage and slippage.total_cost else '$0.00'),
+    ('AVG SLIPPAGE', (slippage.avg_bps|string + ' bps') if slippage and slippage.avg_bps else '0 bps'),
   ] %}
   {% for label, value in kpis %}
   <div class="bg-white border border-gray-200 rounded-lg p-4">
@@ -117,19 +119,7 @@
   </div>
 </div>
 
-{# ── 5. SLIPPAGE SUMMARY ──────────────────────────────────────── #}
-<div class="grid grid-cols-2 gap-3 mb-6">
-  <div class="bg-white border border-gray-200 rounded-lg p-4">
-    <div class="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-1">TOTAL SLIPPAGE COST</div>
-    <div class="text-xl font-mono font-semibold text-gray-900">{{ slippage.total_cost|usd }}</div>
-  </div>
-  <div class="bg-white border border-gray-200 rounded-lg p-4">
-    <div class="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-1">AVG SLIPPAGE</div>
-    <div class="text-xl font-mono font-semibold text-gray-900">{{ slippage.avg_bps }} bps</div>
-  </div>
-</div>
-
-{# ── 6. TRADE BLOTTER ─────────────────────────────────────────── #}
+{# ── 5. TRADE BLOTTER ─────────────────────────────────────────── #}
 <div class="bg-white border border-gray-200 rounded-lg p-5 mb-6">
   <div class="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-4">BLOTTER</div>
   <div class="overflow-x-auto">

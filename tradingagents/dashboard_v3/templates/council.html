@@ -12,117 +12,126 @@
 {% endmacro %}
 
 {# ══════════════════════════════════════════════════════════════════════
-   SECTION 1 — Ticker Grid
+   SECTION 1 — Watchlist Table
    ══════════════════════════════════════════════════════════════════════ #}
-<section class="mb-8">
-  <h2 class="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-3">
-    Council Scores — All Tickers
-  </h2>
+<div class="bg-white border border-gray-200 rounded-lg mb-4 overflow-hidden">
+  <div class="px-4 py-2 border-b border-gray-100">
+    <h2 class="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Council Watchlist</h2>
+  </div>
 
   {% if states %}
-  <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
-    {% for s in states %}
-    <a href="/council?ticker={{ s.ticker }}"
-       class="block bg-white border border-gray-200 rounded-lg px-3 py-2.5
-              hover:border-blue-400 hover:shadow-sm transition-all
-              {% if ticker and ticker == s.ticker %}border-blue-500 ring-1 ring-blue-200{% endif %}">
-      {# Top row: ticker + asset badge + signal badge #}
-      <div class="flex items-center justify-between mb-1.5">
-        <div class="flex items-center gap-1">
-          <span class="text-sm font-bold text-gray-900">{{ s.ticker }}</span>
-          {% set ac = s.asset_class | default('stock') %}
-          {% set sec = s.sector | default('') %}
-          {% if ac == 'future' %}
-          <span class="text-[8px] font-semibold px-1 rounded bg-indigo-50 text-indigo-600">FUTURE</span>
-          {% elif ac == 'etf_bond' %}
-          <span class="text-[8px] font-semibold px-1 rounded bg-blue-50 text-blue-600">BOND</span>
-          {% elif ac == 'etf_commodity' %}
-          <span class="text-[8px] font-semibold px-1 rounded bg-amber-50 text-amber-700">CMDTY</span>
-          {% elif sec %}
-          <span class="text-[8px] font-semibold px-1 rounded
-            {% if sec == 'tech' %}bg-purple-50 text-purple-600
-            {% elif sec == 'financials' %}bg-cyan-50 text-cyan-700
-            {% elif sec == 'healthcare' %}bg-emerald-50 text-emerald-600
-            {% elif sec == 'consumer' %}bg-orange-50 text-orange-600
-            {% elif sec == 'cyclical' %}bg-stone-100 text-stone-600
-            {% else %}bg-gray-100 text-gray-500{% endif %}">{{ sec | upper }}</span>
-          {% endif %}
-        </div>
-        {{ signal_badge(s.signal) }}
-      </div>
-      {# Middle: price + weighted score #}
-      <div class="flex items-end justify-between mb-1.5">
-        <span class="text-xs text-gray-400">${{ "%.2f"|format(s.price) if s.price else '—' }}</span>
-        <span class="text-lg font-bold font-mono text-gray-900">{{ "%.2f"|format(s.weighted) if s.weighted else '—' }}</span>
-      </div>
-      {# Bottom: timestamp + mini scores + debate badge #}
-      <div class="flex items-center justify-between">
-        <div class="flex items-center gap-1">
-          <span class="text-[9px] text-gray-300 font-mono">{{ s.analyzed_at[:16] if s.analyzed_at else '' }}</span>
-          {% if s.debate_triggered %}
-          <span class="text-[7px] font-bold px-1 py-0.5 rounded bg-violet-50 text-violet-600" title="Full debate ran for this ticker">DBT</span>
-          {% endif %}
-        </div>
-        <span class="text-[9px] text-gray-400 font-mono">
-          T:{{ s.technical }} {{ s | domain_abbr }}:{{ s.fundamental }} S:{{ s.sentiment }} N:{{ s.news }}
-        </span>
-      </div>
-    </a>
-    {% endfor %}
+  <div class="overflow-x-auto">
+    <table class="w-full text-xs">
+      <thead>
+        <tr class="bg-gray-50 text-[10px] uppercase tracking-wider text-gray-400 font-semibold">
+          <th class="text-left px-4 py-2">Ticker</th>
+          <th class="text-left px-3 py-2">Sector</th>
+          <th class="text-right px-3 py-2">Price</th>
+          <th class="text-right px-3 py-2">Score</th>
+          <th class="text-right px-2 py-2">T</th>
+          <th class="text-right px-2 py-2">F</th>
+          <th class="text-right px-2 py-2">S</th>
+          <th class="text-right px-2 py-2">N</th>
+          <th class="text-center px-3 py-2">Signal</th>
+          <th class="text-center px-2 py-2">Debate</th>
+          <th class="text-left px-3 py-2">Analyzed</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-100">
+        {% for s in states | sort(attribute='weighted', reverse=true) %}
+        <tr class="hover:bg-blue-50/50 cursor-pointer transition-colors
+                   {% if ticker and ticker == s.ticker %}bg-blue-50{% endif %}"
+            onclick="window.location='/council?ticker={{ s.ticker }}'">
+          <td class="px-4 py-2">
+            <div class="flex items-center gap-1">
+              <span class="font-semibold text-gray-900">{{ s.ticker }}</span>
+              {% set ac = s.asset_class | default('stock') %}
+              {% if ac == 'future' %}<span class="text-[8px] font-semibold px-1 rounded bg-indigo-50 text-indigo-600">FUT</span>
+              {% elif ac == 'etf_bond' %}<span class="text-[8px] font-semibold px-1 rounded bg-blue-50 text-blue-600">BOND</span>
+              {% elif ac == 'etf_commodity' %}<span class="text-[8px] font-semibold px-1 rounded bg-amber-50 text-amber-700">CMDTY</span>{% endif %}
+            </div>
+          </td>
+          <td class="px-3 py-2">
+            {% set sec = s.sector | default('') %}
+            {% if sec %}
+            <span class="text-[9px] font-semibold px-1.5 py-0.5 rounded
+              {% if sec == 'tech' %}bg-purple-50 text-purple-600
+              {% elif sec == 'financials' %}bg-cyan-50 text-cyan-700
+              {% elif sec == 'healthcare' %}bg-emerald-50 text-emerald-600
+              {% elif sec == 'consumer' %}bg-orange-50 text-orange-600
+              {% elif sec == 'cyclical' %}bg-stone-100 text-stone-600
+              {% else %}bg-gray-100 text-gray-500{% endif %}">{{ sec }}</span>
+            {% endif %}
+          </td>
+          <td class="px-3 py-2 text-right font-mono text-gray-700">${{ "%.2f"|format(s.price) if s.price else '—' }}</td>
+          <td class="px-3 py-2 text-right font-mono font-bold
+            {% if s.weighted >= 4.0 %}text-green-700
+            {% elif s.weighted >= 3.0 %}text-gray-900
+            {% elif s.weighted >= 2.0 %}text-amber-700
+            {% else %}text-red-700{% endif %}">{{ "%.2f"|format(s.weighted) }}</td>
+          <td class="px-2 py-2 text-right font-mono text-gray-500">{{ s.technical }}</td>
+          <td class="px-2 py-2 text-right font-mono text-gray-500">{{ s.fundamental }}</td>
+          <td class="px-2 py-2 text-right font-mono text-gray-500">{{ s.sentiment }}</td>
+          <td class="px-2 py-2 text-right font-mono text-gray-500">{{ s.news }}</td>
+          <td class="px-3 py-2 text-center">{{ signal_badge(s.signal) }}</td>
+          <td class="px-2 py-2 text-center">
+            {% if s.debate_triggered %}
+            <span class="text-[8px] font-bold px-1 py-0.5 rounded bg-violet-50 text-violet-600">DBT</span>
+            {% else %}
+            <span class="text-[8px] text-gray-300">--</span>
+            {% endif %}
+          </td>
+          <td class="px-3 py-2 font-mono text-gray-400 text-[10px]">{{ s.analyzed_at[:16] if s.analyzed_at else '' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
   </div>
   {% else %}
-  <div class="bg-white border border-gray-200 rounded-lg px-4 py-8 text-center text-sm text-gray-400">
-    No ticker states available. Run a council cycle to populate.
+  <div class="px-4 py-8 text-center text-xs text-gray-400">
+    No ticker states. Run a council cycle to populate.
   </div>
   {% endif %}
-</section>
+</div>
 
 {# ══════════════════════════════════════════════════════════════════════
    SECTION 2 — Selected Ticker Deep Dive
    ══════════════════════════════════════════════════════════════════════ #}
 {% if ticker and detail %}
-<section class="mb-8">
-  <h2 class="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-3">
-    {{ ticker }} — Deep Dive
-  </h2>
-
+<section class="mb-4">
   <div class="bg-white border border-gray-200 rounded-lg p-5">
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+    <div class="flex items-center gap-3 mb-4">
+      <h2 class="text-sm font-bold text-gray-900">{{ ticker }}</h2>
+      {{ signal_badge(detail.detail.signal) }}
+      <span class="text-base font-bold font-mono text-gray-900">{{ "%.2f"|format(detail.detail.weighted) }}</span>
+      {% if detail.detail.debate_triggered %}
+      <span class="text-[9px] font-bold px-1.5 py-0.5 rounded bg-violet-50 text-violet-700">Debate Triggered</span>
+      {% endif %}
+      <span class="text-xs font-mono text-gray-400 ml-auto">${{ "%.2f"|format(detail.detail.price) if detail.detail.price else '—' }} | {{ detail.detail.analyzed_at or '—' }}</span>
+    </div>
 
-      {# Left column: score bars #}
-      <div class="space-y-3">
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+      {# Score bars #}
+      <div class="space-y-2.5">
         {% set dl = detail.detail | domain_label %}
-        {% set scores = [
-          ('Tech', detail.detail.technical),
-          (dl, detail.detail.fundamental),
-          ('Sent', detail.detail.sentiment),
-          ('News', detail.detail.news)
-        ] %}
-        {% for label, score in scores %}
+        {% for label, score in [('Tech', detail.detail.technical), (dl, detail.detail.fundamental), ('Sent', detail.detail.sentiment), ('News', detail.detail.news)] %}
         <div class="flex items-center gap-2">
           <span class="text-[11px] font-medium text-gray-500 w-[35px] text-right shrink-0">{{ label }}</span>
-          <div class="flex-1 bg-gray-100 rounded-full h-4 overflow-hidden">
-            <div class="bg-blue-500 h-full rounded-full transition-all"
-                 style="width: {{ ((score|float / 5) * 100)|int }}%"></div>
+          <div class="flex-1 bg-gray-100 rounded-full h-3.5 overflow-hidden">
+            <div class="bg-blue-500 h-full rounded-full" style="width: {{ ((score|float / 5) * 100)|int }}%"></div>
           </div>
           <span class="text-xs font-mono font-semibold text-gray-700 w-[28px] text-right shrink-0">{{ score }}</span>
         </div>
         {% endfor %}
 
-        {# Quant scores (if available) #}
         {% if detail.quant and detail.quant.fundamental %}
-        <div class="mt-3 pt-3 border-t border-gray-100">
-          <div class="text-[9px] uppercase tracking-wider text-gray-400 font-semibold mb-2">Quant Anchors (auditable)</div>
-          {% set qscores = [
-            ('Fund', detail.quant.fundamental),
-            ('Tech', detail.quant.technical)
-          ] %}
-          {% for label, score in qscores %}
-          <div class="flex items-center gap-2 mb-1.5">
+        <div class="pt-2.5 border-t border-gray-100">
+          <div class="text-[9px] uppercase tracking-wider text-gray-400 font-semibold mb-2">Quant Anchors</div>
+          {% for label, score in [('Fund', detail.quant.fundamental), ('Tech', detail.quant.technical)] %}
+          <div class="flex items-center gap-2 mb-1">
             <span class="text-[10px] font-medium text-gray-400 w-[35px] text-right shrink-0">{{ label }}</span>
-            <div class="flex-1 bg-gray-50 rounded-full h-2.5 overflow-hidden">
-              <div class="bg-indigo-400 h-full rounded-full transition-all"
-                   style="width: {{ ((score|float / 5) * 100)|int }}%"></div>
+            <div class="flex-1 bg-gray-50 rounded-full h-2 overflow-hidden">
+              <div class="bg-indigo-400 h-full rounded-full" style="width: {{ ((score|float / 5) * 100)|int }}%"></div>
             </div>
             <span class="text-[10px] font-mono text-indigo-600 w-[28px] text-right shrink-0">{{ "%.2f"|format(score) }}</span>
           </div>
@@ -132,75 +141,47 @@
         {% endif %}
       </div>
 
-      {# Right column: summary stats #}
-      <div class="space-y-2">
-        <div class="flex items-center gap-2">
-          <span class="text-xs text-gray-400">Signal</span>
-          {{ signal_badge(detail.detail.signal) }}
-        </div>
-        <div class="flex items-center gap-2">
-          <span class="text-xs text-gray-400">Confidence</span>
-          <span class="text-xs font-mono font-medium text-gray-700">{{ detail.detail.confidence }}</span>
-        </div>
-        <div class="flex items-center gap-2">
-          <span class="text-xs text-gray-400">Weighted Score</span>
-          <span class="text-base font-bold font-mono text-gray-900">{{ "%.2f"|format(detail.detail.weighted) if detail.detail.weighted else '—' }}</span>
-        </div>
-        <div class="flex items-center gap-2">
-          <span class="text-xs text-gray-400">Price at Analysis</span>
-          <span class="text-xs font-mono text-gray-700">${{ "%.2f"|format(detail.detail.price) if detail.detail.price else '—' }}</span>
-        </div>
-        <div class="flex items-center gap-2">
-          <span class="text-xs text-gray-400">Last Analyzed</span>
-          <span class="text-[11px] font-mono text-gray-500">{{ detail.detail.analyzed_at or '—' }}</span>
-        </div>
-        <div class="flex items-center gap-2">
-          <span class="text-xs text-gray-400">Debate</span>
-          {% if detail.detail.debate_triggered %}
-          <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-violet-50 text-violet-700">Triggered</span>
-          {% else %}
-          <span class="text-[10px] font-medium px-1.5 py-0.5 rounded bg-gray-50 text-gray-400">Skipped</span>
-          {% endif %}
-        </div>
+      {# Summary stats #}
+      <div class="space-y-1.5 text-xs">
+        {% for label, val in [('Confidence', detail.detail.confidence), ('Weighted Score', ("%.2f"|format(detail.detail.weighted)))] %}
+        <div class="flex justify-between"><span class="text-gray-400">{{ label }}</span><span class="font-mono font-medium text-gray-700">{{ val }}</span></div>
+        {% endfor %}
       </div>
     </div>
 
-    {# Score history table #}
+    {# Score history #}
     {% if detail.history and detail.history|length > 1 %}
-    <div class="mt-6 border-t border-gray-100 pt-4">
-      <h3 class="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-2">Score History</h3>
+    <div class="mt-5 border-t border-gray-100 pt-3">
+      <div class="text-[9px] uppercase tracking-wider text-gray-400 font-semibold mb-2">Score History</div>
       <div class="overflow-x-auto">
         <table class="w-full text-xs">
           <thead>
-            <tr class="border-b border-gray-100">
-              <th class="text-left py-1.5 px-2 font-semibold text-gray-500 uppercase text-[10px] tracking-wider">Time</th>
-              <th class="text-left py-1.5 px-2 font-semibold text-gray-500 uppercase text-[10px] tracking-wider">Signal</th>
-              <th class="text-right py-1.5 px-2 font-semibold text-gray-500 uppercase text-[10px] tracking-wider">Score</th>
-              <th class="text-right py-1.5 px-2 font-semibold text-gray-500 uppercase text-[10px] tracking-wider">T</th>
-              <th class="text-right py-1.5 px-2 font-semibold text-gray-500 uppercase text-[10px] tracking-wider">F</th>
-              <th class="text-right py-1.5 px-2 font-semibold text-gray-500 uppercase text-[10px] tracking-wider">S</th>
-              <th class="text-right py-1.5 px-2 font-semibold text-gray-500 uppercase text-[10px] tracking-wider">N</th>
-              <th class="text-right py-1.5 px-2 font-semibold text-gray-500 uppercase text-[10px] tracking-wider">Price</th>
-              <th class="text-center py-1.5 px-2 font-semibold text-gray-500 uppercase text-[10px] tracking-wider">Debate</th>
+            <tr class="bg-gray-50 text-[10px] uppercase tracking-wider text-gray-400 font-semibold">
+              <th class="text-left px-3 py-1.5">Time</th>
+              <th class="text-center px-2 py-1.5">Signal</th>
+              <th class="text-right px-2 py-1.5">Score</th>
+              <th class="text-right px-2 py-1.5">T</th>
+              <th class="text-right px-2 py-1.5">F</th>
+              <th class="text-right px-2 py-1.5">S</th>
+              <th class="text-right px-2 py-1.5">N</th>
+              <th class="text-right px-2 py-1.5">Price</th>
+              <th class="text-center px-2 py-1.5">DBT</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody class="divide-y divide-gray-50">
             {% for h in detail.history %}
-            <tr class="border-b border-gray-50 hover:bg-gray-50 transition-colors">
-              <td class="py-1.5 px-2 font-mono text-gray-500">{{ h.analyzed_at[:16] if h.analyzed_at else '—' }}</td>
-              <td class="py-1.5 px-2">{{ signal_badge(h.signal) }}</td>
-              <td class="py-1.5 px-2 text-right font-mono font-semibold text-gray-900">{{ "%.2f"|format(h.weighted) if h.weighted else '—' }}</td>
-              <td class="py-1.5 px-2 text-right font-mono text-gray-600">{{ h.technical }}</td>
-              <td class="py-1.5 px-2 text-right font-mono text-gray-600">{{ h.fundamental }}</td>
-              <td class="py-1.5 px-2 text-right font-mono text-gray-600">{{ h.sentiment }}</td>
-              <td class="py-1.5 px-2 text-right font-mono text-gray-600">{{ h.news }}</td>
-              <td class="py-1.5 px-2 text-right font-mono text-gray-600">${{ "%.2f"|format(h.price) if h.price else '—' }}</td>
-              <td class="py-1.5 px-2 text-center">
-                {% if h.debate_triggered %}
-                <span class="text-[8px] font-bold px-1 py-0.5 rounded bg-violet-50 text-violet-600">DBT</span>
-                {% else %}
-                <span class="text-[8px] text-gray-300">--</span>
-                {% endif %}
+            <tr class="hover:bg-gray-50">
+              <td class="px-3 py-1.5 font-mono text-gray-400">{{ h.analyzed_at[:16] if h.analyzed_at else '—' }}</td>
+              <td class="px-2 py-1.5 text-center">{{ signal_badge(h.signal) }}</td>
+              <td class="px-2 py-1.5 text-right font-mono font-semibold text-gray-900">{{ "%.2f"|format(h.weighted) }}</td>
+              <td class="px-2 py-1.5 text-right font-mono text-gray-500">{{ h.technical }}</td>
+              <td class="px-2 py-1.5 text-right font-mono text-gray-500">{{ h.fundamental }}</td>
+              <td class="px-2 py-1.5 text-right font-mono text-gray-500">{{ h.sentiment }}</td>
+              <td class="px-2 py-1.5 text-right font-mono text-gray-500">{{ h.news }}</td>
+              <td class="px-2 py-1.5 text-right font-mono text-gray-500">${{ "%.2f"|format(h.price) if h.price else '—' }}</td>
+              <td class="px-2 py-1.5 text-center">
+                {% if h.debate_triggered %}<span class="text-[8px] font-bold px-1 py-0.5 rounded bg-violet-50 text-violet-600">DBT</span>
+                {% else %}<span class="text-[8px] text-gray-300">--</span>{% endif %}
               </td>
             </tr>
             {% endfor %}
@@ -210,42 +191,14 @@
     </div>
     {% endif %}
 
-    {# Reflections panel #}
     {% if reflections %}
-    <div class="mt-6 border-t border-gray-100 pt-4">
-      <h3 class="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-2">Trade Reflections</h3>
-      <div class="bg-gray-50 rounded-lg p-4 text-xs text-gray-600 font-mono whitespace-pre-wrap leading-relaxed max-h-64 overflow-y-auto">{{ reflections }}</div>
+    <div class="mt-5 border-t border-gray-100 pt-3">
+      <div class="text-[9px] uppercase tracking-wider text-gray-400 font-semibold mb-2">Trade Reflections</div>
+      <div class="bg-gray-50 rounded-lg p-3 text-xs text-gray-600 font-mono whitespace-pre-wrap leading-relaxed max-h-48 overflow-y-auto">{{ reflections }}</div>
     </div>
     {% endif %}
   </div>
 </section>
 {% endif %}
-
-{# ══════════════════════════════════════════════════════════════════════
-   SECTION 3 — Trade Reports Feed
-   ══════════════════════════════════════════════════════════════════════ #}
-<section class="mb-8">
-  <h2 class="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-3">
-    Council Activity — Trade Reports
-  </h2>
-
-  {% if reports %}
-  <div class="bg-white border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-96 overflow-y-auto">
-    {% for r in reports %}
-    <div class="flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 transition-colors">
-      <span class="text-[10px] font-mono text-gray-400 shrink-0 w-[120px]">{{ r.trade_date or r.created_at[:16] if r.created_at else '' }}</span>
-      <span class="text-[10px] font-medium px-1.5 py-0.5 rounded border border-gray-200 text-gray-500 shrink-0">{{ r.report_type }}</span>
-      <span class="text-xs font-bold text-gray-900 shrink-0">{{ r.ticker }}</span>
-      {{ signal_badge(r.signal) }}
-      <span class="text-xs text-gray-400 truncate min-w-0">{{ r.reasoning or '' }}</span>
-    </div>
-    {% endfor %}
-  </div>
-  {% else %}
-  <div class="bg-white border border-gray-200 rounded-lg px-4 py-8 text-center text-sm text-gray-400">
-    No trade reports yet. Run a council cycle to generate reports.
-  </div>
-  {% endif %}
-</section>
 
 {% endblock %}

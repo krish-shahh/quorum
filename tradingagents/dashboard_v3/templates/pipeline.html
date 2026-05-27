@@ -350,49 +350,7 @@
 </div>
 
 {# ══════════════════════════════════════════════════════════════════════
-   SECTION 4 — Cache Performance Table
-   ══════════════════════════════════════════════════════════════════════ #}
-<div class="bg-white border border-gray-200 rounded-lg mb-4 overflow-hidden">
-  <div class="px-4 py-2.5 border-b border-gray-100">
-    <h2 class="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Cache Performance</h2>
-  </div>
-  {% if cache and cache.per_function %}
-  <div class="overflow-x-auto">
-    <table class="w-full text-xs">
-      <thead>
-        <tr class="bg-gray-50 text-[10px] uppercase tracking-wider text-gray-400 font-semibold">
-          <th class="text-left px-4 py-2">Function</th>
-          <th class="text-right px-4 py-2">Hits</th>
-          <th class="text-right px-4 py-2">Misses</th>
-          <th class="text-left px-4 py-2 w-48">Hit Rate</th>
-        </tr>
-      </thead>
-      <tbody class="divide-y divide-gray-100">
-        {% for fn in cache.per_function %}
-        <tr class="hover:bg-gray-50 transition-colors">
-          <td class="px-4 py-2 font-mono text-gray-700">{{ fn.function }}</td>
-          <td class="px-4 py-2 text-right font-mono text-green-600">{{ fn.hits }}</td>
-          <td class="px-4 py-2 text-right font-mono text-red-600">{{ fn.misses }}</td>
-          <td class="px-4 py-2">
-            <div class="flex items-center gap-2">
-              <div class="flex-1 bg-gray-100 rounded-full h-2 overflow-hidden">
-                <div class="bg-blue-500 h-full rounded-full transition-all" style="width: {{ (fn.hit_rate * 100)|int }}%"></div>
-              </div>
-              <span class="text-[10px] font-mono text-gray-500 w-[36px] text-right shrink-0">{{ "%.0f"|format(fn.hit_rate * 100) }}%</span>
-            </div>
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-  {% else %}
-  <div class="px-4 py-6 text-center text-xs text-gray-400">No cache data available</div>
-  {% endif %}
-</div>
-
-{# ══════════════════════════════════════════════════════════════════════
-   SECTION 5 — Slippage Analysis Table
+   SECTION 4 — Slippage Analysis Table
    ══════════════════════════════════════════════════════════════════════ #}
 <div class="bg-white border border-gray-200 rounded-lg mb-4 overflow-hidden">
   <div class="px-4 py-2.5 border-b border-gray-100 flex items-center justify-between">
