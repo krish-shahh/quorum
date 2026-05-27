@@ -24,6 +24,9 @@ logger = logging.getLogger(__name__)
 # Kalshi fee: 1-7% on profits depending on tier. Use worst-case for safety.
 KALSHI_FEE_PCT = 0.07
 
+# Categories to exclude from scanning (long-dated, low-edge markets)
+DEFAULT_EXCLUDED_CATEGORIES: set = {"elections"}
+
 # Max days until close to consider for arb (don't lock up capital forever)
 MAX_CLOSE_DAYS = 365
 
@@ -176,6 +179,7 @@ def _is_likely_resolved(markets) -> bool:
 def scan_overround(
     limit: int = 100,
     min_markets: int = 2,
+    exclude_categories: Optional[set] = None,
 ) -> List[OverroundOpportunity]:
     """Scan Kalshi events for overround/Dutch book arbitrage.
 
@@ -183,11 +187,15 @@ def scan_overround(
     - Events closing > 1 year out (capital lockup)
     - Events where one outcome is >95% (likely already resolved)
     - Non-mutually-exclusive events
+    - Excluded categories (default: elections)
 
     Returns all qualifying events sorted by net profit, including
     non-profitable ones (for monitoring overround compression).
     """
-    events = kalshi.get_events(limit=limit, with_nested_markets=True)
+    if exclude_categories is None:
+        exclude_categories = DEFAULT_EXCLUDED_CATEGORIES
+    events = kalshi.get_events(limit=limit, with_nested_markets=True,
+                               exclude_categories=exclude_categories)
     opportunities: List[OverroundOpportunity] = []
 
     for event in events:
@@ -267,13 +275,17 @@ def scan_overround(
 def scan_bias(
     limit: int = 200,
     min_volume: int = 100,
+    exclude_categories: Optional[set] = None,
 ) -> List[BiasOpportunity]:
     """Scan Kalshi markets for favorite-longshot bias opportunities.
 
     Uses the events endpoint to get real prediction markets (the markets
     endpoint returns sports parlays as default).
     """
-    events = kalshi.get_events(limit=limit, with_nested_markets=True)
+    if exclude_categories is None:
+        exclude_categories = DEFAULT_EXCLUDED_CATEGORIES
+    events = kalshi.get_events(limit=limit, with_nested_markets=True,
+                               exclude_categories=exclude_categories)
 
     markets = []
     for e in events:
@@ -314,6 +326,7 @@ def get_council_candidates(
     min_volume: int = 500,
     max_spread: float = 0.10,
     top_n: int = 10,
+    exclude_categories: Optional[set] = None,
 ) -> List[CouncilCandidate]:
     """Surface the best markets for the prediction council to analyze.
 
@@ -324,8 +337,12 @@ def get_council_candidates(
     """
     import math
 
+    if exclude_categories is None:
+        exclude_categories = DEFAULT_EXCLUDED_CATEGORIES
+
     # Fetch events once — this is cached from scan_bias if called recently
-    events = kalshi.get_events(limit=200, with_nested_markets=True)
+    events = kalshi.get_events(limit=200, with_nested_markets=True,
+                               exclude_categories=exclude_categories)
 
     # Build category lookup from events
     event_categories: Dict[str, str] = {}
@@ -333,9 +350,10 @@ def get_council_candidates(
         event_categories[e.event_ticker] = e.category
 
     researchable = {
-        "Economics", "Politics", "Elections", "Finance", "Financials",
+        "Economics", "Politics", "Finance", "Financials",
         "AI", "Science and Technology", "Climate and Weather",
-        "Companies", "Health", "World",
+        "Companies", "Health", "World", "Sports", "Entertainment",
+        "Social",
     }
 
     # Flatten markets from events

@@ -17,8 +17,8 @@ This is fundamentally different from stock analysis — you're estimating **prob
 **Fallback** (if no candidates or user wants to browse): Call `get_kalshi_events(limit=20, with_nested_markets=true)` and prioritize:
 - High volume (>1,000 contracts) — better liquidity for execution
 - Closing in days-to-weeks (not years) — faster feedback loop
-- In categories you can research: Economics, Politics, AI, Finance, Climate
-- Not pure sports gambling — those are efficient and hard to beat
+- In categories you can research: Sports, Economics, Finance, Climate, Entertainment, AI
+- Elections are excluded by default (long-dated, low edge)
 
 **Alternatively**, the user may specify a specific market ticker or topic to analyze.
 
@@ -144,11 +144,12 @@ Sentiment is less reliable for event prediction and adds noise.
 
 | Category | Edge Source |
 |---|---|
+| Sports | Line movement, injury reports, matchup analysis, historical stats |
 | Economics (CPI, jobs, Fed) | Data calendars, base rates, consensus vs actual |
-| Politics (elections, policy) | Polls, historical precedent, institutional analysis |
-| AI/Tech (IPOs, product launches) | Industry knowledge, regulatory filings |
-| Climate/Weather | Meteorological data, historical patterns |
+| Climate/Weather | Meteorological data, historical patterns, NOAA models |
+| Entertainment | Industry knowledge, social sentiment, award patterns |
 | Finance (IPOs, M&A) | SEC filings, market signals, industry structure |
+| AI/Tech (product launches) | Industry knowledge, regulatory filings |
 
 ## Common Mistakes to Avoid
 

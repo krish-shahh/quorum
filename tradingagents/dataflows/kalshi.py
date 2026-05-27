@@ -248,8 +248,14 @@ def get_events(
     cursor: Optional[str] = None,
     series_ticker: Optional[str] = None,
     with_nested_markets: bool = False,
+    exclude_categories: Optional[set] = None,
 ) -> List[KalshiEvent]:
-    """Fetch events from Kalshi."""
+    """Fetch events from Kalshi.
+
+    Args:
+        exclude_categories: Set of lowercase category names to skip
+            (e.g. ``{"elections"}``).  Applied client-side after fetch.
+    """
     params: Dict[str, Any] = {
         "limit": min(limit, 200),
         "status": status,
@@ -263,6 +269,8 @@ def get_events(
     data = _get("/events", params)
     events = []
     for e in data.get("events", []):
+        if exclude_categories and (e.get("category", "").lower() in exclude_categories):
+            continue
         nested = []
         if with_nested_markets:
             for m in e.get("markets", []):

@@ -44,7 +44,7 @@ This is the highest-value output. The `get_prediction_candidates` tool returns m
 - Historical bias edge is positive (+2% to +5%)
 - Volume is sufficient for real price discovery
 - Spread is tight enough to execute
-- Category is researchable (economics, politics, AI, climate — not sports parlays)
+- Category is researchable (sports, economics, finance, climate, entertainment — elections excluded)
 
 Present the top candidates and recommend the user run `/prediction-council` on the best one. The council's probability estimation stacks on top of the statistical bias edge — you get both structural advantage AND analytical edge.
 
