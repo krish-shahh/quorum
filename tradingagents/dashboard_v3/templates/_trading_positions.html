@@ -4,13 +4,15 @@
     <thead>
       <tr class="bg-gray-50 text-[10px] uppercase tracking-wider text-gray-400 font-semibold">
         <th class="text-left px-4 py-2">Ticker</th>
-        <th class="text-right px-4 py-2">Qty</th>
-        <th class="text-right px-4 py-2">Entry</th>
-        <th class="text-right px-4 py-2">Current</th>
-        <th class="text-right px-4 py-2">P&L</th>
-        <th class="text-right px-4 py-2">Return</th>
-        <th class="text-right px-4 py-2">Weight</th>
-        <th class="text-center px-4 py-2">Signal</th>
+        <th class="text-center px-2 py-2">Side</th>
+        <th class="text-right px-3 py-2">Qty</th>
+        <th class="text-right px-3 py-2">Entry</th>
+        <th class="text-right px-3 py-2">Mark</th>
+        <th class="text-right px-3 py-2">Mkt Val</th>
+        <th class="text-right px-3 py-2">P&L</th>
+        <th class="text-right px-3 py-2">Return</th>
+        <th class="text-right px-3 py-2">Weight</th>
+        <th class="text-center px-3 py-2">Signal</th>
       </tr>
     </thead>
     <tbody class="divide-y divide-gray-100">
@@ -22,7 +24,7 @@
             {% set ac = p.asset_class | default('stock') %}
             {% set sec = p.sector | default('') %}
             {% if ac == 'future' %}
-            <span class="text-[9px] font-semibold px-1 py-0.5 rounded bg-indigo-50 text-indigo-600">FUTURE</span>
+            <span class="text-[9px] font-semibold px-1 py-0.5 rounded bg-indigo-50 text-indigo-600">FUT</span>
             {% if p.days_to_expiry is not none %}
             <span class="text-[9px] font-mono px-1 py-0.5 rounded
               {% if p.days_to_expiry <= 7 %}bg-red-50 text-red-600
@@ -44,25 +46,24 @@
             {% endif %}
           </div>
           {% if p.contract_name %}
-          <div class="text-[9px] text-gray-400 mt-0.5">{{ p.contract_name }} ({{ p.multiplier }}x)</div>
+          <div class="text-[9px] text-gray-400 mt-0.5">{{ p.contract_name }}</div>
           {% endif %}
         </td>
-        <td class="px-4 py-2 text-right font-mono text-gray-700">
-          {{ p.quantity }}
-          {% if p.multiplier and p.multiplier > 1 %}
-          <div class="text-[9px] text-gray-400">{{ p.multiplier }}x mult</div>
-          {% endif %}
+        <td class="px-2 py-2 text-center">
+          <span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-green-50 text-green-700">LONG</span>
         </td>
-        <td class="px-4 py-2 text-right font-mono text-gray-700">{{ p.avg_cost | usd }}</td>
-        <td class="px-4 py-2 text-right font-mono text-gray-700">{{ p.last_price | usd }}</td>
-        <td class="px-4 py-2 text-right font-mono {% if p.unrealized_pnl >= 0 %}text-green-600{% else %}text-red-600{% endif %}">
+        <td class="px-3 py-2 text-right font-mono text-gray-700">{{ p.quantity }}{% if p.multiplier and p.multiplier > 1 %}<span class="text-[9px] text-gray-400">x{{ p.multiplier }}</span>{% endif %}</td>
+        <td class="px-3 py-2 text-right font-mono text-gray-700">{{ p.avg_cost | usd }}</td>
+        <td class="px-3 py-2 text-right font-mono text-gray-700">{{ p.last_price | usd }}</td>
+        <td class="px-3 py-2 text-right font-mono text-gray-700">{{ p.market_value | usd }}</td>
+        <td class="px-3 py-2 text-right font-mono font-semibold {% if p.unrealized_pnl >= 0 %}text-green-600{% else %}text-red-600{% endif %}">
           {{ p.unrealized_pnl | signed_usd }}
         </td>
-        <td class="px-4 py-2 text-right font-mono {% if p.pct_return >= 0 %}text-green-600{% else %}text-red-600{% endif %}">
+        <td class="px-3 py-2 text-right font-mono {% if p.pct_return >= 0 %}text-green-600{% else %}text-red-600{% endif %}">
           {{ p.pct_return | signed_pct }}
         </td>
-        <td class="px-4 py-2 text-right font-mono text-gray-700">{{ "%.1f"|format(p.weight) }}%</td>
-        <td class="px-4 py-2 text-center">
+        <td class="px-3 py-2 text-right font-mono text-gray-700">{{ "%.1f"|format(p.weight) }}%</td>
+        <td class="px-3 py-2 text-center">
           {% set sig = p.signal | upper if p.signal else 'HOLD' %}
           <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded
             {% if sig in ('BUY', 'OVERWEIGHT') %}bg-green-50 text-green-700

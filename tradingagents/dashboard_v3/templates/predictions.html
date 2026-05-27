@@ -19,8 +19,6 @@
 {% macro category_badge(cat) %}
 {% set colors = {
   'Economics': 'bg-green-50 text-green-700',
-  'Politics': 'bg-blue-50 text-blue-700',
-  'Elections': 'bg-blue-50 text-blue-700',
   'Climate and Weather': 'bg-teal-50 text-teal-700',
   'Science and Technology': 'bg-purple-50 text-purple-700',
   'AI': 'bg-violet-50 text-violet-700',
@@ -31,298 +29,163 @@
   'Social': 'bg-pink-50 text-pink-700',
   'Health': 'bg-rose-50 text-rose-700',
   'Sports': 'bg-amber-50 text-amber-700',
+  'Entertainment': 'bg-fuchsia-50 text-fuchsia-700',
 } %}
 <span class="text-[9px] font-semibold px-1.5 py-0.5 rounded {{ colors.get(cat, 'bg-gray-100 text-gray-600') }}">{{ cat }}</span>
 {% endmacro %}
 
 {% block content %}
 
-{# ── Prediction Markets Hub ───────────────────────────────────── #}
+{# ── KPI Row ─────────────────────────────────────────────────────── #}
+<div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+  <div class="bg-white border border-gray-200 rounded-lg px-4 py-3">
+    <div class="text-[9px] uppercase tracking-wider text-gray-400 font-semibold mb-1">Open Positions</div>
+    <div class="text-xl font-mono font-semibold text-gray-900">{{ positions | length }}</div>
+    {% if positions %}
+    <div class="text-[10px] text-gray-400">${{ "%.2f"|format(positions | sum(attribute='cost')) }} invested</div>
+    {% endif %}
+  </div>
+  {% if calibration %}
+  <div class="bg-white border border-gray-200 rounded-lg px-4 py-3">
+    <div class="text-[9px] uppercase tracking-wider text-gray-400 font-semibold mb-1">Brier Score</div>
+    <div class="text-xl font-mono font-semibold
+      {% if calibration.brier_score is not none and calibration.brier_score <= 0.20 %}text-green-600
+      {% elif calibration.brier_score is not none and calibration.brier_score <= 0.30 %}text-amber-600
+      {% else %}text-gray-900{% endif %}">
+      {% if calibration.brier_score is not none %}{{ "%.3f"|format(calibration.brier_score) }}{% else %}--{% endif %}
+    </div>
+    <div class="text-[10px] text-gray-400">0 = perfect</div>
+  </div>
+  <div class="bg-white border border-gray-200 rounded-lg px-4 py-3">
+    <div class="text-[9px] uppercase tracking-wider text-gray-400 font-semibold mb-1">Win Rate</div>
+    <div class="text-xl font-mono font-semibold text-gray-900">
+      {% if calibration.total_resolved %}{{ "%.0f"|format(calibration.wins / calibration.total_resolved * 100) }}%{% else %}--{% endif %}
+    </div>
+    <div class="text-[10px] text-gray-400">{{ calibration.wins }}W / {{ calibration.losses }}L of {{ calibration.total_resolved }}</div>
+  </div>
+  <div class="bg-white border border-gray-200 rounded-lg px-4 py-3">
+    <div class="text-[9px] uppercase tracking-wider text-gray-400 font-semibold mb-1">Resolved</div>
+    <div class="text-xl font-mono font-semibold text-gray-900">{{ calibration.total_resolved }}</div>
+    <div class="text-[10px] text-gray-400">settled positions</div>
+  </div>
+  {% else %}
+  <div class="bg-white border border-gray-200 rounded-lg px-4 py-3 col-span-3">
+    <div class="text-[9px] uppercase tracking-wider text-gray-400 font-semibold mb-1">Calibration</div>
+    <div class="text-sm text-gray-400">No resolved positions yet</div>
+  </div>
+  {% endif %}
+</div>
+
+{# ── Position Blotter ────────────────────────────────────────────── #}
 <div class="bg-white border border-gray-200 rounded-lg mb-4 overflow-hidden">
   <div class="px-4 py-2.5 border-b border-gray-100 flex items-center justify-between">
-    <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-wider">Prediction Markets</h2>
-    <div class="flex items-center gap-3">
-      {% if positions %}
-      <span class="text-[10px] font-mono text-gray-500">
-        {{ positions | length }} positions | ${{ "%.2f"|format(positions | sum(attribute='cost')) }} invested
-      </span>
-      {% endif %}
-      <span class="text-[10px] font-mono text-gray-400">
-        <code class="bg-gray-100 px-1 rounded">/prediction-council</code>
-        <code class="bg-gray-100 px-1 rounded ml-1">/prediction-arb-scan</code>
-      </span>
-    </div>
+    <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-wider">Blotter</h2>
+    <span class="text-[10px] font-mono text-gray-400">
+      <code class="bg-gray-100 px-1 rounded">/prediction-council</code>
+      <code class="bg-gray-100 px-1 rounded ml-1">/prediction-arb-scan</code>
+    </span>
   </div>
 
-  {# ── Active Arb Bundles ── #}
+  {# ── Active arb bundles ── #}
   {% if arb_executions %}
-  <div class="px-4 py-2 border-b border-gray-100">
-    <div class="text-[10px] font-semibold text-gray-500 uppercase mb-1.5">Active Arb Bundles</div>
-    <div class="space-y-2">
-      {% for a in arb_executions %}
-      <div class="flex items-center justify-between bg-{% if a.status == 'open' %}amber{% else %}gray{% endif %}-50 rounded-lg px-3 py-2">
-        <div>
-          <span class="text-xs font-semibold text-gray-900">{{ a.event_ticker }}</span>
-          <span class="text-[10px] text-gray-400 ml-2">{{ a.strategy | replace('_', ' ') | title }}</span>
-          <span class="text-[10px] text-gray-400 ml-1">({{ a.num_legs }} legs)</span>
-        </div>
-        <div class="flex items-center gap-4">
-          <div class="text-right">
-            <div class="text-xs font-mono text-gray-700">${{ "%.4f"|format(a.total_cost) }}</div>
-            <div class="text-[9px] text-gray-400">cost</div>
-          </div>
-          <div class="text-right">
-            <div class="text-xs font-mono {% if a.expected_profit > 0 %}text-green-600{% else %}text-red-600{% endif %}">
-              ${{ "%.4f"|format(a.expected_profit) }}
-            </div>
-            <div class="text-[9px] text-gray-400">expected</div>
-          </div>
-          <span class="text-[10px] font-bold px-2 py-0.5 rounded
-            {% if a.status == 'open' %}bg-amber-100 text-amber-700
-            {% elif a.status == 'settled' %}bg-green-100 text-green-700
-            {% else %}bg-gray-100 text-gray-600{% endif %}">
-            {{ a.status | upper }}
-          </span>
-        </div>
-      </div>
-      {% endfor %}
+  {% for a in arb_executions %}
+  <div class="px-4 py-2 border-b border-gray-100 flex items-center justify-between
+    {% if a.status == 'open' %}bg-amber-50/50{% endif %}">
+    <div class="flex items-center gap-2">
+      <span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700">ARB</span>
+      <span class="text-xs font-mono font-semibold text-gray-900">{{ a.event_ticker }}</span>
+      <span class="text-[10px] text-gray-400">{{ a.strategy | replace('_', ' ') | title }} ({{ a.num_legs }} legs)</span>
+    </div>
+    <div class="flex items-center gap-4 text-xs font-mono">
+      <span class="text-gray-600">${{ "%.4f"|format(a.total_cost) }} cost</span>
+      <span class="{% if a.expected_profit > 0 %}text-green-600{% else %}text-red-600{% endif %}">${{ "%.4f"|format(a.expected_profit) }} exp</span>
+      <span class="text-[10px] font-bold px-1.5 py-0.5 rounded
+        {% if a.status == 'open' %}bg-amber-100 text-amber-700
+        {% elif a.status == 'settled' %}bg-green-100 text-green-700
+        {% else %}bg-gray-100 text-gray-600{% endif %}">{{ a.status | upper }}</span>
     </div>
   </div>
+  {% endfor %}
   {% endif %}
 
-  {% set overround_scans = arb_scans | selectattr('scan_type', 'equalto', 'overround') | list %}
-  {% set bias_scans = arb_scans | selectattr('scan_type', 'equalto', 'bias') | list %}
-
-  {% if overround_scans %}
-  <div class="px-4 py-2 border-b border-gray-100">
-    <div class="text-[10px] font-semibold text-gray-500 uppercase mb-1.5">Recent Overround Scans</div>
-    <div class="overflow-x-auto">
-      <table class="w-full text-xs">
-        <thead>
-          <tr class="text-[10px] uppercase tracking-wider text-gray-400 font-semibold">
-            <th class="text-left py-1">Event</th>
-            <th class="text-right py-1">Markets</th>
-            <th class="text-right py-1">Prob Sum</th>
-            <th class="text-right py-1">Overround</th>
-            <th class="text-right py-1">Net Profit</th>
-            <th class="text-right py-1">Scanned</th>
-          </tr>
-        </thead>
-        <tbody class="divide-y divide-gray-50">
-          {% for s in overround_scans[:10] %}
-          <tr class="hover:bg-gray-50">
-            <td class="py-1 font-mono text-gray-700">{{ s.event_ticker[:30] }}</td>
-            <td class="py-1 text-right text-gray-600">{{ s.num_markets or '-' }}</td>
-            <td class="py-1 text-right font-mono text-gray-600">
-              {% if s.implied_prob_sum %}${{ "%.3f"|format(s.implied_prob_sum) }}{% else %}-{% endif %}
-            </td>
-            <td class="py-1 text-right font-mono
-              {% if s.overround_pct and s.overround_pct < 0 %}text-green-600{% else %}text-gray-600{% endif %}">
-              {% if s.overround_pct %}{{ "%+.1f"|format(s.overround_pct) }}%{% else %}-{% endif %}
-            </td>
-            <td class="py-1 text-right font-mono font-semibold
-              {% if s.profit_pct and s.profit_pct > 0 %}text-green-600{% else %}text-gray-400{% endif %}">
-              {% if s.profit_pct %}{{ "%.1f"|format(s.profit_pct) }}%{% else %}0%{% endif %}
-            </td>
-            <td class="py-1 text-right text-gray-400 font-mono">{{ s.scanned_at[:16] if s.scanned_at else '' }}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </div>
-  {% endif %}
-
-  {% if bias_scans %}
-  <div class="px-4 py-2">
-    <div class="text-[10px] font-semibold text-gray-500 uppercase mb-1.5">Bias Scan (Favorite-Longshot)</div>
-    {% set buckets = {} %}
-    {% for s in bias_scans %}
-      {% if s.price_bucket not in buckets %}
-        {% if buckets.update({s.price_bucket: []}) %}{% endif %}
-      {% endif %}
-      {% if buckets[s.price_bucket].append(s) %}{% endif %}
-    {% endfor %}
-    <div class="flex flex-wrap gap-2">
-      {% for bucket_name in ['favorite', 'heavy_favorite', 'lean', 'tossup', 'underdog', 'longshot'] %}
-        {% set count = bias_scans | selectattr('price_bucket', 'equalto', bucket_name) | list | length %}
-        {% if count > 0 %}
-        <div class="px-2 py-1 rounded text-[10px] font-mono
-          {% if bucket_name in ['favorite', 'heavy_favorite'] %}bg-green-50 text-green-700
-          {% elif bucket_name in ['lean', 'tossup'] %}bg-gray-100 text-gray-600
-          {% else %}bg-red-50 text-red-700{% endif %}">
-          {{ bucket_name | replace('_', ' ') | title }}: {{ count }}
-        </div>
-        {% endif %}
-      {% endfor %}
-    </div>
-  </div>
-  {% endif %}
-
-  {# ── Open Positions (inside same card) ── #}
+  {# ── Position rows (blotter style) ── #}
   {% if positions %}
-  <div class="px-4 py-2 border-t border-gray-100">
-    <div class="text-[10px] font-semibold text-gray-500 uppercase mb-1.5">Open Positions</div>
-    <div class="overflow-x-auto">
-      <table class="w-full text-xs">
-        <thead>
-          <tr class="text-[10px] uppercase tracking-wider text-gray-400 font-semibold">
-            <th class="text-left py-1">Market</th>
-            <th class="text-center py-1">Side</th>
-            <th class="text-right py-1">Qty</th>
-            <th class="text-right py-1">Entry</th>
-            <th class="text-right py-1">Cost</th>
-            <th class="text-left py-1">Reasoning</th>
-          </tr>
-        </thead>
-        <tbody class="divide-y divide-gray-50">
-          {% for p in positions %}
-          <tr class="hover:bg-gray-50">
-            <td class="py-1 max-w-[200px]">
-              <div class="text-gray-900 truncate text-[11px]">{{ p.title }}</div>
-              <div class="text-[9px] text-gray-400 font-mono">{{ p.ticker[:30] }}</div>
-            </td>
-            <td class="py-1 text-center">
-              <span class="text-[10px] font-bold px-1.5 py-0.5 rounded
-                {% if p.side == 'yes' %}bg-green-50 text-green-700{% else %}bg-red-50 text-red-700{% endif %}">
-                {{ p.side | upper }}
-              </span>
-            </td>
-            <td class="py-1 text-right font-mono">{{ p.contracts }}</td>
-            <td class="py-1 text-right font-mono">${{ "%.2f"|format(p.entry_price) }}</td>
-            <td class="py-1 text-right font-mono">${{ "%.2f"|format(p.cost) }}</td>
-            <td class="py-1 text-gray-500 max-w-[180px] truncate text-[10px]">{{ p.reasoning[:50] }}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </div>
-  {% endif %}
-
-  {% if not arb_scans and not arb_executions and not positions %}
-  <div class="px-4 py-6 text-center text-xs text-gray-400">
-    No prediction market activity yet. Run <code class="bg-gray-100 px-1.5 py-0.5 rounded">/prediction-council</code> or <code class="bg-gray-100 px-1.5 py-0.5 rounded">/prediction-arb-scan</code> to get started.
-  </div>
-  {% endif %}
-</div>
-
-{# ── Event Calendar ─────────────────────────────────────────────── #}
-{% set cal = event_calendar %}
-{% set cal_total = cal.this_week|length + cal.this_month|length + cal.this_quarter|length + cal.this_year|length + cal.long_dated|length %}
-{% if cal_total > 0 %}
-<div class="bg-white border border-gray-200 rounded-lg mb-4 overflow-hidden">
-  <div class="px-4 py-2.5 border-b border-gray-100 flex items-center justify-between">
-    <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-wider">Event Calendar</h2>
-    <span class="text-[10px] font-mono text-gray-400">{{ cal_total }} events by resolution window</span>
-  </div>
-
-  {# ── Timeline buckets ── #}
-  {% set buckets = [
-    ('this_week', 'This Week', 'bg-red-500', 'bg-red-50', 'text-red-700', 'border-red-200'),
-    ('this_month', 'This Month', 'bg-amber-500', 'bg-amber-50', 'text-amber-700', 'border-amber-200'),
-    ('this_quarter', 'This Quarter', 'bg-blue-500', 'bg-blue-50', 'text-blue-700', 'border-blue-200'),
-    ('this_year', 'This Year', 'bg-gray-400', 'bg-gray-50', 'text-gray-600', 'border-gray-200'),
-    ('long_dated', '1yr+', 'bg-gray-300', 'bg-gray-50', 'text-gray-500', 'border-gray-200'),
-  ] %}
-
-  {# ── Summary bar ── #}
-  <div class="px-4 py-2 border-b border-gray-100 flex items-center gap-3">
-    {% for key, label, dot_color, bg, text, border in buckets %}
-    {% set count = cal[key]|length %}
-    {% if count > 0 %}
-    <div class="flex items-center gap-1.5">
-      <span class="w-2 h-2 rounded-full {{ dot_color }}"></span>
-      <span class="text-[10px] font-semibold {{ text }}">{{ label }}</span>
-      <span class="text-[10px] font-mono text-gray-400">({{ count }})</span>
-    </div>
-    {% endif %}
-    {% endfor %}
-  </div>
-
-  {# ── Event rows grouped by bucket ── #}
-  <div class="divide-y divide-gray-100">
-    {% for key, label, dot_color, bg, text, border in buckets %}
-    {% if cal[key] %}
-    <div class="px-4 py-2">
-      <div class="text-[10px] font-semibold text-gray-500 uppercase mb-1.5 flex items-center gap-1.5">
-        <span class="w-1.5 h-1.5 rounded-full {{ dot_color }}"></span>{{ label }}
-      </div>
-      <div class="space-y-1">
-        {% for ev in cal[key][:8] %}
-        <div class="flex items-center gap-3 px-2 py-1.5 rounded {{ bg }} {{ border }} border">
-          {{ category_badge(ev.category) }}
-          <div class="flex-1 min-w-0">
-            <div class="text-[11px] text-gray-900 truncate">{{ ev.title }}</div>
-            <div class="text-[9px] text-gray-400">{{ ev.top_market_title }}</div>
-          </div>
-          <div class="shrink-0 text-right">
-            <div class="text-[10px] font-mono {{ text }}">{{ ev.close_date }}</div>
-            <div class="text-[9px] text-gray-400">{{ ev.days_until }}d
-              {% if ev.can_close_early %}<span class="text-amber-500" title="Can close early">*</span>{% endif %}
-            </div>
-          </div>
-          <div class="shrink-0 w-16">
-            {{ prob_bar(ev.top_prob) }}
-          </div>
-          <div class="shrink-0 text-right w-12">
-            <div class="text-[10px] font-mono text-gray-500">{{ ev.num_markets }}</div>
-            <div class="text-[9px] text-gray-400">mkts</div>
-          </div>
-        </div>
+  <div class="overflow-x-auto">
+    <table class="w-full text-xs">
+      <thead>
+        <tr class="bg-gray-50 text-[10px] uppercase tracking-wider text-gray-400 font-semibold">
+          <th class="text-left px-4 py-2">Time</th>
+          <th class="text-left px-4 py-2">Market</th>
+          <th class="text-center px-3 py-2">Side</th>
+          <th class="text-right px-3 py-2">Contracts</th>
+          <th class="text-right px-3 py-2">Entry</th>
+          <th class="text-right px-3 py-2">Cost</th>
+          <th class="text-left px-4 py-2">Thesis</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-100">
+        {% for p in positions %}
+        <tr class="hover:bg-gray-50 transition-colors">
+          <td class="px-4 py-2 font-mono text-gray-400 whitespace-nowrap">{{ p.created_at[:16] if p.created_at else '' }}</td>
+          <td class="px-4 py-2 max-w-[250px]">
+            <div class="text-gray-900 truncate">{{ p.title }}</div>
+            <div class="text-[9px] text-gray-400 font-mono">{{ p.ticker[:30] }}</div>
+          </td>
+          <td class="px-3 py-2 text-center">
+            <span class="text-[10px] font-bold px-2 py-0.5 rounded
+              {% if p.side == 'yes' %}bg-green-50 text-green-700{% else %}bg-red-50 text-red-700{% endif %}">
+              {{ p.side | upper }}
+            </span>
+          </td>
+          <td class="px-3 py-2 text-right font-mono text-gray-700">{{ p.contracts }}</td>
+          <td class="px-3 py-2 text-right font-mono text-gray-700">${{ "%.2f"|format(p.entry_price) }}</td>
+          <td class="px-3 py-2 text-right font-mono text-gray-700">${{ "%.2f"|format(p.cost) }}</td>
+          <td class="px-4 py-2 text-[10px] text-gray-500 max-w-[200px] truncate" title="{{ p.reasoning }}">{{ p.reasoning[:60] }}</td>
+        </tr>
         {% endfor %}
-        {% if cal[key]|length > 8 %}
-        <div class="text-[9px] text-gray-400 text-center py-0.5">+{{ cal[key]|length - 8 }} more</div>
-        {% endif %}
-      </div>
-    </div>
-    {% endif %}
-    {% endfor %}
+      </tbody>
+    </table>
   </div>
+  {% elif not arb_executions %}
+  <div class="px-4 py-8 text-center text-xs text-gray-400">
+    No open positions. Run <code class="bg-gray-100 px-1.5 py-0.5 rounded">/prediction-council</code> or <code class="bg-gray-100 px-1.5 py-0.5 rounded">/prediction-arb-scan</code> to get started.
+  </div>
+  {% endif %}
 </div>
-{% endif %}
 
-{# ── Council Candidates ─────────────────────────────────────────── #}
+{# ── Council Candidates ──────────────────────────────────────────── #}
 {% if council_candidates %}
 <div class="bg-white border border-gray-200 rounded-lg mb-4 overflow-hidden">
   <div class="px-4 py-2.5 border-b border-gray-100 flex items-center justify-between">
-    <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-wider">Council Candidates</h2>
-    <span class="text-[10px] font-mono text-gray-400">
-      bias edge + volume + researchability | run <code class="bg-gray-100 px-1 rounded">/prediction-council</code> on these
-    </span>
+    <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-wider">Top Candidates</h2>
+    <span class="text-[10px] text-gray-400">ranked by bias edge + volume</span>
   </div>
   <div class="overflow-x-auto">
     <table class="w-full text-xs">
       <thead>
         <tr class="bg-gray-50 text-[10px] uppercase tracking-wider text-gray-400 font-semibold">
-          <th class="text-left px-4 py-2">#</th>
           <th class="text-left px-4 py-2">Market</th>
+          <th class="text-center px-3 py-2">Category</th>
           <th class="text-center px-3 py-2">Prob</th>
-          <th class="text-center px-3 py-2">Bias Edge</th>
+          <th class="text-center px-3 py-2">Edge</th>
           <th class="text-right px-3 py-2">Volume</th>
           <th class="text-right px-3 py-2">Spread</th>
-          <th class="text-left px-3 py-2">Category</th>
-          <th class="text-left px-4 py-2">Why</th>
+          <th class="text-left px-4 py-2">Signal</th>
         </tr>
       </thead>
       <tbody class="divide-y divide-gray-100">
         {% for c in council_candidates %}
         <tr class="hover:bg-gray-50 transition-colors">
-          <td class="px-4 py-2 text-gray-400 font-mono">{{ loop.index }}</td>
-          <td class="px-4 py-2 max-w-[200px]">
-            <div class="text-gray-900 truncate text-[11px]">{{ c.title }}</div>
+          <td class="px-4 py-2 max-w-[250px]">
+            <div class="text-gray-900 truncate">{{ c.title }}</div>
             <div class="text-[9px] text-gray-400 font-mono">{{ c.ticker }}</div>
           </td>
-          <td class="px-3 py-2 text-center">
-            <div class="w-20 mx-auto">{{ prob_bar(c.implied_probability) }}</div>
-          </td>
+          <td class="px-3 py-2 text-center">{% if c.category %}{{ category_badge(c.category) }}{% endif %}</td>
+          <td class="px-3 py-2 text-center"><div class="w-20 mx-auto">{{ prob_bar(c.implied_probability) }}</div></td>
           <td class="px-3 py-2 text-center font-mono font-semibold text-green-600">+{{ "%.0f"|format(c.bias_edge * 100) }}%</td>
           <td class="px-3 py-2 text-right font-mono text-gray-700">{{ "%.0f"|format(c.volume) }}</td>
           <td class="px-3 py-2 text-right font-mono text-gray-600">${{ "%.2f"|format(c.spread) }}</td>
-          <td class="px-3 py-2">
-            {% if c.category %}{{ category_badge(c.category) }}{% endif %}
-          </td>
-          <td class="px-4 py-2 text-[10px] text-gray-500 max-w-[200px] truncate">{{ c.reason[:60] }}</td>
+          <td class="px-4 py-2 text-[10px] text-gray-500 max-w-[180px] truncate">{{ c.reason[:50] }}</td>
         </tr>
         {% endfor %}
       </tbody>
@@ -331,192 +194,68 @@
 </div>
 {% endif %}
 
-{# ── Cross-Platform Comparison ──────────────────────────────────── #}
-{% if cross_platform %}
-<div class="bg-white border border-gray-200 rounded-lg mb-4 overflow-hidden">
-  <div class="px-4 py-2.5 border-b border-gray-100 flex items-center justify-between">
-    <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-wider">Cross-Platform Price Monitor</h2>
-    <span class="text-[10px] font-mono text-gray-400">
-      Kalshi vs Polymarket | {{ cross_platform | length }} matched
-      {% set arbs = cross_platform | selectattr('potential_arb') | list %}
-      {% if arbs %}| <span class="text-amber-600 font-semibold">{{ arbs | length }} divergences > 5%</span>{% endif %}
-    </span>
-  </div>
-  <div class="overflow-x-auto">
-    <table class="w-full text-xs">
-      <thead>
-        <tr class="bg-gray-50 text-[10px] uppercase tracking-wider text-gray-400 font-semibold">
-          <th class="text-left px-4 py-2">Market</th>
-          <th class="text-center px-3 py-2">Kalshi YES</th>
-          <th class="text-center px-3 py-2">Polymarket YES</th>
-          <th class="text-center px-3 py-2">Divergence</th>
-          <th class="text-right px-3 py-2">Match</th>
-          <th class="text-right px-4 py-2">Volume (K/P)</th>
-        </tr>
-      </thead>
-      <tbody class="divide-y divide-gray-100">
-        {% for p in cross_platform[:15] %}
-        <tr class="hover:bg-gray-50 transition-colors {% if p.potential_arb %}bg-amber-50/50{% endif %}">
-          <td class="px-4 py-2 max-w-xs">
-            <div class="text-gray-900 truncate">{{ p.kalshi_title }}</div>
-            <div class="text-[9px] text-gray-400 font-mono">{{ p.kalshi_ticker }}</div>
-          </td>
-          <td class="px-3 py-2 text-center">
-            <div class="w-24 mx-auto">{{ prob_bar(p.kalshi_yes) }}</div>
-          </td>
-          <td class="px-3 py-2 text-center">
-            <div class="w-24 mx-auto">{{ prob_bar(p.poly_yes) }}</div>
-          </td>
-          <td class="px-3 py-2 text-center font-mono font-semibold
-            {% if p.divergence|abs > 0.10 %}text-red-600
-            {% elif p.divergence|abs > 0.05 %}text-amber-600
-            {% else %}text-gray-400{% endif %}">
-            {{ "%+.1f"|format(p.divergence * 100) }}%
-          </td>
-          <td class="px-3 py-2 text-right text-gray-400 font-mono">{{ "%.0f"|format(p.similarity * 100) }}%</td>
-          <td class="px-4 py-2 text-right font-mono text-gray-600">
-            {{ "%.0f"|format(p.kalshi_volume) }} / {{ "%.0f"|format(p.poly_volume) }}
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-</div>
-{% endif %}
+{# ── Markets (compact two-column) ────────────────────────────────── #}
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
 
-{# ── Prediction Calibration ────────────────────────────────────── #}
-{% if calibration %}
-<div class="bg-white border border-gray-200 rounded-lg mb-4 overflow-hidden">
-  <div class="px-4 py-2.5 border-b border-gray-100 flex items-center justify-between">
-    <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-wider">Forecast Calibration</h2>
-    <span class="text-[10px] font-mono text-gray-400">{{ calibration.total_resolved }} resolved | {{ calibration.wins }}W {{ calibration.losses }}L</span>
-  </div>
-  <div class="px-4 py-3">
-    <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
-      <div class="bg-gray-50 rounded-lg p-3 text-center">
-        <div class="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-1">Brier Score</div>
-        <div class="text-lg font-mono font-semibold
-          {% if calibration.brier_score is not none %}
-            {% if calibration.brier_score <= 0.20 %}text-green-600
-            {% elif calibration.brier_score <= 0.30 %}text-amber-600
-            {% else %}text-red-600{% endif %}
-          {% else %}text-gray-400{% endif %}">
-          {% if calibration.brier_score is not none %}{{ "%.3f"|format(calibration.brier_score) }}{% else %}N/A{% endif %}
-        </div>
-        <div class="text-[9px] text-gray-400 mt-0.5">0=perfect, 0.25=coin flip</div>
-      </div>
-      <div class="bg-gray-50 rounded-lg p-3 text-center">
-        <div class="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-1">Log Score</div>
-        <div class="text-lg font-mono font-semibold
-          {% if calibration.log_score is not none %}
-            {% if calibration.log_score >= -0.30 %}text-green-600
-            {% elif calibration.log_score >= -0.60 %}text-amber-600
-            {% else %}text-red-600{% endif %}
-          {% else %}text-gray-400{% endif %}">
-          {% if calibration.log_score is not none %}{{ "%.3f"|format(calibration.log_score) }}{% else %}N/A{% endif %}
-        </div>
-        <div class="text-[9px] text-gray-400 mt-0.5">0=perfect, more negative=worse</div>
-      </div>
-      <div class="bg-gray-50 rounded-lg p-3 text-center">
-        <div class="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-1">Win Rate</div>
-        <div class="text-lg font-mono font-semibold text-gray-900">
-          {{ "%.0f"|format(calibration.wins / calibration.total_resolved * 100) }}%
-        </div>
-        <div class="text-[9px] text-gray-400 mt-0.5">{{ calibration.wins }}/{{ calibration.total_resolved }}</div>
-      </div>
-      <div class="bg-gray-50 rounded-lg p-3 text-center">
-        <div class="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-1">Skill Level</div>
-        <div class="text-lg font-semibold
-          {% if calibration.brier_score is not none and calibration.brier_score <= 0.15 %}text-green-600">Superforecaster
-          {% elif calibration.brier_score is not none and calibration.brier_score <= 0.25 %}text-blue-600">Above Average
-          {% elif calibration.brier_score is not none %}text-gray-600">Average
-          {% else %}text-gray-400">Pending{% endif %}
-        </div>
-        <div class="text-[9px] text-gray-400 mt-0.5">&lt;0.20 = superforecaster (Tetlock)</div>
-      </div>
+  {# ── Kalshi ── #}
+  <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
+    <div class="px-4 py-2.5 border-b border-gray-100">
+      <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-wider flex items-center gap-2">
+        <span class="w-2 h-2 rounded-full bg-blue-500"></span> Kalshi
+      </h2>
     </div>
-  </div>
-</div>
-{% endif %}
-
-{# ── Markets Side-by-Side ──────────────────────────────────────── #}
-<div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
-
-  {# ── Kalshi Markets ── #}
-  <div>
-    <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-wider mb-3 flex items-center gap-2">
-      <span class="w-2 h-2 rounded-full bg-blue-500"></span> Kalshi Markets
-    </h2>
     {% if events %}
-    <div class="space-y-3">
-      {% for e in events[:8] %}
-      <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
-        <div class="px-3 py-2 border-b border-gray-100 flex items-center gap-2">
+    <div class="divide-y divide-gray-100 max-h-[500px] overflow-y-auto">
+      {% for e in events[:10] %}
+      <div class="px-3 py-2 hover:bg-gray-50 transition-colors">
+        <div class="flex items-center gap-2 mb-1">
           {{ category_badge(e.category) }}
-          <span class="text-xs font-semibold text-gray-900 truncate">{{ e.title }}</span>
-          <span class="ml-auto text-[10px] text-gray-400 font-mono shrink-0">{{ "%.0f"|format(e.total_volume) }}</span>
+          <span class="text-[11px] font-semibold text-gray-900 truncate flex-1">{{ e.title }}</span>
+          <span class="text-[9px] text-gray-400 font-mono shrink-0">{{ "%.0f"|format(e.total_volume) }} vol</span>
         </div>
-        <div class="divide-y divide-gray-50">
-          {% for m in e.markets[:3] %}
-          <div class="px-3 py-1.5 flex items-center gap-3 hover:bg-gray-50 transition-colors">
-            <div class="flex-1 min-w-0">
-              <div class="text-[11px] text-gray-700 truncate">{{ m.title }}</div>
-            </div>
-            <div class="w-24 shrink-0">{{ prob_bar(m.implied_prob) }}</div>
-            <div class="text-right shrink-0 w-16">
-              <div class="text-[10px] font-mono text-gray-600">${{ "%.2f"|format(m.yes_bid) }}/${{ "%.2f"|format(m.yes_ask) }}</div>
-            </div>
-          </div>
-          {% endfor %}
-          {% if e.markets | length > 3 %}
-          <div class="px-3 py-1 text-[9px] text-gray-400 text-center">+{{ e.markets | length - 3 }} more</div>
-          {% endif %}
+        {% for m in e.markets[:2] %}
+        <div class="flex items-center gap-2 ml-4 text-[10px]">
+          <span class="text-gray-600 truncate flex-1">{{ m.title }}</span>
+          <div class="w-16 shrink-0">{{ prob_bar(m.implied_prob) }}</div>
+          <span class="font-mono text-gray-400 w-20 text-right shrink-0">${{ "%.2f"|format(m.yes_bid) }}/${{ "%.2f"|format(m.yes_ask) }}</span>
         </div>
+        {% endfor %}
+        {% if e.markets | length > 2 %}
+        <div class="ml-4 text-[9px] text-gray-400">+{{ e.markets | length - 2 }} more</div>
+        {% endif %}
       </div>
       {% endfor %}
     </div>
     {% else %}
-    <div class="bg-white border border-gray-200 rounded-lg px-4 py-6 text-center text-xs text-gray-400">
-      Could not load Kalshi markets.
-    </div>
+    <div class="px-4 py-6 text-center text-xs text-gray-400">No Kalshi markets loaded</div>
     {% endif %}
   </div>
 
-  {# ── Polymarket Markets ── #}
-  <div>
-    <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-wider mb-3 flex items-center gap-2">
-      <span class="w-2 h-2 rounded-full bg-purple-500"></span> Polymarket Markets
-    </h2>
+  {# ── Polymarket ── #}
+  <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
+    <div class="px-4 py-2.5 border-b border-gray-100">
+      <h2 class="text-xs font-semibold text-gray-700 uppercase tracking-wider flex items-center gap-2">
+        <span class="w-2 h-2 rounded-full bg-purple-500"></span> Polymarket
+      </h2>
+    </div>
     {% if poly_markets %}
-    <div class="space-y-2">
+    <div class="divide-y divide-gray-100 max-h-[500px] overflow-y-auto">
       {% for m in poly_markets[:12] %}
-      <div class="bg-white border border-gray-200 rounded-lg px-3 py-2 hover:bg-gray-50 transition-colors">
-        <div class="flex items-center gap-3">
-          <div class="flex-1 min-w-0">
-            <div class="text-[11px] text-gray-900 truncate">{{ m.question }}</div>
-            {% if m.category %}
-            <span class="text-[9px] text-gray-400">{{ m.category }}</span>
-            {% endif %}
-          </div>
-          <div class="w-24 shrink-0">{{ prob_bar(m.yes_price) }}</div>
-          <div class="text-right shrink-0 w-20">
-            <div class="text-[10px] font-mono text-gray-600">${{ "%.0f"|format(m.volume) }}</div>
-            <div class="text-[9px] text-gray-400">volume</div>
-          </div>
-          {% if m.end_date %}
-          <div class="text-[9px] text-gray-400 shrink-0 w-16 text-right">{{ m.end_date }}</div>
-          {% endif %}
+      <div class="px-3 py-2 hover:bg-gray-50 transition-colors flex items-center gap-3">
+        <div class="flex-1 min-w-0">
+          <div class="text-[11px] text-gray-900 truncate">{{ m.question }}</div>
+          {% if m.category %}<span class="text-[9px] text-gray-400">{{ m.category }}</span>{% endif %}
         </div>
+        <div class="w-20 shrink-0">{{ prob_bar(m.yes_price) }}</div>
+        <div class="text-[10px] font-mono text-gray-400 shrink-0 w-14 text-right">${{ "%.0f"|format(m.volume) }}</div>
       </div>
       {% endfor %}
     </div>
     {% else %}
-    <div class="bg-white border border-gray-200 rounded-lg px-4 py-6 text-center text-xs text-gray-400">
-      Could not load Polymarket data.
-    </div>
+    <div class="px-4 py-6 text-center text-xs text-gray-400">No Polymarket data loaded</div>
     {% endif %}
   </div>
+
 </div>
 
 {% endblock %}

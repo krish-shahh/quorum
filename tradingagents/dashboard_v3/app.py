@@ -1537,22 +1537,16 @@ def create_app():
     def predictions():
         kalshi_positions = get_kalshi_positions()
         kalshi_events = get_kalshi_trending_events()
-        arb_scans = get_arb_scans()
         arb_executions = get_arb_executions()
         council_candidates = get_council_candidates_data()
         poly_markets = get_polymarket_trending()
-        cross_platform = get_cross_platform_comparison()
-        event_calendar = get_event_calendar()
         calibration = get_kalshi_calibration()
         return render_template("predictions.html",
                                positions=kalshi_positions,
                                events=kalshi_events,
-                               arb_scans=arb_scans,
                                arb_executions=arb_executions,
                                council_candidates=council_candidates,
                                poly_markets=poly_markets,
-                               cross_platform=cross_platform,
-                               event_calendar=event_calendar,
                                calibration=calibration,
                                page="predictions")
 
