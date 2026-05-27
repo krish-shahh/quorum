@@ -1,0 +1,104 @@
+{% macro signal_badge(sig) %}
+<span class="text-[10px] font-semibold px-1.5 py-0.5 rounded
+  {% if sig in ['Buy', 'Overweight'] %}bg-green-50 text-green-700
+  {% elif sig in ['Sell', 'Underweight'] %}bg-red-50 text-red-700
+  {% else %}bg-gray-100 text-gray-600{% endif %}">{{ sig }}</span>
+{% endmacro %}
+
+{% if detail %}
+<div>
+  <div class="flex items-center gap-3 mb-4">
+    <h2 class="text-lg font-bold text-gray-900">{{ ticker }}</h2>
+    {{ signal_badge(detail.detail.signal) }}
+    <span class="text-xl font-bold font-mono text-gray-900">{{ "%.2f"|format(detail.detail.weighted) }}</span>
+    {% if detail.detail.debate_triggered %}
+    <span class="text-[9px] font-bold px-1.5 py-0.5 rounded bg-violet-50 text-violet-700">Debate</span>
+    {% endif %}
+    <span class="text-xs font-mono text-gray-400 ml-auto">${{ "%.2f"|format(detail.detail.price) if detail.detail.price else '—' }} | {{ detail.detail.analyzed_at or '—' }}</span>
+  </div>
+
+  {# Score bars #}
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+    <div class="space-y-2.5">
+      {% set dl = detail.detail | domain_label %}
+      {% for label, score in [('Tech', detail.detail.technical), (dl, detail.detail.fundamental), ('Sent', detail.detail.sentiment), ('News', detail.detail.news)] %}
+      <div class="flex items-center gap-2">
+        <span class="text-[11px] font-medium text-gray-500 w-[35px] text-right shrink-0">{{ label }}</span>
+        <div class="flex-1 bg-gray-100 rounded-full h-3.5 overflow-hidden">
+          <div class="bg-blue-500 h-full rounded-full" style="width: {{ ((score|float / 5) * 100)|int }}%"></div>
+        </div>
+        <span class="text-xs font-mono font-semibold text-gray-700 w-[28px] text-right shrink-0">{{ score }}</span>
+      </div>
+      {% endfor %}
+
+      {% if detail.quant and detail.quant.fundamental %}
+      <div class="pt-2.5 border-t border-gray-100">
+        <div class="text-[9px] uppercase tracking-wider text-gray-400 font-semibold mb-2">Quant Anchors</div>
+        {% for label, score in [('Fund', detail.quant.fundamental), ('Tech', detail.quant.technical)] %}
+        <div class="flex items-center gap-2 mb-1">
+          <span class="text-[10px] font-medium text-gray-400 w-[35px] text-right shrink-0">{{ label }}</span>
+          <div class="flex-1 bg-gray-50 rounded-full h-2 overflow-hidden">
+            <div class="bg-indigo-400 h-full rounded-full" style="width: {{ ((score|float / 5) * 100)|int }}%"></div>
+          </div>
+          <span class="text-[10px] font-mono text-indigo-600 w-[28px] text-right shrink-0">{{ "%.2f"|format(score) }}</span>
+        </div>
+        {% endfor %}
+        <div class="text-[9px] text-gray-400 mt-1">DQ: {{ "%.0f"|format(detail.quant.data_quality * 100) }}% | {{ detail.quant.scored_at }}</div>
+      </div>
+      {% endif %}
+    </div>
+
+    <div class="space-y-1.5 text-xs">
+      {% for label, val in [('Confidence', detail.detail.confidence), ('Weighted Score', ("%.2f"|format(detail.detail.weighted)))] %}
+      <div class="flex justify-between"><span class="text-gray-400">{{ label }}</span><span class="font-mono font-medium text-gray-700">{{ val }}</span></div>
+      {% endfor %}
+    </div>
+  </div>
+
+  {# Score history #}
+  {% if detail.history and detail.history|length > 1 %}
+  <div class="mt-5 border-t border-gray-100 pt-3">
+    <div class="text-[9px] uppercase tracking-wider text-gray-400 font-semibold mb-2">Score History</div>
+    <div class="overflow-x-auto">
+      <table class="w-full text-xs">
+        <thead>
+          <tr class="bg-gray-50 text-[10px] uppercase tracking-wider text-gray-400 font-semibold">
+            <th class="text-left px-3 py-1.5">Time</th>
+            <th class="text-center px-2 py-1.5">Signal</th>
+            <th class="text-right px-2 py-1.5">Score</th>
+            <th class="text-right px-2 py-1.5">T</th>
+            <th class="text-right px-2 py-1.5">F</th>
+            <th class="text-right px-2 py-1.5">S</th>
+            <th class="text-right px-2 py-1.5">N</th>
+            <th class="text-right px-2 py-1.5">Price</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-50">
+          {% for h in detail.history %}
+          <tr class="hover:bg-gray-50">
+            <td class="px-3 py-1.5 font-mono text-gray-400">{{ h.analyzed_at[:16] if h.analyzed_at else '—' }}</td>
+            <td class="px-2 py-1.5 text-center">{{ signal_badge(h.signal) }}</td>
+            <td class="px-2 py-1.5 text-right font-mono font-semibold text-gray-900">{{ "%.2f"|format(h.weighted) }}</td>
+            <td class="px-2 py-1.5 text-right font-mono text-gray-500">{{ h.technical }}</td>
+            <td class="px-2 py-1.5 text-right font-mono text-gray-500">{{ h.fundamental }}</td>
+            <td class="px-2 py-1.5 text-right font-mono text-gray-500">{{ h.sentiment }}</td>
+            <td class="px-2 py-1.5 text-right font-mono text-gray-500">{{ h.news }}</td>
+            <td class="px-2 py-1.5 text-right font-mono text-gray-500">${{ "%.2f"|format(h.price) if h.price else '—' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if reflections %}
+  <div class="mt-5 border-t border-gray-100 pt-3">
+    <div class="text-[9px] uppercase tracking-wider text-gray-400 font-semibold mb-2">Trade Reflections</div>
+    <div class="bg-gray-50 rounded-lg p-3 text-xs text-gray-600 font-mono whitespace-pre-wrap leading-relaxed max-h-40 overflow-y-auto">{{ reflections }}</div>
+  </div>
+  {% endif %}
+</div>
+{% else %}
+<p class="text-sm text-gray-400">Ticker not found</p>
+{% endif %}

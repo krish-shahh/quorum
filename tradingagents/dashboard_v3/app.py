@@ -1491,14 +1491,9 @@ def create_app():
 
     @app.route("/council")
     def council():
-        ticker = request.args.get("ticker")
         states = get_ticker_states()
-        detail = get_ticker_detail(ticker) if ticker else None
-        reports = get_trade_reports(limit=30)
-        reflections = get_ticker_reflections(ticker) if ticker else ""
         return render_template("council.html",
-                               states=states, ticker=ticker, detail=detail,
-                               reports=reports, reflections=reflections,
+                               states=states,
                                page="council")
 
     @app.route("/performance")
@@ -1603,6 +1598,16 @@ def create_app():
         watchlist = get_watchlist()
         trades = get_congress_recent(acct["positions"], watchlist)
         return render_template("_congress.html", congress_trades=trades)
+
+    @app.route("/api/council-detail")
+    def api_council_detail():
+        ticker = request.args.get("ticker", "")
+        if not ticker:
+            return "<p class='text-gray-400 text-sm'>No ticker specified</p>"
+        detail = get_ticker_detail(ticker)
+        reflections = get_ticker_reflections(ticker)
+        return render_template("_council_detail.html",
+                               ticker=ticker, detail=detail, reflections=reflections)
 
     @app.route("/api/plan-metrics")
     def api_plan_metrics():
