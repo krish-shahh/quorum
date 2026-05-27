@@ -832,7 +832,7 @@ def get_kalshi_calibration():
         return None
 
 
-_EXCLUDED_CATEGORIES = {"sports"}
+_EXCLUDED_CATEGORIES = {"elections"}
 
 
 def get_kalshi_trending_events():
