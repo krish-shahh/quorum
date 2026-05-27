@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 KALSHI_FEE_PCT = 0.07
 
 # Categories to exclude from scanning (long-dated, low-edge markets)
-DEFAULT_EXCLUDED_CATEGORIES: set = {"elections"}
+DEFAULT_EXCLUDED_CATEGORIES: set = {"elections", "politics"}
 
 # Max days until close to consider for arb (don't lock up capital forever)
 MAX_CLOSE_DAYS = 365
@@ -350,7 +350,7 @@ def get_council_candidates(
         event_categories[e.event_ticker] = e.category
 
     researchable = {
-        "Economics", "Politics", "Finance", "Financials",
+        "Economics", "Finance", "Financials",
         "AI", "Science and Technology", "Climate and Weather",
         "Companies", "Health", "World", "Sports", "Entertainment",
         "Social",
