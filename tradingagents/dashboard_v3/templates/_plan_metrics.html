@@ -2,12 +2,23 @@
 <div class="space-y-2">
   <div class="flex items-center justify-between">
     <span class="text-xs text-gray-500">Plan: {{ plan.plan_id or 'unknown' }}</span>
-    <span class="text-[10px] px-1.5 py-0.5 rounded
-      {% if plan.plan_type == 'morning' %}bg-blue-50 text-blue-700
-      {% elif plan.plan_type == 'midday_replan' %}bg-amber-50 text-amber-700
-      {% else %}bg-gray-50 text-gray-700{% endif %}">
-      {{ plan.plan_type or 'manual' }}
-    </span>
+    <div class="flex items-center gap-1.5">
+      <span class="text-[10px] px-1.5 py-0.5 rounded
+        {% if plan.plan_type == 'morning' %}bg-blue-50 text-blue-700
+        {% elif plan.plan_type == 'midday_replan' %}bg-amber-50 text-amber-700
+        {% else %}bg-gray-50 text-gray-700{% endif %}">
+        {{ plan.plan_type or 'manual' }}
+      </span>
+      {% if plan.risk_level %}
+      <span class="text-[10px] px-1.5 py-0.5 rounded
+        {% if plan.risk_level == 'GREEN' %}bg-green-50 text-green-700
+        {% elif plan.risk_level == 'YELLOW' %}bg-amber-50 text-amber-700
+        {% elif plan.risk_level in ('ORANGE', 'RED') %}bg-red-50 text-red-700
+        {% else %}bg-gray-50 text-gray-700{% endif %}">
+        {{ plan.risk_level }}
+      </span>
+      {% endif %}
+    </div>
   </div>
   {% if plan.adherence_rate is not none %}
   <div class="flex items-center gap-4">
@@ -32,6 +43,52 @@
   </div>
   {% else %}
   <p class="text-xs text-gray-400">No execution data yet</p>
+  {% endif %}
+
+  {# ── Step-level detail table ── #}
+  {% if plan.steps %}
+  <div class="border-t border-gray-100 pt-2 mt-2">
+    <div class="text-[9px] uppercase tracking-wider text-gray-400 font-semibold mb-1">Plan Steps</div>
+    <div class="space-y-1">
+      {% for s in plan.steps %}
+      <div class="flex items-center justify-between text-[10px] px-2 py-1 rounded
+        {% if s.exec_status == 'EXECUTED' %}bg-green-50
+        {% elif s.exec_status == 'SKIPPED' %}bg-red-50
+        {% elif s.exec_status == 'HOLD' %}bg-gray-50
+        {% else %}bg-white border border-dashed border-gray-200{% endif %}">
+        <div class="flex items-center gap-2">
+          <span class="font-bold text-gray-900">{{ s.ticker }}</span>
+          <span class="font-semibold
+            {% if s.action in ('Buy', 'Strong Buy') %}text-green-700
+            {% elif s.action in ('Sell', 'Strong Sell') %}text-red-700
+            {% else %}text-gray-600{% endif %}">{{ s.action }}</span>
+          {% if s.entry %}
+          <span class="font-mono text-gray-500">@${{ "%.2f"|format(s.entry) }}</span>
+          {% endif %}
+        </div>
+        <div class="flex items-center gap-2">
+          {% if s.fill_price %}
+          <span class="font-mono text-gray-500">fill ${{ "%.2f"|format(s.fill_price) }}</span>
+          {% endif %}
+          {% if s.slippage_bps is not none %}
+          <span class="font-mono {% if s.slippage_bps|abs > 10 %}text-amber-600{% else %}text-gray-400{% endif %}">{{ "%.1f"|format(s.slippage_bps) }}bps</span>
+          {% endif %}
+          <span class="font-bold uppercase
+            {% if s.exec_status == 'EXECUTED' %}text-green-600
+            {% elif s.exec_status == 'SKIPPED' %}text-red-600
+            {% elif s.exec_status == 'HOLD' %}text-gray-500
+            {% else %}text-blue-500{% endif %}">
+            {% if s.exec_status == 'EXECUTED' %}&#10003;
+            {% elif s.exec_status == 'SKIPPED' %}&#10007;
+            {% elif s.exec_status == 'HOLD' %}&mdash;
+            {% else %}&#9679;{% endif %}
+            {{ s.exec_status }}
+          </span>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
   {% endif %}
 </div>
 {% else %}

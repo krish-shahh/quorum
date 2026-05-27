@@ -1,0 +1,91 @@
+{% if plan and plan.active %}
+{% set type_colors = {
+  'council': 'bg-blue-50 text-blue-700',
+  'morning': 'bg-blue-50 text-blue-700',
+  'midday_replan': 'bg-amber-50 text-amber-700',
+} %}
+<div class="rounded-lg border border-blue-200 bg-blue-50/50 px-4 py-2.5">
+  <div class="flex flex-wrap items-center gap-x-5 gap-y-1 text-xs">
+    {# Plan ID + type #}
+    <div class="flex items-center gap-2">
+      <span class="text-[10px] uppercase tracking-wider text-gray-400 font-semibold">Plan</span>
+      <span class="font-mono font-semibold text-blue-800">{{ plan.plan_id }}</span>
+      <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded {{ type_colors.get(plan.plan_type, 'bg-gray-100 text-gray-600') }}">
+        {{ plan.plan_type or 'manual' }}
+      </span>
+    </div>
+
+    {# Step summary #}
+    <div class="flex items-center gap-1.5">
+      {% if plan.buy_count %}
+      <span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-green-100 text-green-700">{{ plan.buy_count }} buy{{ 's' if plan.buy_count != 1 }}</span>
+      {% endif %}
+      {% if plan.sell_count %}
+      <span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-red-100 text-red-700">{{ plan.sell_count }} sell{{ 's' if plan.sell_count != 1 }}</span>
+      {% endif %}
+      {% if plan.hold_count %}
+      <span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-gray-100 text-gray-600">{{ plan.hold_count }} hold{{ 's' if plan.hold_count != 1 }}</span>
+      {% endif %}
+    </div>
+
+    {# Regime at plan time #}
+    {% if plan.regime %}
+    <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded
+      {% if plan.regime == 'volatile' %}bg-amber-100 text-amber-700
+      {% elif plan.regime == 'risk_off' %}bg-red-100 text-red-700
+      {% elif plan.regime == 'risk_on' %}bg-green-100 text-green-700
+      {% else %}bg-gray-100 text-gray-600{% endif %}">
+      {{ plan.regime | upper }}
+    </span>
+    {% endif %}
+
+    {# Risk level #}
+    {% if plan.risk_level %}
+    <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded
+      {% if plan.risk_level == 'GREEN' %}bg-green-100 text-green-700
+      {% elif plan.risk_level == 'YELLOW' %}bg-amber-100 text-amber-700
+      {% elif plan.risk_level == 'ORANGE' %}bg-orange-100 text-orange-700
+      {% elif plan.risk_level == 'RED' %}bg-red-100 text-red-700
+      {% else %}bg-gray-100 text-gray-600{% endif %}">
+      {{ plan.risk_level }}
+    </span>
+    {% endif %}
+
+    {# Adherence #}
+    {% if plan.adherence_rate is not none %}
+    <span class="text-[10px] font-mono
+      {% if plan.adherence_rate >= 0.8 %}text-green-700
+      {% elif plan.adherence_rate >= 0.5 %}text-amber-700
+      {% else %}text-red-700{% endif %}">
+      {{ "%.0f"|format(plan.adherence_rate * 100) }}% adherence
+    </span>
+    {% endif %}
+
+    {# Timestamp #}
+    <span class="text-[10px] font-mono text-gray-400 ml-auto">{{ plan.created_at[:16] if plan.created_at else '' }}</span>
+  </div>
+
+  {# Step details row #}
+  {% if plan.steps %}
+  <div class="mt-1.5 flex flex-wrap gap-1.5">
+    {% for s in plan.steps %}
+    {% set action = s.action | default('Hold') %}
+    <span class="text-[10px] font-mono px-1.5 py-0.5 rounded border
+      {% if action in ('Buy', 'Strong Buy') %}border-green-200 bg-green-50 text-green-700
+      {% elif action in ('Sell', 'Strong Sell') %}border-red-200 bg-red-50 text-red-700
+      {% else %}border-gray-200 bg-gray-50 text-gray-600{% endif %}
+      {% if s.exec_status == 'EXECUTED' %} ring-1 ring-offset-1
+        {% if action in ('Buy', 'Strong Buy') %}ring-green-400{% else %}ring-red-400{% endif %}
+      {% elif s.exec_status == 'SKIPPED' %} opacity-50 line-through{% endif %}">
+      {{ action[:1] }} {{ s.ticker }}{% if s.entry %} @${{ "%.0f"|format(s.entry) }}{% endif %}
+      {% if s.exec_status == 'EXECUTED' %}&#10003;{% elif s.exec_status == 'SKIPPED' %}&#10007;{% endif %}
+    </span>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% else %}
+<div class="rounded-lg border border-dashed border-gray-300 bg-gray-50 px-4 py-2 text-center text-xs text-gray-400">
+  No active plan — next planner cycle creates one
+</div>
+{% endif %}

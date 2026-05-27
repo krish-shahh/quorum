@@ -119,13 +119,20 @@
       window.location.href = url.toString();
     }
 
-    // ── Auto-refresh (on by default, paused in historical mode) ──
+    // ── Auto-refresh via htmx events (no full-page reload) ──
     let refreshInterval = null;
     let refreshEnabled = {{ 'false' if nav_hist_date else 'true' }};
+    const REFRESH_INTERVAL = 30000;
+    const pageLoadTime = Date.now();
 
     function startRefresh() {
       if (refreshInterval) return;
-      refreshInterval = setInterval(() => location.reload(), 15000);
+      refreshInterval = setInterval(function() {
+        // Dispatch custom event that htmx sections listen for
+        htmx.trigger(document.body, 'dash-refresh');
+        // Update the staleness indicator
+        updateStaleness();
+      }, REFRESH_INTERVAL);
       refreshEnabled = true;
       const btn = document.getElementById('refresh-btn');
       btn.textContent = 'Live';
@@ -145,6 +152,29 @@
 
     function toggleRefresh() {
       if (refreshEnabled) { stopRefresh(); } else { startRefresh(); }
+    }
+
+    // ── Data freshness indicator ──
+    let lastRefreshTime = Date.now();
+    document.body.addEventListener('htmx:afterSwap', function() {
+      lastRefreshTime = Date.now();
+      updateStaleness();
+    });
+
+    function updateStaleness() {
+      const el = document.getElementById('refresh-time');
+      if (!el) return;
+      const ago = Math.round((Date.now() - lastRefreshTime) / 1000);
+      if (ago < 5) {
+        el.textContent = 'just now';
+        el.className = 'text-[10px] text-green-500 font-mono';
+      } else if (ago < 60) {
+        el.textContent = ago + 's ago';
+        el.className = 'text-[10px] text-gray-400 font-mono';
+      } else {
+        el.textContent = Math.round(ago / 60) + 'm ago';
+        el.className = 'text-[10px] text-amber-500 font-mono';
+      }
     }
 
     // Auto-start on page load (skip if viewing historical data)

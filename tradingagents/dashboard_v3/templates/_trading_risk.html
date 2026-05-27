@@ -1,0 +1,54 @@
+{% if live_risk and live_risk.risk_level != 'unknown' %}
+{% set risk_colors = {
+  'green': 'bg-green-50 border-green-200 text-green-800',
+  'yellow': 'bg-amber-50 border-amber-200 text-amber-800',
+  'orange': 'bg-orange-50 border-orange-200 text-orange-800',
+  'red': 'bg-red-50 border-red-200 text-red-800',
+} %}
+{% set risk_labels = {
+  'green': 'All Clear',
+  'yellow': 'Caution — No New Buys',
+  'orange': 'Warning — Sell Only',
+  'red': 'HALT — Kill Switch',
+} %}
+{% set rl = live_risk.risk_level %}
+<div class="rounded-lg border px-4 py-2.5 {{ risk_colors.get(rl, 'bg-gray-50 border-gray-200 text-gray-700') }}">
+  <div class="flex flex-wrap items-center gap-x-6 gap-y-1 text-xs">
+    <span class="font-bold uppercase">{{ rl | upper }}: {{ risk_labels.get(rl, '') }}</span>
+    <span>
+      <span class="text-[10px] uppercase tracking-wider font-semibold opacity-70 mr-1">Daily P&L</span>
+      <span class="font-mono font-semibold">{{ "$%+.2f"|format(live_risk.daily_pnl) }} ({{ "%+.2f"|format(live_risk.daily_pnl_pct * 100) }}%)</span>
+    </span>
+    <span>
+      <span class="text-[10px] uppercase tracking-wider font-semibold opacity-70 mr-1">Drawdown</span>
+      <span class="font-mono">{{ "%.2f"|format(live_risk.intraday_drawdown * 100) }}%</span>
+    </span>
+    <span>
+      <span class="text-[10px] uppercase tracking-wider font-semibold opacity-70 mr-1">Cash</span>
+      <span class="font-mono">{{ "%.1f"|format(live_risk.cash_reserve_pct * 100) }}%</span>
+    </span>
+    {% if live_risk.stops_breached %}
+    <span class="font-bold text-red-700">
+      {{ live_risk.stops_breached | length }} STOP(S) BREACHED
+    </span>
+    {% endif %}
+  </div>
+  {% if live_risk.position_stops %}
+  <div class="mt-1.5 flex flex-wrap gap-2">
+    {% for s in live_risk.position_stops %}
+    <span class="text-[10px] font-mono px-1.5 py-0.5 rounded
+      {% if s.breached %}bg-red-100 text-red-700 font-bold
+      {% elif s.distance_pct is not none and s.distance_pct < 0.03 %}bg-amber-100 text-amber-700
+      {% else %}bg-white/60 opacity-80{% endif %}">
+      {{ s.ticker }}: {% if s.stop_price %}${{ "%.0f"|format(s.stop_price) }}{% else %}N/A{% endif %}
+      {% if s.distance_pct is not none %}({{ "%.1f"|format(s.distance_pct * 100) }}%){% endif %}
+    </span>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% else %}
+<div class="rounded-lg border border-gray-200 bg-gray-50 px-4 py-2.5 text-xs text-gray-400">
+  Risk data unavailable
+</div>
+{% endif %}

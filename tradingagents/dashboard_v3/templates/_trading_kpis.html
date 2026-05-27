@@ -1,0 +1,40 @@
+<div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+  {# Portfolio Value #}
+  <div class="bg-white border border-gray-200 rounded-lg px-4 py-3">
+    <div class="text-[9px] uppercase tracking-wider text-gray-400 font-semibold mb-1">Portfolio Value</div>
+    <div class="text-xl font-mono font-semibold text-gray-900">{{ acct.portfolio_value | usd }}</div>
+  </div>
+
+  {# Cash #}
+  <div class="bg-white border border-gray-200 rounded-lg px-4 py-3">
+    <div class="text-[9px] uppercase tracking-wider text-gray-400 font-semibold mb-1">Cash</div>
+    <div class="text-xl font-mono font-semibold text-gray-900">{{ acct.cash | usd }}</div>
+  </div>
+
+  {# P&L #}
+  <div class="bg-white border border-gray-200 rounded-lg px-4 py-3">
+    <div class="text-[9px] uppercase tracking-wider text-gray-400 font-semibold mb-1">P&L</div>
+    <div class="text-xl font-mono font-semibold {% if acct.pnl >= 0 %}text-green-600{% else %}text-red-600{% endif %}">
+      {{ acct.pnl | signed_usd }}
+    </div>
+    <div class="text-[10px] font-mono {% if acct.pnl_pct >= 0 %}text-green-500{% else %}text-red-500{% endif %}">
+      {{ acct.pnl_pct | signed_pct }}
+    </div>
+  </div>
+
+  {# Drawdown #}
+  <div class="bg-white border border-gray-200 rounded-lg px-4 py-3">
+    <div class="text-[9px] uppercase tracking-wider text-gray-400 font-semibold mb-1">Drawdown</div>
+    <div class="text-xl font-mono font-semibold {% if acct.drawdown > acct.dd_limit * 0.7 %}text-red-600{% elif acct.drawdown > acct.dd_limit * 0.4 %}text-amber-600{% else %}text-gray-900{% endif %}">
+      {{ acct.drawdown | pct }}
+    </div>
+    <div class="text-[10px] text-gray-400">limit {{ acct.dd_limit | pct }}</div>
+  </div>
+
+  {# Win Rate #}
+  <div class="bg-white border border-gray-200 rounded-lg px-4 py-3">
+    <div class="text-[9px] uppercase tracking-wider text-gray-400 font-semibold mb-1">Win Rate</div>
+    <div class="text-xl font-mono font-semibold text-gray-900">{{ trades.win_rate | pct }}</div>
+    <div class="text-[10px] text-gray-400">{{ trades.wins }}W / {{ trades.losses }}L of {{ trades.total }}</div>
+  </div>
+</div>

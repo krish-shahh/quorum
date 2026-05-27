@@ -630,7 +630,7 @@ def get_insider_clusters(positions, watchlist):
 
 
 def get_plan_metrics_data():
-    """Get plan adherence metrics for dashboard."""
+    """Get plan adherence metrics with step-level detail for dashboard."""
     try:
         from tradingagents.execution.plan import get_plan_metrics, read_active_plan
         plan = read_active_plan()
@@ -640,10 +640,95 @@ def get_plan_metrics_data():
         metrics["active"] = True
         metrics["plan_type"] = plan.get("plan_type", "")
         metrics["regime"] = plan.get("regime", "")
+        metrics["risk_level"] = plan.get("risk_level", "")
         metrics["created_at"] = plan.get("created_at", "")
+
+        # Enrich with step-level detail
+        steps = plan.get("steps", [])
+        exec_log = _load_exec_log(plan.get("plan_id", ""))
+
+        enriched_steps = []
+        for s in steps:
+            ticker = str(s.get("ticker", ""))
+            action = str(s.get("action", "Hold"))
+            entry = s.get("entry")
+            log_entry = exec_log.get(ticker)
+            enriched_steps.append({
+                "ticker": ticker,
+                "action": action,
+                "entry": entry,
+                "exec_status": log_entry["status"] if log_entry else "PENDING",
+                "fill_price": log_entry.get("fill_price") if log_entry else None,
+                "slippage_bps": log_entry.get("slippage_bps") if log_entry else None,
+            })
+        metrics["steps"] = enriched_steps
         return metrics
     except Exception:
         return {"active": False}
+
+
+def get_plan_status_data():
+    """Get active plan status for the trading page plan bar."""
+    try:
+        from tradingagents.execution.plan import read_active_plan, get_plan_metrics
+        plan = read_active_plan()
+        if plan is None:
+            return {"active": False}
+
+        steps = plan.get("steps", [])
+        exec_log = _load_exec_log(plan.get("plan_id", ""))
+
+        buy_actions = {"buy", "strong buy"}
+        sell_actions = {"sell", "strong sell"}
+
+        enriched_steps = []
+        for s in steps:
+            ticker = str(s.get("ticker", ""))
+            action = str(s.get("action", "Hold"))
+            entry = s.get("entry")
+            log_entry = exec_log.get(ticker)
+            enriched_steps.append({
+                "ticker": ticker,
+                "action": action,
+                "entry": entry,
+                "exec_status": log_entry["status"] if log_entry else "PENDING",
+            })
+
+        metrics = get_plan_metrics(plan.get("plan_id"))
+
+        return {
+            "active": True,
+            "plan_id": plan.get("plan_id", ""),
+            "plan_type": plan.get("plan_type", ""),
+            "regime": plan.get("regime", ""),
+            "risk_level": plan.get("risk_level", ""),
+            "created_at": plan.get("created_at", ""),
+            "steps": enriched_steps,
+            "buy_count": sum(1 for s in steps if str(s.get("action", "")).lower() in buy_actions),
+            "sell_count": sum(1 for s in steps if str(s.get("action", "")).lower() in sell_actions),
+            "hold_count": sum(1 for s in steps if str(s.get("action", "")).lower() == "hold"),
+            "adherence_rate": metrics.get("adherence_rate"),
+        }
+    except Exception:
+        return {"active": False}
+
+
+def _load_exec_log(plan_id: str) -> dict:
+    """Load execution log entries keyed by ticker."""
+    if not plan_id:
+        return {}
+    try:
+        from pathlib import Path
+        import os
+        plans_dir = Path(os.environ.get("TRADINGAGENTS_HOME", Path.home() / ".tradingagents")) / "plans"
+        log_path = plans_dir / f"{plan_id}.execlog.json"
+        if not log_path.exists():
+            return {}
+        entries = json.loads(log_path.read_text())
+        # Key by ticker (last entry wins if multiple)
+        return {e["ticker"]: e for e in entries}
+    except Exception:
+        return {}
 
 
 def run_calibration():
@@ -1369,11 +1454,12 @@ def create_app():
         dates = get_available_dates()
         historical = get_historical_data(hist_date) if hist_date else None
         live_risk = get_live_risk_data() if not hist_date else None
+        plan = get_plan_status_data() if not hist_date else {"active": False}
         return render_template("trading.html",
                                acct=acct, trades=trades, regime=regime,
                                activity=activity, dates=dates,
                                hist_date=hist_date, historical=historical,
-                               live_risk=live_risk,
+                               live_risk=live_risk, plan=plan,
                                page="trading")
 
     @app.route("/council")
@@ -1473,7 +1559,7 @@ def create_app():
                                slippage=slippage, dag_ticker=dag_ticker, dag=dag,
                                sectors=sectors, clusters=clusters,
                                congress_trades=congress,
-                               plan_metrics=plan_metrics,
+                               plan=plan_metrics,
                                page="pipeline")
 
     # ── API / htmx partials ──
@@ -1501,6 +1587,33 @@ def create_app():
     def api_plan_metrics():
         metrics = get_plan_metrics_data()
         return render_template("_plan_metrics.html", plan=metrics)
+
+    @app.route("/api/trading-kpis")
+    def api_trading_kpis():
+        acct = get_account_data()
+        trades = get_trades_data()
+        return render_template("_trading_kpis.html", acct=acct, trades=trades)
+
+    @app.route("/api/trading-risk")
+    def api_trading_risk():
+        live_risk = get_live_risk_data()
+        return render_template("_trading_risk.html", live_risk=live_risk)
+
+    @app.route("/api/trading-positions")
+    def api_trading_positions():
+        acct = get_account_data()
+        return render_template("_trading_positions.html", acct=acct)
+
+    @app.route("/api/trading-activity")
+    def api_trading_activity():
+        trades = get_trades_data()
+        activity = get_activity_feed(trades["recent"])
+        return render_template("_trading_activity.html", activity=activity)
+
+    @app.route("/api/plan-status")
+    def api_plan_status():
+        plan = get_plan_status_data()
+        return render_template("_trading_plan.html", plan=plan)
 
     @app.route("/api/run-calibration")
     def api_run_calibration():
