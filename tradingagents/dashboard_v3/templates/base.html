@@ -79,6 +79,9 @@
         {% endif %}
       </div>
 
+      <!-- Kill switch -->
+      {% include "_kill_switch_btn.html" %}
+
       <!-- Regime badge -->
       {% if regime %}
       {% set regime_color = 'green' if regime.regime == 'RISK_ON' else ('red' if regime.regime == 'RISK_OFF' else ('amber' if regime.regime == 'VOLATILE' else 'gray')) %}

@@ -1464,12 +1464,18 @@ def create_app():
         regime = get_regime()
         dates = get_available_dates()
         hist_date = request.args.get("date")
+        try:
+            from tradingagents.execution.safety import SafetyMonitor
+            ks = SafetyMonitor(_cfg()).kill_switch_active
+        except Exception:
+            ks = False
         return {
             "market_status": mkt,
             "regime": regime,
             "now": datetime.now().strftime("%H:%M:%S"),
             "nav_dates": dates,
             "nav_hist_date": hist_date,
+            "kill_switch": ks,
         }
 
     # ── Page routes ──
@@ -1634,6 +1640,19 @@ def create_app():
     def api_trading_status():
         status = get_trading_status_data()
         return render_template("_trading_status.html", status=status)
+
+    @app.route("/api/kill-switch", methods=["POST"])
+    def api_kill_switch_toggle():
+        config = _cfg()
+        from tradingagents.execution.safety import SafetyMonitor
+        safety = SafetyMonitor(config)
+        if safety.kill_switch_active:
+            safety.reset_kill_switch()
+        else:
+            safety.kill_switch_active = True
+            safety._save_state()
+        active = safety.kill_switch_active
+        return render_template("_kill_switch_btn.html", kill_switch=active)
 
     @app.route("/api/run-calibration")
     def api_run_calibration():

@@ -72,9 +72,6 @@
 
     {# ── Right-aligned badges ── #}
     <span class="ml-auto flex items-center gap-1.5">
-      {% if status.kill_switch %}
-      <span class="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-red-100 text-red-700">KILL SWITCH</span>
-      {% endif %}
       {% if status.execution_mode %}
       <span class="text-[9px] font-semibold uppercase px-1.5 py-0.5 rounded bg-blue-50 text-blue-600">{{ status.execution_mode }}</span>
       {% endif %}

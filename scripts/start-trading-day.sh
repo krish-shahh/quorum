@@ -51,22 +51,30 @@ log "=== Cycle triggered at $TIMESTAMP ==="
 if [ "$MINS_TODAY" -eq 570 ]; then
     # 09:30 — Morning Planner
     CYCLE="planner-morning"
-    PROMPT='Follow the Session Start Protocol (check portfolio + regime), then run /trading-planner for the market open. This is the first plan of the day — full analysis on all tickers. Also check Kalshi positions via get_kalshi_positions.'
+    PROMPT='Follow the Session Start Protocol (check portfolio + regime), then run /trading-planner for the market open. This is the first plan of the day — full analysis on all tickers. Also check Kalshi positions via get_kalshi_positions.
+
+At the very end, output a push notification summary between "--- NOTIFICATION ---" markers. Max 4000 chars. Include: trades planned (ticker, action, size), portfolio snapshot (positions, cash%, P&L), regime, risk level, and any alerts. This block is extracted and sent as a mobile notification — make it scannable.'
 
 elif [ "$MINS_TODAY" -eq 720 ]; then
     # 12:00 — Midday conditional replan
     CYCLE="planner-midday"
-    PROMPT='Follow the Session Start Protocol. Check if regime or risk level has shifted materially since the morning plan. Call get_live_risk and get_market_regime — if risk escalated or regime changed, run /trading-planner to generate a new plan. If nothing changed, report "No replan needed — regime and risk stable" and exit.'
+    PROMPT='Follow the Session Start Protocol. Check if regime or risk level has shifted materially since the morning plan. Call get_live_risk and get_market_regime — if risk escalated or regime changed, run /trading-planner to generate a new plan. If nothing changed, report "No replan needed — regime and risk stable" and exit.
+
+At the very end, output a push notification summary between "--- NOTIFICATION ---" markers. Max 4000 chars. Include: whether a replan was triggered, regime status, risk level, and any material changes. This block is extracted and sent as a mobile notification — make it scannable.'
 
 elif [ "$MINS_TODAY" -eq 975 ]; then
     # 16:15 — Final Executor + EOD report
     CYCLE="executor-eod"
-    PROMPT='Run /trading-executor for the final cycle. After execution, produce the End-of-Day Report as described in CLAUDE.md. Update the memory files (portfolio_state.md, trading_decisions.md, watchlist_notes.md) with end-of-day state.'
+    PROMPT='Run /trading-executor for the final cycle. After execution, produce the End-of-Day Report as described in CLAUDE.md. Update the memory files (portfolio_state.md, trading_decisions.md, watchlist_notes.md) with end-of-day state.
+
+At the very end, output a push notification summary between "--- NOTIFICATION ---" markers. Max 4000 chars. Include: trades executed today, portfolio snapshot (all positions with P&L%), daily P&L, regime, and tomorrow watchlist. This block is extracted and sent as a mobile notification — make it scannable.'
 
 else
     # 10:00, 13:30, 15:30 — Executor cycles
     CYCLE="executor"
-    PROMPT='Run /trading-executor. Read the active plan from ~/.tradingagents/plans/active.md and execute it. If the plan is stale (3+ steps skip), report that a replan is needed.'
+    PROMPT='Run /trading-executor. Read the active plan from ~/.tradingagents/plans/active.md and execute it. If the plan is stale (3+ steps skip), report that a replan is needed.
+
+At the very end, output a push notification summary between "--- NOTIFICATION ---" markers. Max 4000 chars. Include: trades executed (ticker, action, shares, price), skipped steps, plan adherence %, portfolio cash%, and any alerts. This block is extracted and sent as a mobile notification — make it scannable.'
 fi
 
 log "Cycle: $CYCLE ($TIMESTAMP)"
@@ -96,10 +104,11 @@ fi
 # ── Push notification via ntfy.sh ──
 NTFY_TOPIC="tradingagents-23a6f73a"
 
-SUMMARY=$(echo "$OUTPUT" | tail -20 | grep -iE "trade|buy|sell|hold|portfolio|P&L|plan|executed|skipped|adherence|no material|all quiet" | head -5 | tr '\n' ' ' | cut -c1-250)
+# Extract the dedicated notification block from Claude's output
+SUMMARY=$(echo "$OUTPUT" | sed -n '/^--- NOTIFICATION ---$/,/^--- NOTIFICATION ---$/p' | sed '1d;$d' | head -c 4096)
 if [ -z "$SUMMARY" ]; then
     if [ $EXIT_CODE -eq 0 ]; then
-        SUMMARY="Cycle $CYCLE ($TIMESTAMP) completed. Check dashboard for details."
+        SUMMARY="Cycle $CYCLE ($TIMESTAMP) completed. No notification block found — check dashboard."
     else
         SUMMARY="Cycle $CYCLE ($TIMESTAMP) FAILED (exit $EXIT_CODE). Check logs."
     fi
