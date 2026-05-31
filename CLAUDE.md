@@ -36,15 +36,7 @@ This ensures every trading session starts with current context, even if native m
 
 ## Account Constraints
 
-- **Account size: $5,000** — This is a small account. Every dollar matters.
-- **Position sizing**: ~5% per position = ~$250 per trade. Must buy whole shares.
-- **Prefer lower-priced stocks**: A $250 allocation on a $300 stock buys 0 shares. Focus on stocks where $250 buys at least 1 full share (price < $250). Exception: if a higher-priced stock has an overwhelmingly strong signal (4.5+), consider a larger allocation (up to 7-8%).
-- **Conservative approach**: With $5K, preservation of capital matters more than aggressive growth. Score 3.2-3.5 = Hold, not Buy.
-- **Cash reserve**: Maintain >20% ($1,000+) cash at all times.
-- **Max positions**: 4-5 (not 6) given the small account — each position needs to be meaningful.
-- **Minimum holding period**: 7 trading days before selling (anti-whipsaw). Stop-losses override this.
-- **Sector concentration**: Max 50% in any single sector. Prevents the "buy 86% tech then forced-sell" trap.
-- **Underweight vs Sell**: When trimming, use Underweight (sells ~50%), NOT Sell (liquidates 100%). This is enforced in the executor skill.
+$5,000 paper account. Full rules in the trading-planner skill (Portfolio Rules section). Key limits enforced by pre-trade hook: 7-day holding period, 50% sector cap, 20% cash reserve, max 4-5 positions. Use Underweight (not Sell) for partial trims.
 
 ## End-of-Day Report
 
