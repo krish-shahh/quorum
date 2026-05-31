@@ -57,6 +57,7 @@ export default function App() {
             <EquityCurve
               equity={data.trades.equity}
               positions={data.account.positions}
+              books={data.account.books || []}
             />
           </div>
           <div>

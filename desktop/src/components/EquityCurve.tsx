@@ -1,55 +1,53 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { createChart, ColorType, CandlestickSeries, AreaSeries, HistogramSeries } from "lightweight-charts";
 import { Home } from "lucide-react";
-import type { CandleData, TradeMarker, Position } from "@/lib/api";
+import type { CandleData, Position, BookData } from "@/lib/api";
 
 const BASE_URL = "http://localhost:5050";
 
 interface Props {
   equity: { time: string; value: number }[];
   positions: Position[];
+  books: BookData[];
 }
 
-// Group tickers by book/sector for the dropdown
-// Group held positions by book for the dropdown (only show what we own)
-function buildTickerGroups(positions: Position[]): Map<string, string[]> {
-  const groups = new Map<string, string[]>();
-  for (const p of positions) {
-    const group = p.book || "Other";
-    if (!groups.has(group)) groups.set(group, []);
-    groups.get(group)!.push(p.ticker);
-  }
-  return groups;
-}
-
-export default function EquityCurve({ equity, positions }: Props) {
+export default function EquityCurve({ equity, positions, books }: Props) {
   const [selected, setSelected] = useState<string>("portfolio");
   const isTicker = selected !== "portfolio";
-  const groups = buildTickerGroups(positions);
+
+  // Build grouped dropdown: Portfolio > Books (sub-portfolios) > Individual tickers by book
+  const bookNames = books.map((b) => b.name);
 
   return (
     <div className="rounded-lg border bg-card p-4">
       <div className="flex items-center justify-between mb-3">
-        <h3 className="text-sm font-medium">
-          {isTicker ? selected : "Portfolio Equity"}
-        </h3>
+        <h3 className="text-sm font-medium">{selected === "portfolio" ? "Portfolio" : selected}</h3>
         <select
           value={selected}
           onChange={(e) => setSelected(e.target.value)}
           className="text-xs bg-muted border-none rounded px-2 py-1 font-mono outline-none cursor-pointer"
         >
           <option value="portfolio">Portfolio</option>
-          {Array.from(groups.entries()).map(([group, tickers]) => (
-            <optgroup key={group} label={group}>
-              {tickers.map((t) => (
-                <option key={t} value={t}>{t}</option>
+          {books.length > 0 && (
+            <optgroup label="Books">
+              {bookNames.map((name) => (
+                <option key={`book:${name}`} value={`book:${name}`}>{name}</option>
+              ))}
+            </optgroup>
+          )}
+          {books.map((book) => (
+            <optgroup key={book.name} label={book.name}>
+              {book.positions.map((p) => (
+                <option key={p.ticker} value={p.ticker}>{p.ticker}</option>
               ))}
             </optgroup>
           ))}
         </select>
       </div>
 
-      {isTicker ? (
+      {selected === "portfolio" ? (
+        <PortfolioChart equity={equity} />
+      ) : isTicker && !selected.startsWith("book:") ? (
         <TickerChart key={selected} ticker={selected} />
       ) : (
         <PortfolioChart equity={equity} />
@@ -58,13 +56,12 @@ export default function EquityCurve({ equity, positions }: Props) {
   );
 }
 
-// ── Portfolio: lightweight-charts AreaSeries (matches original Chart.js look) ──
+// ── Portfolio / Book: area chart ──
 
 function PortfolioChart({ equity }: { equity: { time: string; value: number }[] }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<ReturnType<typeof createChart> | null>(null);
 
-  // All valid points, sequential index as "time" to avoid date dedup issues
   const points = equity.filter((p) => p.time !== "Start" && p.time.includes("-"));
 
   useEffect(() => {
@@ -78,11 +75,6 @@ function PortfolioChart({ equity }: { equity: { time: string; value: number }[] 
 
     const positive = points[points.length - 1].value >= points[0].value;
     const color = positive ? "#16a34a" : "#dc2626";
-
-    const values = points.map((p) => p.value);
-    const minVal = Math.min(...values);
-    const maxVal = Math.max(...values);
-    const padding = Math.max((maxVal - minVal) * 0.15, 5);
 
     const chart = createChart(container, {
       layout: {
@@ -103,9 +95,7 @@ function PortfolioChart({ equity }: { equity: { time: string; value: number }[] 
         scaleMargins: { top: 0.1, bottom: 0.05 },
       },
       leftPriceScale: { visible: false },
-      timeScale: {
-        borderVisible: false,
-      },
+      timeScale: { borderVisible: false },
       crosshair: {
         horzLine: { visible: true, labelVisible: true },
         vertLine: { visible: true, labelVisible: true },
@@ -127,7 +117,7 @@ function PortfolioChart({ equity }: { equity: { time: string; value: number }[] 
       },
     });
 
-    // Deduplicate by date — keep last value per day (lightweight-charts needs unique dates)
+    // Deduplicate by date — keep last value per day
     const byDate = new Map<string, number>();
     for (const p of points) {
       byDate.set(p.time.slice(0, 10), p.value);
@@ -138,10 +128,7 @@ function PortfolioChart({ equity }: { equity: { time: string; value: number }[] 
         .map(([time, value]) => ({ time, value }))
     );
 
-    chart.priceScale("right").applyOptions({
-      autoScale: true,
-    });
-
+    chart.priceScale("right").applyOptions({ autoScale: true });
     chart.timeScale().fitContent();
     chartRef.current = chart;
 
@@ -166,7 +153,7 @@ function PortfolioChart({ equity }: { equity: { time: string; value: number }[] 
   return <div ref={containerRef} className="min-h-[180px]" />;
 }
 
-// ── Ticker: lightweight-charts candlestick with trade markers ──
+// ── Ticker: candlestick + volume (pure price data, no trade overlays) ──
 
 function TickerChart({ ticker }: { ticker: string }) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -182,16 +169,12 @@ function TickerChart({ ticker }: { ticker: string }) {
 
     async function load() {
       try {
-        const [chartRes, tradeRes] = await Promise.all([
-          fetch(`${BASE_URL}/api/v1/chart/${ticker}?days=90`).then((r) => r.json()),
-          fetch(`${BASE_URL}/api/v1/trades/${ticker}`).then((r) => r.json()),
-        ]);
+        const res = await fetch(`${BASE_URL}/api/v1/chart/${ticker}?days=90`);
+        const chartRes = await res.json();
 
         if (cancelled || !container) return;
 
         const candles: CandleData[] = chartRes.candles || [];
-        const trades: TradeMarker[] = tradeRes.trades || [];
-
         if (candles.length === 0) { setLoading(false); return; }
 
         if (chartRef.current) {
@@ -224,7 +207,7 @@ function TickerChart({ ticker }: { ticker: string }) {
           },
         });
 
-        // Volume first
+        // Volume
         const volumeSeries = chart.addSeries(HistogramSeries, {
           priceFormat: { type: "volume" },
           priceScaleId: "",
@@ -251,22 +234,6 @@ function TickerChart({ ticker }: { ticker: string }) {
           wickDownColor: "#dc2626",
         });
         candleSeries.setData(candles);
-
-        // Trade markers
-        if (trades.length > 0) {
-          const candleDates = new Set(candles.map((c) => c.time));
-          const markers = trades
-            .filter((t) => candleDates.has(t.time))
-            .map((t) => ({
-              time: t.time,
-              position: t.side === "buy" ? ("belowBar" as const) : ("aboveBar" as const),
-              color: t.side === "buy" ? "#16a34a" : "#dc2626",
-              shape: t.side === "buy" ? ("arrowUp" as const) : ("arrowDown" as const),
-              text: `${t.side.toUpperCase()} ${t.qty}`,
-              size: 1.5,
-            }));
-          if (markers.length > 0) candleSeries.setMarkers(markers);
-        }
 
         chart.timeScale().fitContent();
         chartRef.current = chart;
