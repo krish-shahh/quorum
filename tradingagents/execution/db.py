@@ -276,6 +276,25 @@ CREATE TABLE IF NOT EXISTS signal_scores (
 );
 CREATE INDEX IF NOT EXISTS idx_ss_ticker ON signal_scores(ticker);
 CREATE INDEX IF NOT EXISTS idx_ss_date ON signal_scores(score_date);
+
+CREATE TABLE IF NOT EXISTS council_analyst_reports (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    ticker            TEXT    NOT NULL,
+    analysis_date     TEXT    NOT NULL,
+    technical_report  TEXT    NOT NULL DEFAULT '',
+    fundamental_report TEXT   NOT NULL DEFAULT '',
+    sentiment_report  TEXT    NOT NULL DEFAULT '',
+    news_report       TEXT    NOT NULL DEFAULT '',
+    bull_case         TEXT    NOT NULL DEFAULT '',
+    bear_case         TEXT    NOT NULL DEFAULT '',
+    pm_decision       TEXT    NOT NULL DEFAULT '',
+    debate_triggered  INTEGER NOT NULL DEFAULT 0,
+    council_signal    TEXT    NOT NULL DEFAULT '',
+    weighted_score    REAL,
+    created_at        TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_car_ticker ON council_analyst_reports(ticker);
+CREATE INDEX IF NOT EXISTS idx_car_date ON council_analyst_reports(analysis_date);
 """
 
 # ──────────────────────────────────────────────────────────────────────
@@ -689,6 +708,55 @@ def save_signal_score(
         ),
     )
     conn.commit()
+
+
+def save_council_analyst_reports(
+    config: Optional[Dict[str, Any]],
+    ticker: str,
+    reports: Dict[str, str],
+    signal: str = "",
+    weighted_score: Optional[float] = None,
+    debate_triggered: bool = False,
+) -> None:
+    """Persist individual analyst reports from a council cycle."""
+    from datetime import date
+    conn = get_db(config)
+    conn.execute(
+        """INSERT INTO council_analyst_reports
+           (ticker, analysis_date, technical_report, fundamental_report,
+            sentiment_report, news_report, bull_case, bear_case,
+            pm_decision, debate_triggered, council_signal, weighted_score)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            ticker,
+            date.today().isoformat(),
+            reports.get("technical", ""),
+            reports.get("fundamental", ""),
+            reports.get("sentiment", ""),
+            reports.get("news", ""),
+            reports.get("bull_case", ""),
+            reports.get("bear_case", ""),
+            reports.get("pm_decision", ""),
+            1 if debate_triggered else 0,
+            signal,
+            weighted_score,
+        ),
+    )
+    conn.commit()
+
+
+def get_council_analyst_reports(
+    config: Optional[Dict[str, Any]],
+    ticker: str,
+    limit: int = 3,
+) -> List[Dict[str, Any]]:
+    """Return recent analyst reports for a ticker, most recent first."""
+    conn = get_db(config)
+    rows = conn.execute(
+        "SELECT * FROM council_analyst_reports WHERE ticker = ? ORDER BY created_at DESC LIMIT ?",
+        (ticker, limit),
+    ).fetchall()
+    return [dict(r) for r in rows]
 
 
 def fill_forward_returns(config: Optional[Dict[str, Any]] = None) -> int:

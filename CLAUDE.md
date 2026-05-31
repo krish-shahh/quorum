@@ -203,6 +203,8 @@ Reflection: get_trade_reflections (past outcome lessons for PM prompt injection)
 
 Analytics: get_analyst_accuracy (per-analyst IC and directional accuracy — shows which analysts are predictive)
 
+Transparency: save_council_reports (persist individual analyst reports from each council cycle), get_council_reports (retrieve past analyst reasoning for a ticker)
+
 Kalshi: get_kalshi_markets, get_kalshi_market, get_kalshi_orderbook, get_kalshi_events, get_kalshi_event, execute_kalshi_paper_trade, get_kalshi_positions
 
 Kalshi Arbitrage: scan_kalshi_overround, scan_kalshi_bias, get_dutch_book_detail, execute_kalshi_arb_trade, get_prediction_candidates

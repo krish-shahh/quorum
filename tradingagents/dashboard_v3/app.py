@@ -387,6 +387,17 @@ def get_ticker_detail(ticker):
         return {"detail": {}, "history": [], "quant": {}}
 
 
+def get_analyst_reports(ticker):
+    """Get persisted analyst reports from council cycles."""
+    try:
+        config = _cfg()
+        from tradingagents.execution.db import get_council_analyst_reports
+        return get_council_analyst_reports(config, ticker, limit=3)
+    except Exception as e:
+        print(f"[v3] analyst reports error: {e}")
+        return []
+
+
 def get_ticker_reflections(ticker):
     """Get trade reflections for a ticker (past outcome lessons)."""
     try:
@@ -1447,6 +1458,13 @@ def create_app():
         """Return 'contracts' for futures, 'shares' for everything else."""
         return "contracts" if asset_class == "future" else "shares"
 
+    @app.template_filter("usd_int")
+    def usd_int_filter(v):
+        """Format as $1,234 (no decimals)."""
+        if v is None:
+            return "---"
+        return f"${v:,.0f}"
+
     def _domain_label(asset_class, sector):
         labels = {
             "etf_bond": "Bond", "etf_commodity": "Commodity",
@@ -1458,131 +1476,37 @@ def create_app():
         return labels.get(asset_class) or sector_labels.get(sector or "") or "Fund"
 
     @app.context_processor
-    def inject_nav():
-        """Common data for the nav bar on every page."""
-        mkt = get_market_status()
-        regime = get_regime()
-        dates = get_available_dates()
-        hist_date = request.args.get("date")
+    def inject_globals():
+        """Minimal globals for API partials (kill switch toggle)."""
         try:
             from tradingagents.execution.safety import SafetyMonitor
             ks = SafetyMonitor(_cfg()).kill_switch_active
         except Exception:
             ks = False
-        return {
-            "market_status": mkt,
-            "regime": regime,
-            "now": datetime.now().strftime("%H:%M:%S"),
-            "nav_dates": dates,
-            "nav_hist_date": hist_date,
-            "kill_switch": ks,
-        }
+        return {"kill_switch": ks}
 
-    # ── Page routes ──
+    # ── Single page route ──
 
     @app.route("/")
-    def trading():
+    def index():
         hist_date = request.args.get("date")
         acct = get_account_data()
         trades = get_trades_data()
-        dates = get_available_dates()
+        regime = get_regime()
+        market = get_market_status()
+        states = get_ticker_states()
+        predictions = get_kalshi_positions()
         historical = get_historical_data(hist_date) if hist_date else None
         status = get_trading_status_data() if not hist_date else None
-        return render_template("trading.html",
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        return render_template("index.html",
                                acct=acct, trades=trades,
-                               dates=dates,
+                               regime=regime, market=market,
+                               states=states,
+                               predictions=predictions,
                                hist_date=hist_date, historical=historical,
                                status=status,
-                               page="trading")
-
-    @app.route("/council")
-    def council():
-        states = get_ticker_states()
-        return render_template("council.html",
-                               states=states,
-                               page="council")
-
-    @app.route("/performance")
-    def performance():
-        acct = get_account_data()
-        trades = get_trades_data()
-        slippage = get_slippage_data()
-        return render_template("performance.html",
-                               acct=acct, trades=trades, slippage=slippage,
-                               page="performance")
-
-    @app.route("/research")
-    def research():
-        query = request.args.get("q", "")
-        filter_type = request.args.get("filter", "all")
-        wiki_path = request.args.get("page")
-        report_ticker = request.args.get("rt", "")
-        report_type = request.args.get("rtype", "all")
-        digest_date = request.args.get("digest")
-
-        search_results = search_wiki_pages(query) if query else []
-        pages = get_wiki_pages(filter_type)
-        wiki_html = get_wiki_content(wiki_path) if wiki_path else ""
-        wiki_title = wiki_path.split("/")[-1].replace(".md", "") if wiki_path else ""
-
-        reports = get_trade_reports(limit=30)
-        if report_ticker:
-            reports = [r for r in reports if report_ticker.upper() in r["ticker"].upper()]
-        if report_type != "all":
-            reports = [r for r in reports if r["report_type"] == report_type]
-
-        digest_dates = get_daily_digest_dates()
-        digest_html = get_daily_digest_html(digest_date) if digest_date else ""
-
-        return render_template("research.html",
-                               query=query, search_results=search_results,
-                               filter_type=filter_type, pages=pages,
-                               wiki_html=wiki_html, wiki_title=wiki_title,
-                               wiki_path=wiki_path,
-                               reports=reports, report_ticker=report_ticker,
-                               report_type=report_type,
-                               digest_dates=digest_dates, digest_date=digest_date,
-                               digest_html=digest_html,
-                               page="research")
-
-    @app.route("/predictions")
-    def predictions():
-        kalshi_positions = get_kalshi_positions()
-        kalshi_events = get_kalshi_trending_events()
-        arb_executions = get_arb_executions()
-        council_candidates = get_council_candidates_data()
-        poly_markets = get_polymarket_trending()
-        calibration = get_kalshi_calibration()
-        return render_template("predictions.html",
-                               positions=kalshi_positions,
-                               events=kalshi_events,
-                               arb_executions=arb_executions,
-                               council_candidates=council_candidates,
-                               poly_markets=poly_markets,
-                               calibration=calibration,
-                               page="predictions")
-
-    @app.route("/pipeline")
-    def pipeline():
-        dag_ticker = request.args.get("dag")
-        acct = get_account_data()
-        cache = get_cache_stats()
-        timeline = get_cycle_timeline()
-        deltas = get_ticker_deltas()
-        slippage = get_slippage_data()
-        dag = get_dag_data(dag_ticker) if dag_ticker else None
-        sectors = get_sector_rotation()
-        watchlist = get_watchlist()
-        clusters = get_insider_clusters(acct["positions"], watchlist)
-        congress = get_congress_recent(acct["positions"], watchlist)
-        plan_metrics = get_plan_metrics_data()
-        return render_template("pipeline.html",
-                               cache=cache, timeline=timeline, deltas=deltas,
-                               slippage=slippage, dag_ticker=dag_ticker, dag=dag,
-                               sectors=sectors, clusters=clusters,
-                               congress_trades=congress,
-                               plan=plan_metrics,
-                               page="pipeline")
+                               now=now)
 
     # ── API / htmx partials ──
 
@@ -1612,8 +1536,10 @@ def create_app():
             return "<p class='text-gray-400 text-sm'>No ticker specified</p>"
         detail = get_ticker_detail(ticker)
         reflections = get_ticker_reflections(ticker)
+        analyst_reports = get_analyst_reports(ticker)
         return render_template("_council_detail.html",
-                               ticker=ticker, detail=detail, reflections=reflections)
+                               ticker=ticker, detail=detail, reflections=reflections,
+                               analyst_reports=analyst_reports)
 
     @app.route("/api/plan-metrics")
     def api_plan_metrics():

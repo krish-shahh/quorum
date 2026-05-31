@@ -31,6 +31,7 @@ allowed-tools:
   - mcp__tradingagents__score_council
   - mcp__tradingagents__get_trade_reflections
   - mcp__tradingagents__get_cache_stats
+  - mcp__tradingagents__save_council_reports
   - mcp__tradingagents__save_analysis_to_wiki
 ---
 
@@ -441,7 +442,29 @@ Otherwise (default, headless mode):
 ln -sf ~/.tradingagents/plans/{PLAN_ID}.md ~/.tradingagents/plans/active.md
 ```
 
-### 6.6: Save Wiki
+### 6.6: Save Analyst Reports (MANDATORY for transparency)
+
+For EACH ticker analyzed, call `save_council_reports` with a **condensed summary** (2-4 sentences) of what each analyst subagent said. This creates an audit trail so every council decision can be traced back to individual analyst reasoning.
+
+```
+save_council_reports(
+    ticker="{TICKER}",
+    technical_report="{2-4 sentence summary of Technical Analyst output}",
+    fundamental_report="{2-4 sentence summary of Domain Analyst output}",
+    sentiment_report="{2-4 sentence summary of Sentiment Analyst output}",
+    news_report="{2-4 sentence summary of News/Macro Analyst output}",
+    bull_case="{Bull Researcher summary, or empty if debate skipped}",
+    bear_case="{Bear Researcher summary, or empty if debate skipped}",
+    pm_decision="{PM's rationale if debate ran, or empty}",
+    council_signal="{final signal}",
+    weighted_score={score},
+    debate_triggered={true/false}
+)
+```
+
+This is critical — without it, analyst reasoning vanishes after the session.
+
+### 6.7: Save Wiki
 
 Call `save_analysis_to_wiki` for each ticker with the full thesis. When debate ran, the wiki page will automatically populate Bull Arguments, Bear Arguments, Research Plan, Trader Proposal, and Risk Debate sections.
 

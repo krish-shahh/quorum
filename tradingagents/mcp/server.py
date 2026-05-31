@@ -89,6 +89,9 @@ def create_server():
         # Analytics
         Tool(name="get_analytics_summary", description="Get portfolio analytics: Sharpe ratio, Sortino ratio, drawdown, win rate, alpha vs SPY.", inputSchema={"type": "object", "properties": {}}),
         Tool(name="get_analyst_accuracy", description="Get per-analyst Information Coefficient (IC) and directional accuracy. Shows which of the 4 analysts (technical, fundamental, sentiment, news) are most predictive based on forward 5-day returns. Requires 20+ scored tickers with filled forward returns.", inputSchema={"type": "object", "properties": {}}),
+        # Council analyst reports (transparency/audit)
+        Tool(name="save_council_reports", description="Save individual analyst reports from a council cycle. Call this after score_council to persist what each subagent said. This enables transparency, audit trails, and trade reflections.", inputSchema={"type": "object", "properties": {"ticker": {"type": "string"}, "technical_report": {"type": "string", "description": "Technical analyst's full summary"}, "fundamental_report": {"type": "string", "description": "Domain/fundamental analyst's full summary"}, "sentiment_report": {"type": "string", "description": "Sentiment analyst's full summary"}, "news_report": {"type": "string", "description": "News/macro analyst's full summary"}, "bull_case": {"type": "string", "default": "", "description": "Bull researcher output (if debate ran)"}, "bear_case": {"type": "string", "default": "", "description": "Bear researcher output (if debate ran)"}, "pm_decision": {"type": "string", "default": "", "description": "Portfolio Manager decision rationale (if debate ran)"}, "council_signal": {"type": "string", "default": ""}, "weighted_score": {"type": "number"}, "debate_triggered": {"type": "boolean", "default": false}}, "required": ["ticker", "technical_report", "fundamental_report", "sentiment_report", "news_report"]}),
+        Tool(name="get_council_reports", description="Get past analyst reports for a ticker — shows what each subagent (technical, fundamental, sentiment, news, bull, bear, PM) said in recent council cycles. Use for transparency and understanding past decisions.", inputSchema={"type": "object", "properties": {"ticker": {"type": "string"}, "limit": {"type": "integer", "default": 3}}, "required": ["ticker"]}),
         # Trade reflections (self-reflection for Portfolio Manager)
         Tool(name="get_trade_reflections", description="Get past trade outcomes and lessons for a ticker. Returns resolved trades, win/loss patterns, and generated insights. Used by the Portfolio Manager to learn from past decisions and avoid repeating mistakes.", inputSchema={"type": "object", "properties": {"ticker": {"type": "string", "description": "Ticker symbol to get reflections for"}, "include_sector": {"type": "boolean", "default": True, "description": "Include same-sector pattern analysis"}, "limit": {"type": "integer", "default": 5, "description": "Max outcomes to show per section"}}, "required": ["ticker"]}),
         # Cache stats
@@ -563,6 +566,62 @@ def _handle_tool(name: str, args: dict) -> str:
             "- Reduce size if earnings within 3 days\n"
             f"- You have ${account.cash_balance:,.2f} cash available for new positions"
         )
+        return "\n".join(lines)
+
+    # ── Council Analyst Reports (transparency) ────────────────────────
+    if name == "save_council_reports":
+        from tradingagents.execution.db import save_council_analyst_reports
+        ticker = args["ticker"].upper()
+        reports = {
+            "technical": args.get("technical_report", ""),
+            "fundamental": args.get("fundamental_report", ""),
+            "sentiment": args.get("sentiment_report", ""),
+            "news": args.get("news_report", ""),
+            "bull_case": args.get("bull_case", ""),
+            "bear_case": args.get("bear_case", ""),
+            "pm_decision": args.get("pm_decision", ""),
+        }
+        save_council_analyst_reports(
+            config, ticker, reports,
+            signal=args.get("council_signal", ""),
+            weighted_score=args.get("weighted_score"),
+            debate_triggered=bool(args.get("debate_triggered", False)),
+        )
+        return f"Council analyst reports saved for {ticker}"
+
+    if name == "get_council_reports":
+        from tradingagents.execution.db import get_council_analyst_reports
+        ticker = args["ticker"].upper()
+        limit = int(args.get("limit", 3))
+        reports = get_council_analyst_reports(config, ticker, limit)
+        if not reports:
+            return f"No council reports found for {ticker}"
+        lines = [f"# Council Analyst Reports: {ticker}", ""]
+        for r in reports:
+            lines.append(f"## {r['analysis_date']} — {r['council_signal']} (score: {r['weighted_score']})")
+            if r['debate_triggered']:
+                lines.append("*Debate was triggered*")
+            lines.append("")
+            for label, key in [("Technical", "technical_report"), ("Fundamental", "fundamental_report"),
+                               ("Sentiment", "sentiment_report"), ("News/Macro", "news_report")]:
+                text = r.get(key, "").strip()
+                if text:
+                    lines.append(f"### {label}")
+                    lines.append(text[:500])  # Cap at 500 chars per section
+                    lines.append("")
+            if r.get("bull_case", "").strip():
+                lines.append("### Bull Case")
+                lines.append(r["bull_case"][:500])
+                lines.append("")
+            if r.get("bear_case", "").strip():
+                lines.append("### Bear Case")
+                lines.append(r["bear_case"][:500])
+                lines.append("")
+            if r.get("pm_decision", "").strip():
+                lines.append("### PM Decision")
+                lines.append(r["pm_decision"][:500])
+                lines.append("")
+            lines.append("---")
         return "\n".join(lines)
 
     if name == "save_analysis_to_wiki":

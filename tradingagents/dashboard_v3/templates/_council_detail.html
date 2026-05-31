@@ -92,6 +92,55 @@
   </div>
   {% endif %}
 
+  {# Analyst Reports from council cycles #}
+  {% if analyst_reports %}
+  <div class="mt-5 border-t border-gray-100 pt-3">
+    <div class="text-[9px] uppercase tracking-wider text-gray-400 font-semibold mb-2">Analyst Reports</div>
+    {% for rpt in analyst_reports %}
+    <div class="mb-3 {% if not loop.last %}border-b border-gray-50 pb-3{% endif %}">
+      <div class="flex items-center gap-2 mb-1.5">
+        <span class="text-[10px] font-mono text-gray-400">{{ rpt.analysis_date }}</span>
+        {{ signal_badge(rpt.council_signal) }}
+        {% if rpt.weighted_score %}<span class="text-[10px] font-mono text-gray-500">{{ "%.2f"|format(rpt.weighted_score) }}</span>{% endif %}
+        {% if rpt.debate_triggered %}<span class="text-[9px] font-bold px-1 py-0.5 rounded bg-violet-50 text-violet-700">Debate</span>{% endif %}
+      </div>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
+        {% for label, key, color in [('Technical', 'technical_report', 'blue'), ('Fundamental', 'fundamental_report', 'purple'), ('Sentiment', 'sentiment_report', 'amber'), ('News/Macro', 'news_report', 'cyan')] %}
+        {% if rpt[key] %}
+        <div class="bg-gray-50 rounded p-2">
+          <div class="text-[9px] uppercase tracking-wider text-{{ color }}-500 font-semibold mb-0.5">{{ label }}</div>
+          <div class="text-[11px] text-gray-600 leading-relaxed">{{ rpt[key][:300] }}{% if rpt[key]|length > 300 %}...{% endif %}</div>
+        </div>
+        {% endif %}
+        {% endfor %}
+      </div>
+      {% if rpt.bull_case %}
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-2 mt-2">
+        {% if rpt.bull_case.strip() %}
+        <div class="bg-green-50 rounded p-2">
+          <div class="text-[9px] uppercase tracking-wider text-green-600 font-semibold mb-0.5">Bull Case</div>
+          <div class="text-[11px] text-gray-600 leading-relaxed">{{ rpt.bull_case[:300] }}</div>
+        </div>
+        {% endif %}
+        {% if rpt.bear_case and rpt.bear_case.strip() %}
+        <div class="bg-red-50 rounded p-2">
+          <div class="text-[9px] uppercase tracking-wider text-red-600 font-semibold mb-0.5">Bear Case</div>
+          <div class="text-[11px] text-gray-600 leading-relaxed">{{ rpt.bear_case[:300] }}</div>
+        </div>
+        {% endif %}
+      </div>
+      {% endif %}
+      {% if rpt.pm_decision and rpt.pm_decision.strip() %}
+      <div class="bg-indigo-50 rounded p-2 mt-2">
+        <div class="text-[9px] uppercase tracking-wider text-indigo-600 font-semibold mb-0.5">PM Decision</div>
+        <div class="text-[11px] text-gray-600 leading-relaxed">{{ rpt.pm_decision[:300] }}</div>
+      </div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
   {% if reflections %}
   <div class="mt-5 border-t border-gray-100 pt-3">
     <div class="text-[9px] uppercase tracking-wider text-gray-400 font-semibold mb-2">Trade Reflections</div>
