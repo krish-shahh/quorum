@@ -88,6 +88,7 @@ def create_server():
         Tool(name="prune_wiki", description="Archive wiki pages older than N days. Keeps the injected context sharp by removing stale analyses. Returns count of archived pages.", inputSchema={"type": "object", "properties": {"max_age_days": {"type": "integer", "default": 30, "description": "Archive pages older than this (default 30)"}}}),
         # Analytics
         Tool(name="get_analytics_summary", description="Get portfolio analytics: Sharpe ratio, Sortino ratio, drawdown, win rate, alpha vs SPY.", inputSchema={"type": "object", "properties": {}}),
+        Tool(name="get_analyst_accuracy", description="Get per-analyst Information Coefficient (IC) and directional accuracy. Shows which of the 4 analysts (technical, fundamental, sentiment, news) are most predictive based on forward 5-day returns. Requires 20+ scored tickers with filled forward returns.", inputSchema={"type": "object", "properties": {}}),
         # Trade reflections (self-reflection for Portfolio Manager)
         Tool(name="get_trade_reflections", description="Get past trade outcomes and lessons for a ticker. Returns resolved trades, win/loss patterns, and generated insights. Used by the Portfolio Manager to learn from past decisions and avoid repeating mistakes.", inputSchema={"type": "object", "properties": {"ticker": {"type": "string", "description": "Ticker symbol to get reflections for"}, "include_sector": {"type": "boolean", "default": True, "description": "Include same-sector pattern analysis"}, "limit": {"type": "integer", "default": 5, "description": "Max outcomes to show per section"}}, "required": ["ticker"]}),
         # Cache stats
@@ -948,6 +949,28 @@ def _handle_tool(name: str, args: dict) -> str:
         buy_thresh = strat.get("buy_threshold", 3.5)
         sell_thresh = strat.get("sell_threshold", 2.5)
 
+        # ── Holding period check (anti-whipsaw) ──
+        holding_note = ""
+        if is_held:
+            try:
+                from tradingagents.execution.db import get_db
+                from datetime import datetime
+                min_hold = int(config.get("min_holding_days", 7))
+                conn_hold = get_db(config)
+                buy_row = conn_hold.execute(
+                    "SELECT timestamp FROM trades WHERE ticker = ? AND signal IN ('Buy', 'Overweight') "
+                    "AND action_taken = 'executed' ORDER BY timestamp DESC LIMIT 1",
+                    (ticker,),
+                ).fetchone()
+                if buy_row:
+                    buy_ts = buy_row["timestamp"]
+                    buy_time = datetime.fromisoformat(buy_ts.replace("Z", "+00:00")) if "T" in buy_ts else datetime.strptime(buy_ts, "%Y-%m-%d %H:%M:%S")
+                    days_held = (datetime.now() - buy_time.replace(tzinfo=None)).days
+                    if days_held < min_hold:
+                        holding_note = f"COOLDOWN: Position opened {days_held}d ago (min {min_hold}d). Sell/Underweight blocked unless stop-loss."
+            except Exception:
+                pass
+
         # ── Determine signal ──
         if vetoes:
             if is_held:
@@ -994,6 +1017,9 @@ def _handle_tool(name: str, args: dict) -> str:
         if outlier_notes:
             lines.append(f"")
             lines.append(f"**Outliers:** {'; '.join(outlier_notes)}")
+        if holding_note:
+            lines.append(f"")
+            lines.append(f"**{holding_note}**")
 
         # Persist ticker state for delta-aware cycles
         try:
@@ -1014,6 +1040,46 @@ def _handle_tool(name: str, args: dict) -> str:
         except Exception as exc:
             logger.warning("Failed to save signal score: %s", exc)
 
+        return "\n".join(lines)
+
+    # ── Analyst Accuracy ────────────────────────────────────────────
+    if name == "get_analyst_accuracy":
+        from tradingagents.execution.db import compute_analyst_accuracy, fill_forward_returns
+        # Fill any pending forward returns first
+        try:
+            filled = fill_forward_returns(config)
+            if filled > 0:
+                logger.info("Filled %d forward return rows", filled)
+        except Exception:
+            pass
+
+        result = compute_analyst_accuracy(config)
+        if result["status"] == "insufficient_data":
+            return (
+                f"# Analyst Accuracy\n\n"
+                f"Insufficient data: {result['sample_size']} scored tickers "
+                f"(need {result['min_required']}+). "
+                f"Accuracy tracking will activate after more council cycles complete."
+            )
+
+        lines = [
+            "# Analyst Accuracy (IC & Directional)",
+            f"Sample: {result['sample_size']} scored tickers with 5-day forward returns",
+            "",
+            "| Analyst | IC (rank corr) | Bullish Acc | Bearish Acc | N |",
+            "|---------|---------------|-------------|-------------|---|",
+        ]
+        for analyst in ["technical", "fundamental", "sentiment", "news", "council"]:
+            a = result.get(analyst, {})
+            ic = f"{a['ic']:+.4f}" if a.get("ic") is not None else "N/A"
+            bull = f"{a['bullish_accuracy']:.0%}" if a.get("bullish_accuracy") is not None else "N/A"
+            bear = f"{a['bearish_accuracy']:.0%}" if a.get("bearish_accuracy") is not None else "N/A"
+            n = a.get("n", 0)
+            lines.append(f"| {analyst.title()} | {ic} | {bull} | {bear} | {n} |")
+
+        lines.append("")
+        lines.append("IC > 0.05 = predictive. IC < -0.05 = contrarian signal. IC ~ 0 = noise.")
+        lines.append("Use these to weight analyst scores — higher IC analysts should have more influence.")
         return "\n".join(lines)
 
     # ── Cache Stats ─────────────────────────────────────────────────

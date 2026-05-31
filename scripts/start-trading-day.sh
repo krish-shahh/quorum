@@ -101,6 +101,34 @@ else
     log "=== Cycle $CYCLE FAILED (exit code: $EXIT_CODE) ==="
 fi
 
+# ── Auto-replan: if executor reports plan exhausted, trigger planner ──
+if [[ "$CYCLE" == "executor" ]] && echo "$OUTPUT" | grep -qi "plan.*exhaust\|plan.*fully.*executed\|no remaining actionable"; then
+    if [ "$MINS_TODAY" -lt 960 ]; then  # Don't replan after 16:00
+        log "Auto-replan triggered: plan exhausted, running planner..."
+        REPLAN_PROMPT='The previous executor cycle reported the plan is exhausted (all steps complete or skipped). Run /trading-planner to generate a fresh plan with current market data. Focus on deploying excess cash into new opportunities.
+
+At the very end, output a push notification summary between "--- NOTIFICATION ---" markers. Max 4000 chars.'
+
+        REPLAN_OUTPUT=$("$CLAUDE_BIN" -p "$REPLAN_PROMPT" \
+            --dangerously-skip-permissions \
+            --output-format text \
+            2>&1 | tee -a "$LOG_DIR/trading-$DATE.log")
+
+        REPLAN_EXIT=${PIPESTATUS[0]}
+        if [ $REPLAN_EXIT -eq 0 ]; then
+            log "=== Auto-replan completed successfully ==="
+            # Merge replan notification into main output
+            REPLAN_NOTIF=$(echo "$REPLAN_OUTPUT" | sed -n '/^--- NOTIFICATION ---$/,/^--- NOTIFICATION ---$/p' | sed '1d;$d' | head -c 4096)
+            if [ -n "$REPLAN_NOTIF" ]; then
+                curl -s -H "Title: auto-replan $TIMESTAMP" -H "Priority: default" -H "Tags: memo" \
+                    -d "$REPLAN_NOTIF" "ntfy.sh/$NTFY_TOPIC" >> "$LOG_DIR/trading-$DATE.log" 2>&1 || true
+            fi
+        else
+            log "=== Auto-replan FAILED (exit code: $REPLAN_EXIT) ==="
+        fi
+    fi
+fi
+
 # ── Push notification via ntfy.sh ──
 NTFY_TOPIC="tradingagents-23a6f73a"
 
@@ -113,6 +141,10 @@ if [ -z "$SUMMARY" ]; then
         SUMMARY="Cycle $CYCLE ($TIMESTAMP) FAILED (exit $EXIT_CODE). Check logs."
     fi
 fi
+
+# ── Archive notification locally (ntfy only caches 12h) ──
+NOTIF_ARCHIVE="$HOME/.tradingagents/notifications.jsonl"
+echo "{\"timestamp\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"cycle\":\"$CYCLE\",\"exit_code\":$EXIT_CODE,\"message\":$(echo "$SUMMARY" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')}" >> "$NOTIF_ARCHIVE" 2>/dev/null || true
 
 curl -s \
     -H "Title: $CYCLE $TIMESTAMP" \

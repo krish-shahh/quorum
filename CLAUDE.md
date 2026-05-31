@@ -42,6 +42,9 @@ This ensures every trading session starts with current context, even if native m
 - **Conservative approach**: With $5K, preservation of capital matters more than aggressive growth. Score 3.2-3.5 = Hold, not Buy.
 - **Cash reserve**: Maintain >20% ($1,000+) cash at all times.
 - **Max positions**: 4-5 (not 6) given the small account — each position needs to be meaningful.
+- **Minimum holding period**: 7 trading days before selling (anti-whipsaw). Stop-losses override this.
+- **Sector concentration**: Max 50% in any single sector. Prevents the "buy 86% tech then forced-sell" trap.
+- **Underweight vs Sell**: When trimming, use Underweight (sells ~50%), NOT Sell (liquidates 100%). This is enforced in the executor skill.
 
 ## End-of-Day Report
 
@@ -197,6 +200,8 @@ State & Cache: get_ticker_state, get_ticker_deltas, get_cache_stats, get_asset_i
 Quant & Risk: get_quant_scores, get_portfolio_risk, get_live_risk
 
 Reflection: get_trade_reflections (past outcome lessons for PM prompt injection)
+
+Analytics: get_analyst_accuracy (per-analyst IC and directional accuracy — shows which analysts are predictive)
 
 Kalshi: get_kalshi_markets, get_kalshi_market, get_kalshi_orderbook, get_kalshi_events, get_kalshi_event, execute_kalshi_paper_trade, get_kalshi_positions
 

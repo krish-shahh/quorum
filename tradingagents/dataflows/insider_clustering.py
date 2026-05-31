@@ -66,26 +66,37 @@ class InsiderClusterDetector:
 
         window_txns = [t for t in transactions if t["date"] >= window_start]
 
-        # Count distinct insiders
+        # Count distinct insiders, separating systematic (10b5-1) from discretionary
         buyers: set = set()
-        sellers: set = set()
+        sellers_discretionary: set = set()
+        sellers_systematic: set = set()
         for t in window_txns:
             if t["type"] in ("Purchase", "Buy", "P - Purchase"):
                 buyers.add(t["insider"])
             elif t["type"] in ("Sale", "Sell", "S - Sale", "S - Sale+OE"):
-                sellers.add(t["insider"])
+                if t.get("is_10b5_1"):
+                    sellers_systematic.add(t["insider"])
+                else:
+                    sellers_discretionary.add(t["insider"])
 
         buy_count = len(buyers)
-        sell_count = len(sellers)
+        # Discretionary sells are the real signal; systematic (10b5-1) are noise
+        discretionary_sell_count = len(sellers_discretionary)
+        systematic_sell_count = len(sellers_systematic)
+        total_sell_count = len(sellers_discretionary | sellers_systematic)
 
-        cluster_detected = buy_count >= self.min_insiders or sell_count >= self.min_insiders
+        # Cluster detection uses discretionary sellers only — 10b5-1 plans
+        # are pre-scheduled and don't reflect current insider conviction
+        cluster_detected = buy_count >= self.min_insiders or discretionary_sell_count >= self.min_insiders
 
-        if buy_count >= self.min_insiders and sell_count >= self.min_insiders:
+        if buy_count >= self.min_insiders and discretionary_sell_count >= self.min_insiders:
             direction = "mixed"
         elif buy_count >= self.min_insiders:
             direction = "buy"
-        elif sell_count >= self.min_insiders:
+        elif discretionary_sell_count >= self.min_insiders:
             direction = "sell"
+        elif total_sell_count >= self.min_insiders and discretionary_sell_count == 0:
+            direction = "systematic_only"  # All sells are 10b5-1 — weak signal
         else:
             direction = None
 
@@ -93,9 +104,11 @@ class InsiderClusterDetector:
             "cluster_detected": cluster_detected,
             "ticker": ticker,
             "direction": direction,
-            "insider_count": max(buy_count, sell_count),
+            "insider_count": max(buy_count, discretionary_sell_count),
             "buy_count": buy_count,
-            "sell_count": sell_count,
+            "sell_count": total_sell_count,
+            "discretionary_sell_count": discretionary_sell_count,
+            "systematic_sell_count": systematic_sell_count,
             "window_start": window_start.strftime("%Y-%m-%d"),
             "window_end": latest_date.strftime("%Y-%m-%d"),
             "transactions": [
@@ -105,6 +118,7 @@ class InsiderClusterDetector:
                     "date": t["date"].strftime("%Y-%m-%d"),
                     "shares": t.get("shares"),
                     "value": t.get("value"),
+                    "is_10b5_1": t.get("is_10b5_1", False),
                 }
                 for t in window_txns[:20]
             ],
@@ -159,12 +173,27 @@ class InsiderClusterDetector:
                 except (TypeError, ValueError):
                     pass
 
+                # Detect 10b5-1 systematic selling plans
+                # Heuristics: (1) "S - Sale+OE" = option exercise + sell (usually 10b5-1)
+                # (2) Text field mentions "10b5" or "Rule 10b" or "automatic"
+                # (3) CEO/officer selling at regular intervals with similar share counts
+                is_10b5_1 = False
+                text_lower = str(row.get("Text", "") or "").lower()
+                if "10b5" in text_lower or "10b-5" in text_lower or "rule 10b" in text_lower:
+                    is_10b5_1 = True
+                elif "automatic" in text_lower or "pre-arranged" in text_lower or "trading plan" in text_lower:
+                    is_10b5_1 = True
+                elif txn_type == "S - Sale+OE":
+                    # Option exercise + sell is often a 10b5-1 plan execution
+                    is_10b5_1 = True
+
                 result.append({
                     "insider": insider,
                     "type": txn_type,
                     "date": txn_date,
                     "shares": shares,
                     "value": value,
+                    "is_10b5_1": is_10b5_1,
                 })
             return result
         except Exception as e:
@@ -186,7 +215,14 @@ def get_insider_clusters(ticker: str, window_days: int = 14, min_insiders: int =
         lines.append(f"** CLUSTER DETECTED: {result['direction'].upper()} **")
         lines.append(f"Distinct insiders: {result['insider_count']} in {window_days}-day window")
         lines.append(f"Window: {result['window_start']} to {result['window_end']}")
-        lines.append(f"Buyers: {result.get('buy_count', 0)}, Sellers: {result.get('sell_count', 0)}")
+        disc = result.get('discretionary_sell_count', result.get('sell_count', 0))
+        syst = result.get('systematic_sell_count', 0)
+        lines.append(f"Buyers: {result.get('buy_count', 0)}, Sellers: {result.get('sell_count', 0)} (discretionary: {disc}, 10b5-1 systematic: {syst})")
+        if syst > 0 and disc == 0:
+            lines.append("NOTE: All insider sells are systematic (10b5-1 plans) — weak signal, not panic selling")
+    elif result.get("direction") == "systematic_only":
+        lines.append("Insider selling detected but ALL are systematic (10b5-1 plans) — not a conviction signal.")
+        lines.append(f"Systematic sellers: {result.get('systematic_sell_count', 0)} in {window_days}-day window")
     else:
         lines.append("No significant insider clustering detected.")
 

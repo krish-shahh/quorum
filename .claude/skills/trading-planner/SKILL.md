@@ -76,11 +76,11 @@ Based on the market regime from Step 1, adjust your approach:
 |--------|--------------|----------------|-------------|---------------|
 | risk_on | 3.5 | 2.5 | 20% | 100% |
 | risk_off | 3.8 | 2.8 | 30% | 80% |
-| volatile | 4.0 | 2.5 | 25% | 70% |
+| volatile | 3.6 | 2.5 | 25% | 70% |
 | transition | 3.5 | 2.5 | 20% | 100% |
 
 In **risk_off**: be more selective — only high-conviction buys, quicker to sell.
-In **volatile**: only buy on very strong signals (4.0+), reduce position sizes 30%.
+In **volatile**: moderately selective (3.6+), reduce position sizes 30%. The -0.3 regime adjustment already penalizes scores, so a 4.0 threshold would make it impossible to enter positions.
 
 ## Step 1.5: Delta Check (skip unchanged tickers)
 
@@ -377,13 +377,17 @@ Conditions: {skip conditions for Executor — e.g., "skip if price > $X"}
 
 ### 6.2: Action Mapping (pre-calibration defaults)
 
-| Action | size_multiplier |
-|--------|----------------|
-| Strong Sell | -1 |
-| Sell | -1 |
-| Hold | 0 |
-| Buy | +1 |
-| Strong Buy | +1 |
+| Action | size_multiplier | When to use |
+|--------|----------------|-------------|
+| Strong Sell | -1 | Veto/unanimous bearish — full exit |
+| Sell | -1 | Clear sell signal — full exit |
+| Underweight | -0.5 | Trim position (concentration, fading conviction) — sells ~50% |
+| Hold | 0 | No action |
+| Overweight | +0.5 | Add to winner — buys ~50% of normal size |
+| Buy | +1 | New position entry |
+| Strong Buy | +1 | High conviction entry |
+
+**IMPORTANT**: When the PM says "Underweight" or "trim" or "reduce", use action `Underweight` (NOT `Sell`). Sell = full liquidation. Underweight = trim ~50%. This distinction is critical for position management.
 
 ### 6.3: Assemble Plan YAML
 
@@ -498,8 +502,12 @@ Over time, the `get_trade_reflections` tool will accumulate outcome data that sh
 - Max ~5% per new position (~$250), must buy at least 1 whole share
 - Prefer stocks priced under $250 for meaningful position sizing
 - Max ~25% in any single ticker
+- **Max 50% in any single sector** — the pre-trade hook enforces this. Don't load up on all tech.
 - Cap at 4-5 concurrent positions (not 6) given small account
 - 20%+ cash reserve ($1,000+ minimum)
 - In risk_off: fewer buys, tighter sells
 - Reduce size 50% if earnings within 3 days
 - Score 3.2-3.5 = Hold (not Buy) — need clear edge on small account
+- **Minimum 7-day holding period** — don't sell positions bought within the past 7 trading days unless a stop-loss is hit. The pre-trade hook enforces this. This prevents the buy-on-Monday-sell-on-Thursday whipsaw pattern.
+- **Underweight vs Sell** — when trimming for concentration or fading conviction, use action `Underweight` (sells ~50%), NOT `Sell` (liquidates 100%). The position sizer handles the quantity math.
+- **Diversify beyond tech** — the user's 401K already has heavy large-cap growth exposure (JLGMX). This paper account should complement it with healthcare, financials, industrials, consumer staples, and energy.

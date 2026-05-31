@@ -738,3 +738,90 @@ def fill_forward_returns(config: Optional[Dict[str, Any]] = None) -> int:
             continue
     conn.commit()
     return updated
+
+
+def compute_analyst_accuracy(config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Compute per-analyst Information Coefficient (IC) and directional accuracy.
+
+    IC = rank correlation between analyst score and forward 5-day return.
+    Directional accuracy = % of times high score (>3.5) predicted positive return.
+
+    Requires at least 20 rows with filled forward returns for meaningful results.
+    Returns dict with per-analyst IC, accuracy, and sample size.
+    """
+    conn = get_db(config)
+    rows = conn.execute(
+        """SELECT technical_score, fundamental_score, sentiment_score, news_score,
+                  council_score, forward_return_5d
+           FROM signal_scores
+           WHERE forward_return_5d IS NOT NULL
+           ORDER BY score_date DESC
+           LIMIT 200"""
+    ).fetchall()
+
+    if len(rows) < 20:
+        return {"status": "insufficient_data", "sample_size": len(rows), "min_required": 20}
+
+    analysts = ["technical", "fundamental", "sentiment", "news", "council"]
+    result = {"status": "ok", "sample_size": len(rows)}
+
+    for analyst in analysts:
+        scores = []
+        returns = []
+        high_score_correct = 0
+        high_score_total = 0
+        low_score_correct = 0
+        low_score_total = 0
+
+        for row in rows:
+            score_key = f"{analyst}_score"
+            s = row[score_key]
+            r = row["forward_return_5d"]
+            if s is None or r is None:
+                continue
+            scores.append(s)
+            returns.append(r)
+
+            # Directional accuracy
+            if s > 3.5:
+                high_score_total += 1
+                if r > 0:
+                    high_score_correct += 1
+            elif s < 2.5:
+                low_score_total += 1
+                if r < 0:
+                    low_score_correct += 1
+
+        if len(scores) < 10:
+            result[analyst] = {"ic": None, "accuracy": None, "n": len(scores)}
+            continue
+
+        # Spearman rank correlation (IC)
+        try:
+            from scipy.stats import spearmanr
+            ic, p_value = spearmanr(scores, returns)
+        except ImportError:
+            # Fallback: simple Pearson if scipy not available
+            n = len(scores)
+            mean_s = sum(scores) / n
+            mean_r = sum(returns) / n
+            cov = sum((s - mean_s) * (r - mean_r) for s, r in zip(scores, returns)) / n
+            std_s = (sum((s - mean_s) ** 2 for s in scores) / n) ** 0.5
+            std_r = (sum((r - mean_r) ** 2 for r in returns) / n) ** 0.5
+            ic = cov / (std_s * std_r) if std_s > 0 and std_r > 0 else 0
+            p_value = None
+
+        bullish_acc = high_score_correct / high_score_total if high_score_total > 0 else None
+        bearish_acc = low_score_correct / low_score_total if low_score_total > 0 else None
+
+        result[analyst] = {
+            "ic": round(ic, 4) if ic is not None else None,
+            "p_value": round(p_value, 4) if p_value is not None else None,
+            "bullish_accuracy": round(bullish_acc, 3) if bullish_acc is not None else None,
+            "bearish_accuracy": round(bearish_acc, 3) if bearish_acc is not None else None,
+            "n": len(scores),
+            "bullish_calls": high_score_total,
+            "bearish_calls": low_score_total,
+        }
+
+    return result

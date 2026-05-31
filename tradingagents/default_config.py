@@ -259,10 +259,15 @@ DEFAULT_CONFIG = _apply_env_overrides({
     "correlation_aware_enabled": True,      # reduces allocation when correlated with holdings (>0.7)
     "correlation_threshold": 0.7,
     # Regime-conditional strategy thresholds
+    # Minimum holding period (trading days) before a position can be sold.
+    # Prevents buy-then-sell-4-days-later whipsaw. Stop-loss (priority 1) overrides.
+    "min_holding_days": 7,
+    # Max sector concentration — blocks buys if sector would exceed this %
+    "max_sector_concentration_pct": 0.50,
     "regime_strategy": {
         "risk_on":    {"buy_threshold": 3.5, "sell_threshold": 2.5, "cash_target": 0.20, "size_mult": 1.0},
         "risk_off":   {"buy_threshold": 3.8, "sell_threshold": 2.8, "cash_target": 0.30, "size_mult": 0.8},
-        "volatile":   {"buy_threshold": 4.0, "sell_threshold": 2.5, "cash_target": 0.25, "size_mult": 0.7},
+        "volatile":   {"buy_threshold": 3.6, "sell_threshold": 2.5, "cash_target": 0.25, "size_mult": 0.7},
         "transition": {"buy_threshold": 3.5, "sell_threshold": 2.5, "cash_target": 0.20, "size_mult": 1.0},
     },
     "vwap_enabled": False,                  # opt-in: split large orders

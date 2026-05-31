@@ -80,6 +80,38 @@ if signal in ("Buy", "Overweight"):
     if len(held) >= max_pos:
         errors.append(f"At max positions ({len(held)}/{max_pos})")
 
+# ── Rule 3b: Minimum holding period (anti-whipsaw) ──
+if signal in ("Sell", "Underweight"):
+    min_hold_days = int(config.get("min_holding_days", 7))
+    try:
+        from tradingagents.execution.db import get_db
+        conn = get_db(config)
+        row = conn.execute(
+            "SELECT timestamp FROM trades WHERE ticker = ? AND signal IN ('Buy', 'Overweight') "
+            "AND action_taken = 'executed' ORDER BY timestamp DESC LIMIT 1",
+            (ticker,),
+        ).fetchone()
+        if row:
+            from datetime import datetime, timedelta
+            buy_time = datetime.fromisoformat(row["timestamp"].replace("Z", "+00:00")) if "T" in row["timestamp"] else datetime.strptime(row["timestamp"], "%Y-%m-%d %H:%M:%S")
+            days_held = (datetime.now() - buy_time.replace(tzinfo=None)).days
+            if days_held < min_hold_days:
+                # Allow sells on stop-loss breaches (safety overrides cooldown)
+                active_plan = Path.home() / ".tradingagents" / "plans" / "active.md"
+                is_stop_loss = False
+                if active_plan.exists():
+                    try:
+                        plan_text = active_plan.resolve().read_text()
+                        # Priority 1 steps are stop-loss/safety sells
+                        if f"ticker: {ticker}" in plan_text or f'ticker: "{ticker}"' in plan_text:
+                            is_stop_loss = "priority: 1" in plan_text
+                    except Exception:
+                        pass
+                if not is_stop_loss:
+                    errors.append(f"COOLDOWN: {ticker} bought {days_held}d ago (min {min_hold_days}d). Override with priority-1 stop-loss only.")
+    except Exception:
+        pass
+
 # ── Rule 4: Ticker concentration ──
 if signal in ("Buy", "Overweight"):
     existing = next((p for p in positions if p.ticker.upper() == ticker), None)
@@ -87,6 +119,35 @@ if signal in ("Buy", "Overweight"):
     max_pct = float(config.get("max_single_ticker_pct", 0.25))
     if account.account_value > 0 and current_val / account.account_value >= max_pct:
         errors.append(f"{ticker} at {current_val/account.account_value:.0%} (max {max_pct:.0%})")
+
+# ── Rule 4b: Sector concentration check (prevent tech overload) ──
+if signal in ("Buy", "Overweight"):
+    max_sector_pct = float(config.get("max_sector_concentration_pct", 0.50))
+    try:
+        from tradingagents.execution.ticker_utils import detect_asset_type
+        new_asset = detect_asset_type(ticker)
+        new_sector = new_asset.get("sector") or new_asset.get("asset_class", "unknown")
+
+        # Sum market value in same sector across held positions
+        sector_value = 0.0
+        for p in positions:
+            if p.quantity > 0:
+                pa = detect_asset_type(p.ticker)
+                p_sector = pa.get("sector") or pa.get("asset_class", "unknown")
+                if p_sector == new_sector:
+                    sector_value += p.market_value
+
+        # Estimate new trade value
+        new_trade_value = account.account_value * float(config.get("max_position_pct", 0.05))
+        projected_sector_pct = (sector_value + new_trade_value) / account.account_value if account.account_value > 0 else 0
+
+        if projected_sector_pct > max_sector_pct:
+            errors.append(
+                f"SECTOR CONCENTRATION: {new_sector} would be {projected_sector_pct:.0%} "
+                f"of portfolio (max {max_sector_pct:.0%}). Diversify first."
+            )
+    except Exception:
+        pass
 
 # ── Rule 5: Cash reserve (regime-conditional) ──
 if signal in ("Buy", "Overweight"):
@@ -136,8 +197,8 @@ if active_plan.exists() and active_plan.is_symlink():
                 r'ticker:\s*(\S+)\s*\n\s*action:\s*(\S+)', fm, re.IGNORECASE
             )
             if step_pairs:
-                buy_actions = {"buy", "strong buy", "strong"}
-                sell_actions = {"sell", "strong sell"}
+                buy_actions = {"buy", "strong buy", "strong", "overweight"}
+                sell_actions = {"sell", "strong sell", "underweight"}
                 matched = False
                 for step_ticker, step_action in step_pairs:
                     step_ticker = step_ticker.strip('"').upper()

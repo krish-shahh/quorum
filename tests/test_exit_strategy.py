@@ -27,7 +27,7 @@ class TestRegimeThresholds:
     def test_volatile_strictest(self):
         from tradingagents.default_config import DEFAULT_CONFIG
         strat = DEFAULT_CONFIG["regime_strategy"]["volatile"]
-        assert strat["buy_threshold"] == 4.0  # only high conviction
+        assert strat["buy_threshold"] == 3.6  # moderately selective (was 4.0, lowered to prevent whipsaw)
         assert strat["size_mult"] == 0.7  # reduce sizes 30%
 
     def test_all_regimes_present(self):

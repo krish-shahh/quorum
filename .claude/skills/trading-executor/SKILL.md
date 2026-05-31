@@ -57,10 +57,21 @@ For each step in the plan (ordered by priority, then by ticker):
    - Call `save_trade_report(report_type="post", ...)` with fill details
    - Log "EXECUTED BUY {ticker} @ ${fill_price} (plan entry ${plan_entry}, slippage {bps}bps)"
 
-### Sell/Strong Sell steps (size_multiplier = -1)
+### Sell/Strong Sell steps (action = Sell or Strong Sell, size_multiplier = -1)
 - Execute immediately — sells have no price drift gate
 - Call `execute_paper_trade(ticker="{ticker}", signal="Sell", reasoning="{plan rationale}")`
 - Log "EXECUTED SELL {ticker} @ ${fill_price}"
+
+### Underweight steps (action = Underweight, size_multiplier = -0.5)
+- Execute immediately — partial sells have no price drift gate
+- **CRITICAL: Use signal="Underweight", NOT "Sell"** — Underweight sells 50% of position, Sell liquidates 100%
+- Call `execute_paper_trade(ticker="{ticker}", signal="Underweight", reasoning="{plan rationale}")`
+- Log "EXECUTED UNDERWEIGHT {ticker} @ ${fill_price} (trimmed ~50%)"
+
+### Overweight steps (action = Overweight, size_multiplier = +0.5)
+- Same price drift gate as Buy steps (0.5 * ATR threshold)
+- Call `execute_paper_trade(ticker="{ticker}", signal="Overweight", reasoning="{plan rationale}")`
+- Log "EXECUTED OVERWEIGHT {ticker} @ ${fill_price} (added ~50% position)"
 
 ## Step 4: Replan Check
 

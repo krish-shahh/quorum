@@ -154,6 +154,9 @@ class PositionSizer:
         # Fallback: percentage-based allocation
         alloc_pct = self._extract_allocation_pct(trader_proposal) or self.max_position_pct
 
+        # Regime-adaptive sizing: scale allocation by regime multiplier
+        alloc_pct *= self._regime_size_mult()
+
         # Kelly criterion adjustment
         if self._kelly_enabled:
             kelly = self._kelly_fraction(ticker)
@@ -259,6 +262,21 @@ class PositionSizer:
             if p.ticker.upper() == ticker.upper():
                 return p
         return None
+
+    def _regime_size_mult(self) -> float:
+        """Get the regime-conditional position size multiplier.
+
+        Returns size_mult from regime_strategy config (e.g., 0.7 for volatile).
+        Falls back to 1.0 if regime detection fails.
+        """
+        try:
+            from tradingagents.dataflows.regime import CrossAssetRegimeDetector
+            regime_data = CrossAssetRegimeDetector().detect()
+            regime = regime_data.get("regime", "risk_on").lower() if isinstance(regime_data, dict) else "risk_on"
+            strategies = self.config.get("regime_strategy", {})
+            return float(strategies.get(regime, {}).get("size_mult", 1.0))
+        except Exception:
+            return 1.0
 
     def _cap_by_ticker_limit(
         self,
