@@ -460,14 +460,34 @@ def get_plan_steps_for_ticker(ticker):
 
 
 def get_ticker_reflections(ticker):
-    """Get trade reflections for a ticker (past outcome lessons)."""
+    """Get trade reflections for a ticker, parsed into sections."""
     try:
         config = _cfg()
         from tradingagents.execution.learning import LearningEngine
         from tradingagents.execution.reflection import ReflectionEngine
         learner = LearningEngine(config)
         reflector = ReflectionEngine(learner, config)
-        return reflector.get_reflections(ticker, include_sector=True, limit=5)
+        raw = reflector.get_reflections(ticker, include_sector=True, limit=5)
+        if not raw:
+            return None
+        # Parse into sections
+        sections = {}
+        current_section = None
+        current_lines = []
+        for line in raw.strip().split("\n"):
+            stripped = line.strip()
+            if stripped.startswith("## "):
+                if current_section:
+                    sections[current_section] = "\n".join(current_lines).strip()
+                current_section = stripped[3:].strip()
+                current_lines = []
+            elif stripped.startswith("# "):
+                continue  # skip the title line
+            else:
+                current_lines.append(stripped)
+        if current_section:
+            sections[current_section] = "\n".join(current_lines).strip()
+        return sections if sections else {"Raw": raw}
     except Exception as e:
         print(f"[v3] reflections error: {e}")
         return ""

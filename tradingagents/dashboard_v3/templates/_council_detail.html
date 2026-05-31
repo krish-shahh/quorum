@@ -17,8 +17,9 @@
     <span class="text-xs font-mono text-gray-400 ml-auto">${{ "%.2f"|format(detail.detail.price) if detail.detail.price else '—' }} | {{ detail.detail.analyzed_at or '—' }}</span>
   </div>
 
-  {# Score bars #}
+  {# Score bars + metrics side by side #}
   <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+    {# Left: analyst score bars #}
     <div class="space-y-2.5">
       {% set dl = detail.detail | domain_label %}
       {% for label, score in [('Tech', detail.detail.technical), (dl, detail.detail.fundamental), ('Sent', detail.detail.sentiment), ('News', detail.detail.news)] %}
@@ -30,28 +31,27 @@
         <span class="text-xs font-mono font-semibold text-gray-700 w-[28px] text-right shrink-0">{{ score }}</span>
       </div>
       {% endfor %}
-
-      {% if detail.quant and detail.quant.fundamental %}
-      <div class="pt-2.5 border-t border-gray-100">
-        <div class="text-[9px] uppercase tracking-wider text-gray-400 font-semibold mb-2">Quant Anchors</div>
-        {% for label, score in [('Fund', detail.quant.fundamental), ('Tech', detail.quant.technical)] %}
-        <div class="flex items-center gap-2 mb-1">
-          <span class="text-[10px] font-medium text-gray-400 w-[35px] text-right shrink-0">{{ label }}</span>
-          <div class="flex-1 bg-gray-50 rounded-full h-2 overflow-hidden">
-            <div class="bg-indigo-400 h-full rounded-full" style="width: {{ ((score|float / 5) * 100)|int }}%"></div>
-          </div>
-          <span class="text-[10px] font-mono text-indigo-600 w-[28px] text-right shrink-0">{{ "%.2f"|format(score) }}</span>
-        </div>
-        {% endfor %}
-        <div class="text-[9px] text-gray-400 mt-1">DQ: {{ "%.0f"|format(detail.quant.data_quality * 100) }}% | {{ detail.quant.scored_at }}</div>
-      </div>
-      {% endif %}
     </div>
 
-    <div class="space-y-1.5 text-xs">
-      {% for label, val in [('Confidence', detail.detail.confidence), ('Weighted Score', ("%.2f"|format(detail.detail.weighted)))] %}
-      <div class="flex justify-between"><span class="text-gray-400">{{ label }}</span><span class="font-mono font-medium text-gray-700">{{ val }}</span></div>
-      {% endfor %}
+    {# Right: confidence, weighted score, quant anchors — bottoms aligned #}
+    <div class="flex flex-col justify-end space-y-1.5 text-xs">
+      <div class="flex justify-between"><span class="text-gray-400">Confidence</span><span class="font-mono font-medium text-gray-700">{{ detail.detail.confidence }}</span></div>
+      <div class="flex justify-between"><span class="text-gray-400">Weighted Score</span><span class="font-mono font-semibold text-gray-900">{{ "%.2f"|format(detail.detail.weighted) }}</span></div>
+      {% if detail.quant and detail.quant.fundamental %}
+      <div class="pt-2 mt-1 border-t border-gray-100">
+        <div class="text-[9px] uppercase tracking-wider text-gray-400 font-semibold mb-1.5">Quant Anchors</div>
+        {% for label, score in [('Fund', detail.quant.fundamental), ('Tech', detail.quant.technical)] %}
+        <div class="flex items-center gap-2 mb-1">
+          <span class="text-[10px] font-medium text-gray-400 w-[32px] text-right shrink-0">{{ label }}</span>
+          <div class="flex-1 bg-gray-100 rounded-full h-2.5 overflow-hidden">
+            <div class="bg-indigo-400 h-full rounded-full" style="width: {{ ((score|float / 5) * 100)|int }}%"></div>
+          </div>
+          <span class="text-[10px] font-mono font-semibold text-indigo-600 w-[32px] text-right shrink-0">{{ "%.2f"|format(score) }}</span>
+        </div>
+        {% endfor %}
+        <div class="text-[9px] text-gray-400 mt-0.5">DQ: {{ "%.0f"|format(detail.quant.data_quality * 100) }}%</div>
+      </div>
+      {% endif %}
     </div>
   </div>
 
@@ -243,7 +243,32 @@
   {% if reflections %}
   <div class="mt-5 border-t border-gray-100 pt-3">
     <div class="text-[9px] uppercase tracking-wider text-gray-400 font-semibold mb-2">Trade Reflections</div>
-    <div class="bg-gray-50 rounded-lg p-3 text-xs text-gray-600 font-mono whitespace-pre-wrap leading-relaxed max-h-40 overflow-y-auto">{{ reflections }}</div>
+    <div class="grid grid-cols-1 {% if reflections|length > 1 %}md:grid-cols-{{ [reflections|length, 3] | min }}{% endif %} gap-2">
+      {% set section_colors = {'Direct History': 'blue', 'Sector Patterns': 'purple', 'System-Wide Lessons': 'amber', 'Raw': 'gray'} %}
+      {% for section, content in reflections.items() %}
+      {% if content %}
+      <div class="bg-gray-50 rounded p-2.5">
+        <div class="text-[9px] uppercase tracking-wider text-{{ section_colors.get(section, 'gray') }}-500 font-semibold mb-1.5">{{ section }}</div>
+        <div class="text-[11px] text-gray-600 leading-relaxed space-y-1">
+          {% for line in content.split('\n') %}
+          {% if line.strip() %}
+          {% if line.strip().startswith('- ') %}
+          <div class="flex gap-1.5">
+            <span class="text-gray-400 shrink-0 mt-0.5">-</span>
+            <span>{{ line.strip()[2:] }}</span>
+          </div>
+          {% elif line.strip().startswith('LESSON:') %}
+          <div class="text-[10px] italic text-indigo-600 mt-1">{{ line.strip() }}</div>
+          {% else %}
+          <div>{{ line.strip() }}</div>
+          {% endif %}
+          {% endif %}
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+      {% endfor %}
+    </div>
   </div>
   {% endif %}
 </div>
