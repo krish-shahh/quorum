@@ -141,6 +141,63 @@
   </div>
   {% endif %}
 
+  {# Pre-trade reports (historical — already stored from past cycles) #}
+  {% if trade_reports %}
+  <div class="mt-5 border-t border-gray-100 pt-3">
+    <div class="text-[9px] uppercase tracking-wider text-gray-400 font-semibold mb-2">Pre-Trade Reports</div>
+    {% for tr in trade_reports %}
+    <div class="mb-3 {% if not loop.last %}border-b border-gray-50 pb-3{% endif %}">
+      <div class="flex items-center gap-2 mb-1.5">
+        <span class="text-[10px] font-mono text-gray-400">{{ tr.trade_date }}</span>
+        <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded
+          {% if tr.signal in ('Buy', 'Overweight') %}bg-green-50 text-green-700
+          {% elif tr.signal in ('Sell', 'Underweight') %}bg-red-50 text-red-700
+          {% else %}bg-gray-100 text-gray-600{% endif %}">{{ tr.signal }}</span>
+        <span class="text-[10px] font-mono text-gray-400">{{ "%.0f"|format(tr.confidence * 100) }}% conf</span>
+      </div>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
+        {% if tr.technicals %}
+        <div class="bg-gray-50 rounded p-2">
+          <div class="text-[9px] uppercase tracking-wider text-blue-500 font-semibold mb-0.5">Technicals</div>
+          <div class="text-[11px] text-gray-600 leading-relaxed">{{ tr.technicals[:300] }}{% if tr.technicals|length > 300 %}...{% endif %}</div>
+        </div>
+        {% endif %}
+        {% if tr.fundamentals %}
+        <div class="bg-gray-50 rounded p-2">
+          <div class="text-[9px] uppercase tracking-wider text-purple-500 font-semibold mb-0.5">Fundamentals</div>
+          <div class="text-[11px] text-gray-600 leading-relaxed">{{ tr.fundamentals[:300] }}{% if tr.fundamentals|length > 300 %}...{% endif %}</div>
+        </div>
+        {% endif %}
+        {% if tr.sentiment %}
+        <div class="bg-gray-50 rounded p-2">
+          <div class="text-[9px] uppercase tracking-wider text-amber-500 font-semibold mb-0.5">Sentiment</div>
+          <div class="text-[11px] text-gray-600 leading-relaxed">{{ tr.sentiment[:300] }}{% if tr.sentiment|length > 300 %}...{% endif %}</div>
+        </div>
+        {% endif %}
+        {% if tr.news_catalyst %}
+        <div class="bg-gray-50 rounded p-2">
+          <div class="text-[9px] uppercase tracking-wider text-cyan-500 font-semibold mb-0.5">Catalyst</div>
+          <div class="text-[11px] text-gray-600 leading-relaxed">{{ tr.news_catalyst[:300] }}{% if tr.news_catalyst|length > 300 %}...{% endif %}</div>
+        </div>
+        {% endif %}
+      </div>
+      {% if tr.risk_factors %}
+      <div class="bg-red-50 rounded p-2 mt-2">
+        <div class="text-[9px] uppercase tracking-wider text-red-500 font-semibold mb-0.5">Risk Factors</div>
+        <div class="text-[11px] text-gray-600 leading-relaxed">{{ tr.risk_factors[:300] }}{% if tr.risk_factors|length > 300 %}...{% endif %}</div>
+      </div>
+      {% endif %}
+      {% if tr.reasoning %}
+      <div class="bg-indigo-50 rounded p-2 mt-2">
+        <div class="text-[9px] uppercase tracking-wider text-indigo-500 font-semibold mb-0.5">Reasoning</div>
+        <div class="text-[11px] text-gray-600 leading-relaxed">{{ tr.reasoning[:400] }}{% if tr.reasoning|length > 400 %}...{% endif %}</div>
+      </div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
   {% if reflections %}
   <div class="mt-5 border-t border-gray-100 pt-3">
     <div class="text-[9px] uppercase tracking-wider text-gray-400 font-semibold mb-2">Trade Reflections</div>

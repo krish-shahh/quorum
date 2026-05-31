@@ -398,6 +398,26 @@ def get_analyst_reports(ticker):
         return []
 
 
+def get_trade_reports_for_ticker(ticker):
+    """Get pre-trade reports with analyst summaries for a ticker."""
+    try:
+        config = _cfg()
+        conn = get_db(config)
+        rows = conn.execute(
+            """SELECT trade_date, report_type, signal, confidence,
+                      technicals, fundamentals, sentiment, news_catalyst,
+                      risk_factors, reasoning
+               FROM trade_reports
+               WHERE ticker = ? AND report_type = 'pre'
+               ORDER BY created_at DESC LIMIT 5""",
+            (ticker.upper(),),
+        ).fetchall()
+        return [dict(r) for r in rows]
+    except Exception as e:
+        print(f"[v3] trade reports error: {e}")
+        return []
+
+
 def get_ticker_reflections(ticker):
     """Get trade reflections for a ticker (past outcome lessons)."""
     try:
@@ -1537,9 +1557,10 @@ def create_app():
         detail = get_ticker_detail(ticker)
         reflections = get_ticker_reflections(ticker)
         analyst_reports = get_analyst_reports(ticker)
+        trade_reports = get_trade_reports_for_ticker(ticker)
         return render_template("_council_detail.html",
                                ticker=ticker, detail=detail, reflections=reflections,
-                               analyst_reports=analyst_reports)
+                               analyst_reports=analyst_reports, trade_reports=trade_reports)
 
     @app.route("/api/plan-metrics")
     def api_plan_metrics():
