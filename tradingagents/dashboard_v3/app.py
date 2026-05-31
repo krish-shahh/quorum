@@ -933,7 +933,7 @@ def create_app():
         regime = get_regime()
         market = get_market_status()
         states = get_ticker_states()
-        predictions = get_kalshi_positions()
+        predictions = []  # Kalshi section disabled — skip DB query
         historical = get_historical_data(hist_date) if hist_date else None
         status = get_trading_status_data() if not hist_date else None
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
