@@ -36,7 +36,6 @@
     {# Right: confidence, weighted score, quant anchors — bottoms aligned #}
     <div class="flex flex-col justify-end space-y-1.5 text-xs">
       <div class="flex justify-between"><span class="text-gray-400">Confidence</span><span class="font-mono font-medium text-gray-700">{{ detail.detail.confidence }}</span></div>
-      <div class="flex justify-between"><span class="text-gray-400">Weighted Score</span><span class="font-mono font-semibold text-gray-900">{{ "%.2f"|format(detail.detail.weighted) }}</span></div>
       {% if detail.quant and detail.quant.fundamental %}
       <div class="pt-2 mt-1 border-t border-gray-100">
         <div class="text-[9px] uppercase tracking-wider text-gray-400 font-semibold mb-1.5">Quant Anchors</div>

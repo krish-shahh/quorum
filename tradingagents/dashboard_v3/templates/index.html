@@ -567,8 +567,7 @@
   <div id="council-modal" class="fixed inset-0 z-[100] hidden">
     <div class="absolute inset-0 bg-black/30" onclick="closeCouncilModal()"></div>
     <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white rounded border border-gray-200 w-full max-w-2xl max-h-[80vh] overflow-y-auto p-5">
-      <div class="flex items-center justify-between mb-3">
-        <span class="text-xs text-gray-400 font-mono" id="modal-ticker"></span>
+      <div class="flex items-center justify-end">
         <button onclick="closeCouncilModal()" class="text-gray-400 hover:text-gray-600 text-lg leading-none">&times;</button>
       </div>
       <div id="modal-body">
@@ -649,8 +648,6 @@
     function toggleCouncilDetail(row, ticker) {
       const modal = document.getElementById('council-modal');
       const body = document.getElementById('modal-body');
-      const label = document.getElementById('modal-ticker');
-      label.textContent = ticker;
       body.innerHTML = '<div class="text-xs text-gray-400 text-center py-8">Loading...</div>';
       modal.classList.remove('hidden');
       htmx.ajax('GET', '/api/council-detail?ticker=' + ticker, {target: '#modal-body', swap: 'innerHTML'});
