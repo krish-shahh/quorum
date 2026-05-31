@@ -418,6 +418,47 @@ def get_trade_reports_for_ticker(ticker):
         return []
 
 
+def get_plan_steps_for_ticker(ticker):
+    """Get active plan steps for a specific ticker."""
+    try:
+        from pathlib import Path
+        import yaml
+        plan_path = Path.home() / ".tradingagents" / "plans" / "active.md"
+        if not plan_path.exists():
+            return None
+        text = plan_path.resolve().read_text()
+        if not text.startswith("---"):
+            return None
+        yaml_end = text.index("---", 3)
+        fm = yaml.safe_load(text[3:yaml_end])
+        if not fm or "steps" not in fm:
+            return None
+        ticker_upper = ticker.upper()
+        plan_info = {
+            "plan_id": fm.get("plan_id", ""),
+            "created_at": fm.get("created_at", ""),
+            "regime": fm.get("regime", ""),
+            "risk_level": fm.get("risk_level", ""),
+            "expired": False,
+        }
+        # Check if plan is expired
+        from datetime import date
+        for step in fm.get("steps", []):
+            expiry = step.get("expiry", "")
+            if expiry and expiry < date.today().isoformat():
+                plan_info["expired"] = True
+                break
+        # Find steps for this ticker
+        steps = [s for s in fm.get("steps", []) if s.get("ticker", "").upper() == ticker_upper]
+        if not steps:
+            return None
+        plan_info["steps"] = steps
+        return plan_info
+    except Exception as e:
+        print(f"[v3] plan steps error: {e}")
+        return None
+
+
 def get_ticker_reflections(ticker):
     """Get trade reflections for a ticker (past outcome lessons)."""
     try:
@@ -1558,9 +1599,11 @@ def create_app():
         reflections = get_ticker_reflections(ticker)
         analyst_reports = get_analyst_reports(ticker)
         trade_reports = get_trade_reports_for_ticker(ticker)
+        plan = get_plan_steps_for_ticker(ticker)
         return render_template("_council_detail.html",
                                ticker=ticker, detail=detail, reflections=reflections,
-                               analyst_reports=analyst_reports, trade_reports=trade_reports)
+                               analyst_reports=analyst_reports, trade_reports=trade_reports,
+                               plan=plan)
 
     @app.route("/api/plan-metrics")
     def api_plan_metrics():

@@ -17,7 +17,7 @@
     </thead>
     <tbody class="divide-y divide-gray-100">
       {% for p in acct.positions %}
-      <tr class="hover:bg-gray-50 transition-colors">
+      <tr class="hover:bg-gray-50 transition-colors cursor-pointer" onclick="toggleCouncilDetail(this, '{{ p.ticker }}')">
         <td class="px-4 py-2">
           <div class="flex items-center gap-1 flex-wrap">
             <span class="font-semibold text-gray-900">{{ p.ticker }}</span>
