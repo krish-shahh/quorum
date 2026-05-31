@@ -9,7 +9,7 @@ import sys
 from datetime import date, datetime
 from pathlib import Path
 
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, Blueprint, request, jsonify
 
 # ── Make tradingagents importable ──────────────────────────────────────
 _project_root = str(Path(__file__).resolve().parents[2])
@@ -23,22 +23,6 @@ def _cfg():
     from tradingagents.default_config import DEFAULT_CONFIG
     return DEFAULT_CONFIG.copy()
 
-
-def _md_to_html(content: str) -> str:
-    if not content or not content.strip():
-        return ""
-    text = content.strip()
-    if text.startswith("---"):
-        parts = text.split("---", 2)
-        if len(parts) >= 3:
-            text = parts[2].strip()
-    if not text:
-        return ""
-    try:
-        import markdown
-        return markdown.markdown(text, extensions=["tables", "fenced_code"])
-    except ImportError:
-        return f"<pre>{text}</pre>"
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -71,7 +55,7 @@ def get_account_data():
         else:
             dd = 0.0
 
-        from tradingagents.execution.ticker_utils import detect_asset_type
+        from tradingagents.execution.ticker_utils import detect_asset_type, get_book
         from tradingagents.execution.contracts import get_contract_spec, days_to_expiry
 
         acct_val = account.account_value or 1
@@ -102,6 +86,7 @@ def get_account_data():
                 "contract_name": spec.name if spec else None,
                 "margin": spec.margin if spec else None,
                 "days_to_expiry": dte,
+                "book": get_book(p.ticker),
             })
 
         # Overlay signals from council
@@ -154,6 +139,10 @@ def get_account_data():
                 "market_value": round(cash, 2),
             })
 
+        # Book view (portfolio hierarchy)
+        from tradingagents.execution.portfolio import compute_book_view
+        books_data = compute_book_view(positions, pv, cash)
+
         return {
             "portfolio_value": pv,
             "cash": cash,
@@ -167,6 +156,7 @@ def get_account_data():
             "allocation": allocation,
             "treemap": treemap_data,
             "exposure": exposure,
+            "books": books_data["books"],
         }
     except Exception as e:
         print(f"[v3] account error: {e}")
@@ -836,229 +826,188 @@ def get_watchlist():
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  JSON API (consumed by Electron desktop app)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+api_bp = Blueprint("api_json", __name__)
+
+
+@api_bp.after_request
+def api_cors(response):
+    """Allow cross-origin requests from Electron/Vite dev server."""
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type"
+    return response
+
+
+@api_bp.route("/api/v1/health")
+def api_v1_health():
+    """Lightweight health check — instant response, no data fetching."""
+    return jsonify({"ok": True})
+
+
+@api_bp.route("/api/v1/chart/<ticker>")
+def api_v1_chart(ticker):
+    """OHLCV price data for candlestick chart."""
+    days = int(request.args.get("days", 90))
+    try:
+        from datetime import date, timedelta
+        end = date.today().isoformat()
+        start = (date.today() - timedelta(days=days)).isoformat()
+        from tradingagents.dataflows.y_finance import get_YFin_data_online
+        raw = get_YFin_data_online(ticker.upper(), start, end)
+        candles = []
+        for line in raw.strip().split("\n"):
+            if not line or line.startswith("#") or not line[0].isdigit():
+                continue
+            parts = line.split(",")
+            if len(parts) >= 6:
+                candles.append({
+                    "time": parts[0],
+                    "open": round(float(parts[1]), 2),
+                    "high": round(float(parts[2]), 2),
+                    "low": round(float(parts[3]), 2),
+                    "close": round(float(parts[4]), 2),
+                    "volume": int(float(parts[5])),
+                })
+        return jsonify({"ticker": ticker.upper(), "candles": candles})
+    except Exception as e:
+        return jsonify({"ticker": ticker.upper(), "candles": [], "error": str(e)})
+
+
+@api_bp.route("/api/v1/trades/<ticker>")
+def api_v1_ticker_trades(ticker):
+    """Get executed trades for a specific ticker (for chart markers)."""
+    try:
+        config = _cfg()
+        from tradingagents.execution.db import get_db
+        conn = get_db(config)
+        rows = conn.execute(
+            "SELECT timestamp, side, quantity, fill_price FROM trades "
+            "WHERE ticker = ? AND action_taken = 'executed' ORDER BY timestamp",
+            (ticker.upper(),),
+        ).fetchall()
+        trades = [
+            {"time": r["timestamp"][:10], "side": r["side"], "qty": r["quantity"], "price": r["fill_price"]}
+            for r in rows if r["fill_price"]
+        ]
+        return jsonify({"trades": trades})
+    except Exception:
+        return jsonify({"trades": []})
+
+
+@api_bp.route("/api/v1/dashboard")
+def api_v1_dashboard():
+    """Aggregated dashboard data — single endpoint for 30s polling."""
+    acct = get_account_data()
+    trades = get_trades_data()
+    regime = get_regime()
+    market = get_market_status()
+    states = get_ticker_states()
+    status = get_trading_status_data()
+    return jsonify({
+        "account": acct,
+        "trades": trades,
+        "regime": regime,
+        "market": market,
+        "states": states,
+        "status": status,
+    })
+
+
+@api_bp.route("/api/v1/council/<ticker>")
+def api_v1_council_detail(ticker):
+    """Full council detail for a ticker (on-demand)."""
+    detail = get_ticker_detail(ticker)
+    reflections = get_ticker_reflections(ticker)
+    analyst_reports = get_analyst_reports(ticker)
+    trade_reports = get_trade_reports_for_ticker(ticker)
+    plan = get_plan_steps_for_ticker(ticker)
+    return jsonify({
+        "ticker": ticker,
+        "detail": detail,
+        "reflections": reflections,
+        "analyst_reports": analyst_reports,
+        "trade_reports": trade_reports,
+        "plan": plan,
+    })
+
+
+@api_bp.route("/api/v1/scans/sectors")
+def api_v1_sectors():
+    return jsonify(get_sector_rotation())
+
+
+@api_bp.route("/api/v1/scans/insiders")
+def api_v1_insiders():
+    acct = get_account_data()
+    watchlist = get_watchlist()
+    clusters = get_insider_clusters(acct["positions"], watchlist)
+    return jsonify({"clusters": clusters})
+
+
+@api_bp.route("/api/v1/scans/congress")
+def api_v1_congress():
+    acct = get_account_data()
+    watchlist = get_watchlist()
+    trades = get_congress_recent(acct["positions"], watchlist)
+    return jsonify({"trades": trades})
+
+
+@api_bp.route("/api/v1/plan")
+def api_v1_plan():
+    return jsonify(get_plan_metrics_data())
+
+
+@api_bp.route("/api/v1/calibration")
+def api_v1_calibration():
+    return jsonify({"report": run_calibration()})
+
+
+@api_bp.route("/api/v1/historical")
+def api_v1_historical():
+    date_str = request.args.get("date", "")
+    if not date_str:
+        return jsonify({"error": "date param required"}), 400
+    return jsonify(get_historical_data(date_str))
+
+
+@api_bp.route("/api/v1/reports")
+def api_v1_reports():
+    """All trade reports (pre + post trade analysis)."""
+    return jsonify({"reports": get_trade_reports(limit=100)})
+
+
+@api_bp.route("/api/v1/reports/<int:report_id>")
+def api_v1_report(report_id):
+    reports = get_trade_reports(limit=100)
+    report = next((r for r in reports if r["id"] == report_id), None)
+    if not report:
+        return jsonify({"error": "not found"}), 404
+    return jsonify(report)
+
+
+@api_bp.route("/api/v1/kill-switch", methods=["POST"])
+def api_v1_kill_switch():
+    config = _cfg()
+    from tradingagents.execution.safety import SafetyMonitor
+    safety = SafetyMonitor(config)
+    if safety.kill_switch_active:
+        safety.reset_kill_switch()
+    else:
+        safety.kill_switch_active = True
+        safety._save_state()
+    return jsonify({"active": safety.kill_switch_active})
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 #  FLASK APP
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 
 def create_app():
-    app = Flask(__name__, template_folder="templates")
-
-    # ── Jinja helpers ──
-
-    @app.template_filter("usd")
-    def usd_filter(v):
-        if v is None:
-            return "---"
-        return f"${v:,.2f}"
-
-    @app.template_filter("pct")
-    def pct_filter(v):
-        if v is None:
-            return "---"
-        return f"{v:.3%}"
-
-    @app.template_filter("signed_usd")
-    def signed_usd_filter(v):
-        if v is None:
-            return "---"
-        sign = "+" if v >= 0 else ""
-        return f"{sign}${v:,.2f}"
-
-    @app.template_filter("signed_pct")
-    def signed_pct_filter(v):
-        if v is None:
-            return "---"
-        return f"{v:+.1f}%"
-
-    @app.template_filter("domain_label")
-    def domain_label_filter(item):
-        """Derive the domain analyst label from asset_class/sector."""
-        ac = item.get("asset_class", "stock") if isinstance(item, dict) else "stock"
-        sec = item.get("sector", "") if isinstance(item, dict) else ""
-        return _domain_label(ac, sec)
-
-    @app.template_filter("domain_abbr")
-    def domain_abbr_filter(item):
-        """Short abbreviation for domain analyst (for mini score displays)."""
-        ac = item.get("asset_class", "stock") if isinstance(item, dict) else "stock"
-        sec = item.get("sector", "") if isinstance(item, dict) else ""
-        labels = {
-            "etf_bond": "Bnd", "etf_commodity": "Cmd",
-        }
-        sector_labels = {
-            "tech": "Tch", "financials": "Fin", "healthcare": "HC",
-            "consumer": "Con", "cyclical": "Cyc",
-        }
-        return labels.get(ac) or sector_labels.get(sec or "") or "F"
-
-    @app.template_filter("qty_label")
-    def qty_label_filter(asset_class):
-        """Return 'contracts' for futures, 'shares' for everything else."""
-        return "contracts" if asset_class == "future" else "shares"
-
-    @app.template_filter("usd_int")
-    def usd_int_filter(v):
-        """Format as $1,234 (no decimals)."""
-        if v is None:
-            return "---"
-        return f"${v:,.0f}"
-
-    def _domain_label(asset_class, sector):
-        labels = {
-            "etf_bond": "Bond", "etf_commodity": "Commodity",
-        }
-        sector_labels = {
-            "tech": "Tech", "financials": "Financials", "healthcare": "Healthcare",
-            "consumer": "Consumer", "cyclical": "Cyclical",
-        }
-        return labels.get(asset_class) or sector_labels.get(sector or "") or "Fund"
-
-    @app.context_processor
-    def inject_globals():
-        """Minimal globals for API partials (kill switch toggle)."""
-        try:
-            from tradingagents.execution.safety import SafetyMonitor
-            ks = SafetyMonitor(_cfg()).kill_switch_active
-        except Exception:
-            ks = False
-        return {"kill_switch": ks}
-
-    # ── Single page route ──
-
-    @app.route("/")
-    def index():
-        hist_date = request.args.get("date")
-        acct = get_account_data()
-        trades = get_trades_data()
-        regime = get_regime()
-        market = get_market_status()
-        states = get_ticker_states()
-        predictions = []  # Kalshi section disabled — skip DB query
-        historical = get_historical_data(hist_date) if hist_date else None
-        status = get_trading_status_data() if not hist_date else None
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        return render_template("index.html",
-                               acct=acct, trades=trades,
-                               regime=regime, market=market,
-                               states=states,
-                               predictions=predictions,
-                               hist_date=hist_date, historical=historical,
-                               status=status,
-                               now=now)
-
-    # ── API / htmx partials ──
-
-    @app.route("/api/scan-sectors")
-    def api_scan_sectors():
-        sectors = get_sector_rotation()
-        return render_template("_sectors.html", sectors=sectors)
-
-    @app.route("/api/scan-insiders")
-    def api_scan_insiders():
-        acct = get_account_data()
-        watchlist = get_watchlist()
-        clusters = get_insider_clusters(acct["positions"], watchlist)
-        return render_template("_insiders.html", clusters=clusters)
-
-    @app.route("/api/scan-congress")
-    def api_scan_congress():
-        acct = get_account_data()
-        watchlist = get_watchlist()
-        trades = get_congress_recent(acct["positions"], watchlist)
-        return render_template("_congress.html", congress_trades=trades)
-
-    @app.route("/api/council-detail")
-    def api_council_detail():
-        ticker = request.args.get("ticker", "")
-        if not ticker:
-            return "<p class='text-gray-400 text-sm'>No ticker specified</p>"
-        detail = get_ticker_detail(ticker)
-        reflections = get_ticker_reflections(ticker)
-        analyst_reports = get_analyst_reports(ticker)
-        trade_reports = get_trade_reports_for_ticker(ticker)
-        plan = get_plan_steps_for_ticker(ticker)
-        return render_template("_council_detail.html",
-                               ticker=ticker, detail=detail, reflections=reflections,
-                               analyst_reports=analyst_reports, trade_reports=trade_reports,
-                               plan=plan)
-
-    @app.route("/api/plan-metrics")
-    def api_plan_metrics():
-        metrics = get_plan_metrics_data()
-        return render_template("_plan_metrics.html", plan=metrics)
-
-    @app.route("/api/trading-kpis")
-    def api_trading_kpis():
-        acct = get_account_data()
-        trades = get_trades_data()
-        return render_template("_trading_kpis.html", acct=acct, trades=trades)
-
-    @app.route("/api/trading-risk")
-    def api_trading_risk():
-        live_risk = get_live_risk_data()
-        return render_template("_trading_risk.html", live_risk=live_risk)
-
-    @app.route("/api/trading-positions")
-    def api_trading_positions():
-        acct = get_account_data()
-        return render_template("_trading_positions.html", acct=acct)
-
-    @app.route("/api/trading-status")
-    def api_trading_status():
-        status = get_trading_status_data()
-        return render_template("_trading_status.html", status=status)
-
-    @app.route("/api/kill-switch", methods=["POST"])
-    def api_kill_switch_toggle():
-        config = _cfg()
-        from tradingagents.execution.safety import SafetyMonitor
-        safety = SafetyMonitor(config)
-        if safety.kill_switch_active:
-            safety.reset_kill_switch()
-        else:
-            safety.kill_switch_active = True
-            safety._save_state()
-        active = safety.kill_switch_active
-        return render_template("_kill_switch_btn.html", kill_switch=active)
-
-    @app.route("/api/run-calibration")
-    def api_run_calibration():
-        report = run_calibration()
-        return f"<pre class='text-xs font-mono text-gray-700 whitespace-pre-wrap'>{report}</pre>"
-
-    @app.route("/api/report/<int:report_id>")
-    def api_report_detail(report_id):
-        reports = get_trade_reports(limit=100)
-        report = next((r for r in reports if r["id"] == report_id), None)
-        if not report:
-            return "<p class='text-gray-400 text-sm'>Report not found</p>"
-        return render_template("_report_detail.html", r=report)
-
-    @app.route("/api/trade-detail")
-    def api_trade_detail():
-        ticker = request.args.get("ticker", "")
-        time = request.args.get("time", "")
-        try:
-            config = _cfg()
-            from tradingagents.execution.trade_data import load_recent_trades
-            all_trades = load_recent_trades(config, limit=500)
-            for t in all_trades:
-                ts = t.get("timestamp", "")[:16]
-                if ts == time and t.get("ticker") == ticker:
-                    req = t.get("order_request") or {}
-                    res = t.get("order_result") or {}
-                    return render_template("_trade_detail.html", t={
-                        "ticker": ticker, "time": time,
-                        "signal": t.get("signal", ""), "action": t.get("action_taken", ""),
-                        "side": (req.get("side") or "").upper(),
-                        "qty": req.get("quantity", ""),
-                        "fill": res.get("filled_price"),
-                        "before": t.get("account_value_before"),
-                        "after": t.get("account_value_after"),
-                        "reason": t.get("reason", "---"),
-                    })
-        except Exception:
-            pass
-        return "<p class='text-gray-400 text-sm'>Trade not found</p>"
-
+    """Create Flask app with JSON API only (Electron desktop app is the UI)."""
+    app = Flask(__name__)
+    app.register_blueprint(api_bp)
     return app

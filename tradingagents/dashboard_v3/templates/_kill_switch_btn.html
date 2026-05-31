@@ -1,6 +1,0 @@
-<button id="kill-switch-btn" hx-post="/api/kill-switch" hx-target="#kill-switch-btn" hx-swap="outerHTML"
-  class="text-[10px] font-bold uppercase px-2 py-0.5 rounded cursor-pointer transition-colors
-  {% if kill_switch %}bg-red-600 text-white hover:bg-red-700{% else %}bg-gray-100 text-gray-500 hover:bg-red-100 hover:text-red-700{% endif %}"
-  title="{{ 'Click to deactivate kill switch' if kill_switch else 'Click to activate kill switch' }}">
-  KILL {{ "ON" if kill_switch else "OFF" }}
-</button>

@@ -62,6 +62,9 @@ def create_server():
         Tool(name="get_market_regime", description="Get current market regime (risk_on/risk_off/transition/volatile) from VIX, DXY, 10Y yield.", inputSchema={"type": "object", "properties": {"date": {"type": "string", "description": "Date YYYY-MM-DD (default today)"}}}),
         Tool(name="get_sector_rotation", description="Get sector ETF relative strength and rotation direction.", inputSchema={"type": "object", "properties": {"date": {"type": "string", "description": "Date YYYY-MM-DD (default today)"}}}),
         Tool(name="get_earnings_calendar", description="Check if a stock has upcoming earnings.", inputSchema={"type": "object", "properties": {"ticker": {"type": "string"}}, "required": ["ticker"]}),
+        Tool(name="get_consensus_estimates", description="Wall Street consensus: analyst price targets, EPS trend/revisions, recommendation distribution (buy/hold/sell).", inputSchema={"type": "object", "properties": {"ticker": {"type": "string"}}, "required": ["ticker"]}),
+        Tool(name="get_sec_filings", description="Recent SEC filings (10-K, 10-Q, 8-K) for a stock. Shows filing dates, types, and descriptions.", inputSchema={"type": "object", "properties": {"ticker": {"type": "string"}, "filing_type": {"type": "string", "enum": ["all", "10-K", "10-Q", "8-K"], "default": "all"}, "limit": {"type": "integer", "default": 5}}, "required": ["ticker"]}),
+        Tool(name="get_13f_holdings", description="Institutional 13F holdings — which hedge funds and institutions own this stock, share counts, and values.", inputSchema={"type": "object", "properties": {"ticker": {"type": "string"}, "limit": {"type": "integer", "default": 10}}, "required": ["ticker"]}),
         # Portfolio
         Tool(name="get_portfolio", description="Get current portfolio positions, cash balance, and account value.", inputSchema={"type": "object", "properties": {}}),
         Tool(name="get_trades", description="Get recent trade history.", inputSchema={"type": "object", "properties": {"limit": {"type": "integer", "default": 50}}}),
@@ -214,6 +217,18 @@ def _handle_tool(name: str, args: dict) -> str:
     if name == "get_earnings_calendar":
         from tradingagents.dataflows.earnings_calendar import get_earnings_calendar
         return get_earnings_calendar(args["ticker"])
+
+    if name == "get_consensus_estimates":
+        from tradingagents.dataflows.y_finance import get_consensus_estimates
+        return get_consensus_estimates(args["ticker"])
+
+    if name == "get_sec_filings":
+        from tradingagents.dataflows.sec_filings import get_sec_filings
+        return get_sec_filings(args["ticker"], args.get("filing_type", "all"), args.get("limit", 5))
+
+    if name == "get_13f_holdings":
+        from tradingagents.dataflows.sec_filings import get_13f_holdings
+        return get_13f_holdings(args["ticker"], args.get("limit", 10))
 
     # ── Portfolio ────────────────────────────────────────────────
     if name == "get_portfolio":
@@ -443,11 +458,24 @@ def _handle_tool(name: str, args: dict) -> str:
         def _fetch_earnings():
             return get_earnings_calendar(ticker)
 
+        def _fetch_consensus():
+            from tradingagents.dataflows.y_finance import get_consensus_estimates
+            return get_consensus_estimates(ticker)
+
+        def _fetch_sec():
+            try:
+                from tradingagents.dataflows.sec_filings import get_sec_filings
+                return get_sec_filings(ticker)
+            except Exception:
+                return "SEC filings unavailable"
+
         # Run all fetches in parallel
         fetch_tasks = [
             ("Price Data (30d)", _fetch_prices),
             ("Technical Indicators", _fetch_technicals),
             ("Fundamentals", _fetch_fundamentals),
+            ("Consensus Estimates", _fetch_consensus),
+            ("SEC Filings", _fetch_sec),
             ("Recent News", _fetch_news),
             ("Reddit Sentiment", _fetch_reddit),
             ("StockTwits Sentiment", _fetch_stocktwits),
@@ -486,7 +514,20 @@ def _handle_tool(name: str, args: dict) -> str:
         from tradingagents.execution.broker.paper_client import PaperBrokerClient
 
         wl = load_watchlist(config)
-        tickers = wl.get("tickers", [])
+        tickers = list(wl.get("tickers", []))
+
+        # Dynamic discovery: scan for movers and merge into watchlist
+        discovered = []
+        try:
+            from tradingagents.execution.discovery import DiscoveryEngine
+            engine = DiscoveryEngine(config)
+            candidates = engine.run_scan(today)
+            for c in candidates:
+                if c.ticker.upper() not in {t.upper() for t in tickers}:
+                    tickers.append(c.ticker.upper())
+                    discovered.append(f"{c.ticker} ({c.source}: {c.reason})")
+        except Exception:
+            pass
 
         # Current portfolio
         broker = PaperBrokerClient(config)
@@ -519,6 +560,16 @@ def _handle_tool(name: str, args: dict) -> str:
                     continue
                 pnl_pct = (p.unrealized_pnl / (p.avg_cost * p.quantity) * 100) if p.avg_cost and p.quantity else 0
                 lines.append(f"| {p.ticker} | {p.quantity} | ${p.avg_cost:,.2f} | ${p.market_value:,.2f} | ${p.unrealized_pnl:+,.2f} | {pnl_pct:+.1f}% |")
+            lines.append("")
+
+        # Discovered tickers (dynamic — from market scanners)
+        if discovered:
+            lines.append(f"## Discovered Today ({len(discovered)} new)")
+            lines.append("")
+            lines.append("Tickers found by market scanners (top movers, unusual volume, news-driven). Not on your static watchlist — evaluate for potential BUY.")
+            lines.append("")
+            for d in discovered:
+                lines.append(f"- {d}")
             lines.append("")
 
         # Watchlist tickers not held — potential buys

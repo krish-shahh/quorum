@@ -36,7 +36,7 @@ This ensures every trading session starts with current context, even if native m
 
 ## Account Constraints
 
-$5,000 paper account. Full rules in the trading-planner skill (Portfolio Rules section). Key limits enforced by pre-trade hook: 7-day holding period, 50% sector cap, 20% cash reserve, max 4-5 positions. Use Underweight (not Sell) for partial trims.
+$5,000 paper account. Full rules in the trading-planner skill (Portfolio Rules section). Pre-trade hook enforces: 50% sector cap, 25% single-ticker cap, cash reserve (regime-conditional), blocked tickers, kill switch, plan matching. No artificial limits on position count, holding period, or averaging down — risk is managed via concentration, exposure, and sizing. Use Underweight (not Sell) for partial trims. User's 401K is in JLGMX (large-cap growth) — this account should diversify beyond tech.
 
 ## End-of-Day Report
 
@@ -205,7 +205,7 @@ Maintenance: prune_wiki, get_analytics_summary, search_wiki, get_wiki_page
 
 ## Safety
 
-- Pre-trade hook enforces: max positions, concentration limits, cash reserve, blocked tickers, kill switch
+- Pre-trade hook enforces: concentration limits, cash reserve, blocked tickers, kill switch
 - `score_council` tool has hard veto conditions (domain score collapse, unanimous bearish, 2-2 split) — auto-detects asset type for context-aware veto messages
 - `kill_switch` tool halts all trading immediately
 - `get_live_risk` tool: intraday circuit breakers (GREEN/YELLOW/ORANGE/RED) — daily P&L limits, ATR stop distances, VIX spike detection. RED auto-triggers kill switch.
@@ -241,41 +241,4 @@ If MCP tools aren't loading in Claude Code:
 3. Restart the Claude Code session (MCP connections are established at session init)
 4. The MCP stdio protocol test in `health` proves the server works end-to-end
 
-<!-- code-review-graph MCP tools -->
-## MCP Tools: code-review-graph
-
-**IMPORTANT: This project has a knowledge graph. ALWAYS use the
-code-review-graph MCP tools BEFORE using Grep/Glob/Read to explore
-the codebase.** The graph is faster, cheaper (fewer tokens), and gives
-you structural context (callers, dependents, test coverage) that file
-scanning cannot.
-
-### When to use graph tools FIRST
-
-- **Exploring code**: `semantic_search_nodes` or `query_graph` instead of Grep
-- **Understanding impact**: `get_impact_radius` instead of manually tracing imports
-- **Code review**: `detect_changes` + `get_review_context` instead of reading entire files
-- **Finding relationships**: `query_graph` with callers_of/callees_of/imports_of/tests_for
-- **Architecture questions**: `get_architecture_overview` + `list_communities`
-
-Fall back to Grep/Glob/Read **only** when the graph doesn't cover what you need.
-
-### Key Tools
-
-| Tool | Use when |
-|------|----------|
-| `detect_changes` | Reviewing code changes — gives risk-scored analysis |
-| `get_review_context` | Need source snippets for review — token-efficient |
-| `get_impact_radius` | Understanding blast radius of a change |
-| `get_affected_flows` | Finding which execution paths are impacted |
-| `query_graph` | Tracing callers, callees, imports, tests, dependencies |
-| `semantic_search_nodes` | Finding functions/classes by name or keyword |
-| `get_architecture_overview` | Understanding high-level codebase structure |
-| `refactor_tool` | Planning renames, finding dead code |
-
-### Workflow
-
-1. The graph auto-updates on file changes (via hooks).
-2. Use `detect_changes` for code review.
-3. Use `get_affected_flows` to understand impact.
-4. Use `query_graph` pattern="tests_for" to check coverage.
+<!-- code-review-graph instructions are in ~/.claude/CLAUDE.md (global) -->

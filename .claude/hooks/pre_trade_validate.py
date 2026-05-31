@@ -73,44 +73,11 @@ try:
 except Exception:
     pass
 
-# ── Rule 3: Max positions ──
-if signal in ("Buy", "Overweight"):
-    held = [p for p in positions if p.quantity > 0]
-    max_pos = int(config.get("max_open_positions", 6))
-    if len(held) >= max_pos:
-        errors.append(f"At max positions ({len(held)}/{max_pos})")
+# ── Rule 3: (removed — position count limit is artificial; risk is managed
+#    via concentration %, cash reserve, notional exposure, and VaR) ──
 
-# ── Rule 3b: Minimum holding period (anti-whipsaw) ──
-if signal in ("Sell", "Underweight"):
-    min_hold_days = int(config.get("min_holding_days", 7))
-    try:
-        from tradingagents.execution.db import get_db
-        conn = get_db(config)
-        row = conn.execute(
-            "SELECT timestamp FROM trades WHERE ticker = ? AND signal IN ('Buy', 'Overweight') "
-            "AND action_taken = 'executed' ORDER BY timestamp DESC LIMIT 1",
-            (ticker,),
-        ).fetchone()
-        if row:
-            from datetime import datetime, timedelta
-            buy_time = datetime.fromisoformat(row["timestamp"].replace("Z", "+00:00")) if "T" in row["timestamp"] else datetime.strptime(row["timestamp"], "%Y-%m-%d %H:%M:%S")
-            days_held = (datetime.now() - buy_time.replace(tzinfo=None)).days
-            if days_held < min_hold_days:
-                # Allow sells on stop-loss breaches (safety overrides cooldown)
-                active_plan = Path.home() / ".tradingagents" / "plans" / "active.md"
-                is_stop_loss = False
-                if active_plan.exists():
-                    try:
-                        plan_text = active_plan.resolve().read_text()
-                        # Priority 1 steps are stop-loss/safety sells
-                        if f"ticker: {ticker}" in plan_text or f'ticker: "{ticker}"' in plan_text:
-                            is_stop_loss = "priority: 1" in plan_text
-                    except Exception:
-                        pass
-                if not is_stop_loss:
-                    errors.append(f"COOLDOWN: {ticker} bought {days_held}d ago (min {min_hold_days}d). Override with priority-1 stop-loss only.")
-    except Exception:
-        pass
+# ── Rule 3b: (removed — holding period is a trading decision, not a hard rule.
+#    Exit when thesis breaks, not when a calendar says you can.) ──
 
 # ── Rule 4: Ticker concentration ──
 if signal in ("Buy", "Overweight"):
@@ -149,6 +116,26 @@ if signal in ("Buy", "Overweight"):
     except Exception:
         pass
 
+# ── Rule 4c: Book concentration check ──
+if signal in ("Buy", "Overweight"):
+    max_book_pct = float(config.get("max_book_concentration_pct", 0.40))
+    try:
+        from tradingagents.execution.ticker_utils import get_book
+        new_book = get_book(ticker)
+        book_value = sum(
+            p.market_value for p in positions
+            if p.quantity > 0 and get_book(p.ticker) == new_book
+        )
+        new_trade_value = account.account_value * float(config.get("max_position_pct", 0.05))
+        projected_book_pct = (book_value + new_trade_value) / account.account_value if account.account_value > 0 else 0
+        if projected_book_pct > max_book_pct:
+            errors.append(
+                f"BOOK CONCENTRATION: {new_book} would be {projected_book_pct:.0%} "
+                f"of portfolio (max {max_book_pct:.0%}). Diversify across books."
+            )
+    except Exception:
+        pass
+
 # ── Rule 5: Cash reserve (regime-conditional) ──
 if signal in ("Buy", "Overweight"):
     trade_cost = account.account_value * float(config.get("max_position_pct", 0.05))
@@ -167,13 +154,8 @@ if signal in ("Buy", "Overweight"):
     if cash_after < min_reserve:
         errors.append(f"Would leave ${cash_after:,.0f} cash, below {cash_target:.0%} reserve (regime: {regime_key})")
 
-# ── Rule 6: No doubling losers >10% ──
-if signal == "Buy":
-    existing = next((p for p in positions if p.ticker.upper() == ticker), None)
-    if existing and existing.quantity > 0 and existing.unrealized_pnl < 0:
-        loss_pct = abs(existing.unrealized_pnl) / (existing.avg_cost * existing.quantity) if existing.avg_cost else 0
-        if loss_pct > 0.10:
-            errors.append(f"{ticker} down {loss_pct:.0%} — use Overweight to add deliberately")
+# ── Rule 6: (removed — averaging down is a legitimate strategy when thesis
+#    is intact. Concentration limit already prevents reckless loading.) ──
 
 # ── Rule 7: Max trade value (from rules.json) ──
 max_trade_val = rules.get("max_trade_value")

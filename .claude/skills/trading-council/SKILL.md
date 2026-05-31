@@ -409,11 +409,12 @@ Over time, the `get_trade_reflections` tool will accumulate outcome data that sh
 - Max ~5% per new position (~$250), must buy at least 1 whole share
 - Prefer stocks priced under $250 for meaningful position sizing
 - Max ~25% in any single ticker
-- Cap at 4-5 concurrent positions (not 6) given small account
+- No hard cap on position count — size and manage risk through concentration limits, exposure, and cash reserve
 - 20%+ cash reserve ($1,000+ minimum)
 - In risk_off: fewer buys, tighter sells
 - Reduce size 50% if earnings within 3 days
 - Score 3.2-3.5 = Hold (not Buy) — need clear edge on small account
+- **Diversify beyond tech** — the user's 401K already has heavy large-cap growth exposure (JLGMX). This paper account should complement it with healthcare, financials, industrials, consumer staples, and energy.
 
 ## Why This Is Better Than Single-Agent Mode
 

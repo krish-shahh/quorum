@@ -242,3 +242,27 @@ def search_tickers(query: str, limit: int = 10) -> List[str]:
     prefix = [t for t in tickers if t.startswith(q)]
     contains = [t for t in tickers if q in t and t not in prefix]
     return (prefix + contains)[:limit]
+
+
+# ── Portfolio book classification ──
+# Maps (asset_class, sector) → book name. Sector=None matches any sector for that asset class.
+BOOK_MAP = {
+    ("stock", "tech"):       "Growth Equities",
+    ("etf_equity", "tech"):  "Growth Equities",
+    ("stock", "financials"): "Value / Defensive",
+    ("stock", "healthcare"): "Value / Defensive",
+    ("stock", "consumer"):   "Value / Defensive",
+    ("stock", "cyclical"):   "Cyclical / Industrial",
+    ("etf_equity", "cyclical"): "Cyclical / Industrial",
+    ("etf_bond", None):      "Income / Fixed Income",
+    ("etf_commodity", None): "Alternatives",
+    ("future", None):        "Alternatives",
+}
+
+
+def get_book(ticker: str) -> str:
+    """Return the portfolio book name for a ticker based on its asset class and sector."""
+    info = detect_asset_type(ticker)
+    ac = info["asset_class"]
+    sec = info.get("sector")
+    return BOOK_MAP.get((ac, sec)) or BOOK_MAP.get((ac, None), "Value / Defensive")

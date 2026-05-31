@@ -26,18 +26,20 @@ app = typer.Typer(
 
 @app.callback()
 def _default(ctx: typer.Context):
-    """Launch the Flask dashboard (default when no subcommand given)."""
+    """Launch the JSON API server (Electron desktop app connects to this)."""
     if ctx.invoked_subcommand is not None:
         return
     from tradingagents.dashboard_v3.app import create_app
-    console.print("[bold]Starting TradingAgents Dashboard...[/bold]")
-    console.print("[dim]Running on http://127.0.0.1:5050[/dim]")
+    console.print("[bold]Starting TradingAgents API Server...[/bold]")
+    console.print("[dim]JSON API on http://127.0.0.1:5050/api/v1/[/dim]")
+    console.print("[dim]Open the Electron desktop app to view the dashboard[/dim]")
+    console.print("[dim]  cd desktop && npm run dev[/dim]")
     console.print("Press Ctrl-C to stop\n")
     try:
         flask_app = create_app()
         flask_app.run(host="127.0.0.1", port=5050)
     except KeyboardInterrupt:
-        console.print("\nDashboard stopped.")
+        console.print("\nAPI server stopped.")
 
 
 # ──────────────────────────────────────────────────────────────────

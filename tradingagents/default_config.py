@@ -15,7 +15,6 @@ _ENV_OVERRIDES = {
     "TRADINGAGENTS_OUTPUT_LANGUAGE":      "output_language",
     "TRADINGAGENTS_MAX_DEBATE_ROUNDS":    "max_debate_rounds",
     "TRADINGAGENTS_MAX_RISK_ROUNDS":      "max_risk_discuss_rounds",
-    "TRADINGAGENTS_CHECKPOINT_ENABLED":   "checkpoint_enabled",
     "TRADINGAGENTS_BENCHMARK_TICKER":     "benchmark_ticker",
     # Execution layer overrides
     "TRADINGAGENTS_EXECUTION_MODE":       "execution_mode",
@@ -64,7 +63,6 @@ _ENV_OVERRIDES = {
     # Execution edge features
     "TRADINGAGENTS_KELLY_SIZING":         "kelly_sizing_enabled",
     "TRADINGAGENTS_CORRELATION_AWARE":    "correlation_aware_enabled",
-    "TRADINGAGENTS_VWAP_ENABLED":         "vwap_enabled",
     # Push notifications
     "TRADINGAGENTS_PUSH_ENABLED":         "push_notifications_enabled",
     # Backtest
@@ -114,25 +112,9 @@ DEFAULT_CONFIG = _apply_env_overrides({
     # provider-specific URL here would leak (e.g. OpenAI's /v1 was previously
     # being forwarded to Gemini, producing malformed request URLs).
     "backend_url": None,
-    # Provider-specific thinking configuration
-    "google_thinking_level": None,      # "high", "minimal", etc.
-    "openai_reasoning_effort": None,    # "medium", "high", "low"
-    "anthropic_effort": None,           # "high", "medium", "low"
-    # Checkpoint/resume: when True, LangGraph saves state after each node
-    # so a crashed run can resume from the last successful step.
-    "checkpoint_enabled": False,
-    # Computation cache (Gromit-style): caches analyst/researcher outputs and
-    # only recomputes nodes whose inputs changed. Dramatically reduces LLM calls
-    # on intra-day re-analysis and sequential ticker runs.
-    "computation_cache_enabled": True,
-    # Output language for analyst reports and final decision
-    # Internal agent debate stays in English for reasoning quality
-    "output_language": "English",
     # Debate and discussion settings
     "max_debate_rounds": 1,
     "max_risk_discuss_rounds": 1,
-    "max_recur_limit": 100,
-    "analyst_concurrency_limit": 4,  # run all 4 analysts in parallel (was 1 = sequential)
     # News / data fetching parameters
     # Increase for longer lookback strategies or to broaden macro coverage;
     # decrease to reduce token usage in agent prompts.
@@ -232,6 +214,8 @@ DEFAULT_CONFIG = _apply_env_overrides({
         "sentiment": 900,       # StockTwits shifts every 15 min
         "insiders": 86400,      # insider txns change daily at most
         "congressional": 86400, # STOCK Act filings, daily sync
+        "consensus": 86400,     # analyst estimates, daily at most
+        "sec_filings": 86400,   # SEC filings, daily sync
         "earnings": 86400,      # earnings dates change rarely
         "regime": 300,          # VIX/DXY/yields shift intraday
         "sector_rotation": 3600,
@@ -252,6 +236,8 @@ DEFAULT_CONFIG = _apply_env_overrides({
     "earnings_avoidance_enabled": True,
     "earnings_avoidance_days": 3,          # reduce size within N days of earnings
     "macro_event_adjustment_enabled": True,
+    # Portfolio book concentration limit (Growth, Value, Cyclical, Income, Alternatives)
+    "max_book_concentration_pct": 0.40,
     # ------------------------------------------------------------------
     # Execution edge features
     # ------------------------------------------------------------------
@@ -270,8 +256,6 @@ DEFAULT_CONFIG = _apply_env_overrides({
         "volatile":   {"buy_threshold": 3.6, "sell_threshold": 2.5, "cash_target": 0.25, "size_mult": 0.7},
         "transition": {"buy_threshold": 3.5, "sell_threshold": 2.5, "cash_target": 0.20, "size_mult": 1.0},
     },
-    "vwap_enabled": False,                  # opt-in: split large orders
-    "vwap_slice_threshold": 100,            # shares above which VWAP is used
     # ------------------------------------------------------------------
     # Debate architecture (bull/bear + risk debate layers)
     # ------------------------------------------------------------------

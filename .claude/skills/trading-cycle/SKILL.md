@@ -54,7 +54,7 @@ For EACH watchlist ticker you don't hold, call `get_full_ticker_data` and evalua
 
 **SKIP if:**
 - Mixed signals, no clear edge
-- Already at max positions (6)
+- Not enough capital for meaningful position
 - Not enough cash for meaningful position
 
 ### Step 4: Execute and report
@@ -93,7 +93,7 @@ After all tickers are processed, give a brief summary:
 - Max ~5% per new position (~$250), must buy at least 1 whole share
 - Prefer stocks priced under $250 for meaningful position sizing
 - Max ~25% in any single ticker
-- Cap at 4-5 concurrent positions (not 6) given small account
+- No hard cap on position count — size and manage risk through concentration limits, exposure, and cash reserve
 - 20%+ cash reserve ($1,000+ minimum)
 - In risk_off regime: fewer new buys, consider trimming weak positions
 - Reduce position size 50% if earnings within 3 days

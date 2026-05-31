@@ -27,7 +27,6 @@ def test_no_env_uses_built_in_defaults(monkeypatch):
     assert dc.DEFAULT_CONFIG["quick_think_llm"] == "claude-sonnet-4-6"
     assert dc.DEFAULT_CONFIG["backend_url"] is None
     assert dc.DEFAULT_CONFIG["max_debate_rounds"] == 1
-    assert dc.DEFAULT_CONFIG["checkpoint_enabled"] is False
 
 
 def test_string_overrides(monkeypatch):
@@ -66,8 +65,8 @@ def test_int_coercion(monkeypatch):
     ],
 )
 def test_bool_coercion(monkeypatch, raw, expected):
-    dc = _reload_with_env(monkeypatch, TRADINGAGENTS_CHECKPOINT_ENABLED=raw)
-    assert dc.DEFAULT_CONFIG["checkpoint_enabled"] is expected
+    dc = _reload_with_env(monkeypatch, TRADINGAGENTS_STOP_LOSS_ENABLED=raw)
+    assert dc.DEFAULT_CONFIG["stop_loss_enabled"] is expected
 
 
 def test_empty_env_value_is_passthrough(monkeypatch):

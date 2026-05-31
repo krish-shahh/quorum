@@ -498,3 +498,72 @@ def get_insider_transactions(
         
     except Exception as e:
         return f"Error retrieving insider transactions for {ticker}: {str(e)}"
+
+
+@cached_config("fundamentals")
+def get_consensus_estimates(
+    ticker: Annotated[str, "ticker symbol of the company"]
+):
+    """Get Wall Street consensus: price targets, EPS trends, revisions, recommendations."""
+    try:
+        t = yf.Ticker(ticker.upper())
+        sections = [f"# Consensus Estimates — {ticker.upper()}"]
+
+        # Analyst price targets
+        try:
+            targets = yf_retry(lambda: t.analyst_price_targets)
+            if targets is not None and not getattr(targets, "empty", True):
+                sections.append("## Analyst Price Targets")
+                if isinstance(targets, dict):
+                    for k, v in targets.items():
+                        sections.append(f"  {k}: ${v:.2f}" if isinstance(v, (int, float)) else f"  {k}: {v}")
+                else:
+                    sections.append(str(targets))
+        except Exception:
+            pass
+
+        # EPS trend (estimate revisions over time)
+        try:
+            eps_trend = yf_retry(lambda: t.eps_trend)
+            if eps_trend is not None and not getattr(eps_trend, "empty", True):
+                sections.append("## EPS Trend (estimate revisions)")
+                sections.append(eps_trend.to_string() if hasattr(eps_trend, "to_string") else str(eps_trend))
+        except Exception:
+            pass
+
+        # EPS revisions (up/down counts)
+        try:
+            eps_rev = yf_retry(lambda: t.eps_revisions)
+            if eps_rev is not None and not getattr(eps_rev, "empty", True):
+                sections.append("## EPS Revisions (analyst up/down)")
+                sections.append(eps_rev.to_string() if hasattr(eps_rev, "to_string") else str(eps_rev))
+        except Exception:
+            pass
+
+        # Recommendation trends
+        try:
+            recs = yf_retry(lambda: t.recommendations)
+            if recs is not None and not getattr(recs, "empty", True):
+                # Last 3 months of recommendations
+                recent = recs.tail(3) if hasattr(recs, "tail") else recs
+                sections.append("## Recommendation Trends (recent)")
+                sections.append(recent.to_string() if hasattr(recent, "to_string") else str(recent))
+        except Exception:
+            pass
+
+        # Revenue estimates
+        try:
+            rev_est = yf_retry(lambda: t.revenue_estimate)
+            if rev_est is not None and not getattr(rev_est, "empty", True):
+                sections.append("## Revenue Estimates")
+                sections.append(rev_est.to_string() if hasattr(rev_est, "to_string") else str(rev_est))
+        except Exception:
+            pass
+
+        if len(sections) <= 1:
+            return f"No consensus estimate data available for {ticker.upper()}"
+
+        return "\n\n".join(sections)
+
+    except Exception as e:
+        return f"Error retrieving consensus estimates for {ticker}: {str(e)}"
