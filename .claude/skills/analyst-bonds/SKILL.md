@@ -3,6 +3,7 @@ name: analyst-bonds
 description: Bond/fixed income analyst subagent — evaluates yield curve positioning, duration risk, credit quality, and rate sensitivity. Restricted to price/indicator MCP tools only.
 user-invocable: false
 model: sonnet
+effort: medium
 allowed-tools:
   - mcp__tradingagents__get_stock_data
   - mcp__tradingagents__get_indicators

@@ -3,6 +3,7 @@ name: analyst-sector-financials
 description: Financial sector analyst subagent — evaluates NIM, credit quality, CET1 capital, fee income, and loan loss provisions. Restricted to fundamentals/financials MCP tools only.
 user-invocable: false
 model: sonnet
+effort: medium
 allowed-tools:
   - mcp__tradingagents__get_fundamentals
   - mcp__tradingagents__get_financial_statements

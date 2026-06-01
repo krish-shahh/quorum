@@ -3,6 +3,7 @@ name: debate-bear
 description: Bear researcher — argues AGAINST an investment based on analyst reports and quant scores. Pure reasoning, no MCP tools.
 user-invocable: false
 model: sonnet
+effort: high
 allowed-tools: []
 ---
 

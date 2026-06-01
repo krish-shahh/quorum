@@ -3,6 +3,7 @@ name: debate-portfolio-manager
 description: Portfolio Manager — final decision-maker who synthesizes risk debate, research plan, quantitative score, and past trade reflections. Deep reasoning agent.
 user-invocable: false
 model: sonnet
+effort: high
 allowed-tools: []
 ---
 

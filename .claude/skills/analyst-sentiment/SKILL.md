@@ -3,6 +3,7 @@ name: analyst-sentiment
 description: Sentiment analyst subagent — gauges retail/institutional positioning using social media and insider activity. Restricted to sentiment MCP tools only.
 user-invocable: false
 model: sonnet
+effort: medium
 allowed-tools:
   - mcp__tradingagents__get_reddit_sentiment
   - mcp__tradingagents__get_stocktwits_sentiment

@@ -3,6 +3,7 @@ name: analyst-sector-cyclical
 description: Cyclical/energy/industrial sector analyst subagent — evaluates commodity exposure, capex cycles, order backlogs, and capacity utilization. Restricted to fundamentals/financials MCP tools only.
 user-invocable: false
 model: sonnet
+effort: medium
 allowed-tools:
   - mcp__tradingagents__get_fundamentals
   - mcp__tradingagents__get_financial_statements

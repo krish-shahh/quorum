@@ -3,6 +3,7 @@ name: prediction-executor
 description: Prediction Market Executor — mechanically executes prediction market plans. Cannot analyze or improvise.
 user-invocable: true
 model: sonnet
+effort: low
 allowed-tools:
   - mcp__tradingagents__execute_kalshi_paper_trade
   - mcp__tradingagents__execute_kalshi_arb_trade

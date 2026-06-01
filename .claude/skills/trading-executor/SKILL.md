@@ -3,6 +3,7 @@ name: trading-executor
 description: Executor — mechanically executes the active trading plan. Cannot analyze or improvise trades.
 user-invocable: true
 model: sonnet
+effort: low
 allowed-tools:
   - mcp__tradingagents__execute_paper_trade
   - mcp__tradingagents__execute_kalshi_paper_trade

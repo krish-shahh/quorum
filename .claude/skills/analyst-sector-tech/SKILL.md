@@ -3,6 +3,7 @@ name: analyst-sector-tech
 description: Technology sector analyst subagent — evaluates SaaS metrics, cloud revenue, R&D intensity, TAM, and AI/platform exposure. Restricted to fundamentals/financials MCP tools only.
 user-invocable: false
 model: sonnet
+effort: medium
 allowed-tools:
   - mcp__tradingagents__get_fundamentals
   - mcp__tradingagents__get_financial_statements

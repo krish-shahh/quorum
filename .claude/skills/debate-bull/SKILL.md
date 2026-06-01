@@ -3,6 +3,7 @@ name: debate-bull
 description: Bull researcher — argues FOR an investment based on analyst reports and quant scores. Pure reasoning, no MCP tools.
 user-invocable: false
 model: sonnet
+effort: high
 allowed-tools: []
 ---
 

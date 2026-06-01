@@ -3,6 +3,7 @@ name: debate-research-manager
 description: Research Manager — judges the Bull/Bear investment debate and produces a structured research plan. Deep reasoning agent.
 user-invocable: false
 model: sonnet
+effort: high
 allowed-tools: []
 ---
 
