@@ -49,7 +49,13 @@ Inspired by [TradingAgents](https://github.com/tauricresearch/tradingagents) (ar
 
 ## Step 0: Live Risk Check (BEFORE anything else)
 
-Call `get_live_risk` first. Check the response for:
+Call `get_trading_calendar` and `get_live_risk` in parallel. The calendar tells you the current day, time, and whether the market is open — **never guess the day of week**.
+
+From the calendar response, note:
+- If it's not a trading day (weekend/holiday), you can still plan but note that prices are stale.
+- The market open/close times and next trading day.
+
+From the risk response, check for:
 
 1. **Sell recommendations** — If the response includes a "SELL RECOMMENDATIONS" section (stop-loss breaches, trailing stop hits), do NOT execute them. Instead, record each as an **IMMEDIATE SELL** step in the plan with highest priority. These will be the first steps the Executor processes.
 

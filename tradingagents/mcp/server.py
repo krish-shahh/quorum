@@ -18,7 +18,7 @@ import json
 import logging
 import os
 import sys
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Any
 
 # Ensure project is on path
@@ -122,6 +122,8 @@ def create_server():
         Tool(name="get_quant_scores", description="Compute deterministic quantitative scores for a ticker. Returns fundamental and technical quant scores (1-5), data quality (0-1), component breakdowns, and hard vetoes. Asset-type aware: uses sector-specific scoring (banks, healthcare, tech, bonds, commodities). These are auditable, math-based scores — not LLM judgment.", inputSchema={"type": "object", "properties": {"ticker": {"type": "string", "description": "Stock/ETF/futures ticker"}, "regime": {"type": "string", "description": "Current regime (risk_on/risk_off/volatile/transition). Auto-detected if omitted.", "default": ""}}, "required": ["ticker"]}),
         Tool(name="get_portfolio_risk", description="Compute portfolio-level risk metrics: historical VaR (95%, 1-day), total notional exposure, position correlation, sector concentration. Use before new buys to check portfolio health.", inputSchema={"type": "object", "properties": {}}),
         Tool(name="get_live_risk", description="Live intraday risk check. Returns daily P&L, drawdown, ATR stop distances, cash reserve, VIX, and circuit breaker status (GREEN/YELLOW/ORANGE/RED). Call at the start of every trading council cycle.", inputSchema={"type": "object", "properties": {}}),
+        # Calendar / datetime (prevents LLM day-of-week hallucination)
+        Tool(name="get_trading_calendar", description="Get current date, time, day of week, and whether the market is open. ALWAYS call this instead of guessing the day of week or market status. Returns timezone-aware datetime, trading day status, market open/close times, and next trading day.", inputSchema={"type": "object", "properties": {"exchange": {"type": "string", "description": "Exchange MIC code (default: XNYS/NYSE)", "default": "XNYS"}}}),
     ]
 
     @server.list_tools()
@@ -2016,6 +2018,34 @@ def _handle_tool(name: str, args: dict) -> str:
         lines.append(f"\nThese markets have positive historical edge (favorites "
                      f"are systematically underpriced on Kalshi per Whelan et al. 2025). "
                      f"The council adds probability estimation on top of the statistical edge.")
+        return "\n".join(lines)
+
+    # ── Trading Calendar (prevents day-of-week hallucination) ────
+    if name == "get_trading_calendar":
+        from tradingagents.execution.market_calendar import (
+            is_trading_day, is_market_open, is_extended_hours,
+            market_open_time, market_close_time, next_trading_day, ET,
+        )
+        exchange = args.get("exchange", "XNYS")
+        now = datetime.now(ET)
+        d = now.date()
+        trading_day = is_trading_day(d, exchange)
+        market_open = is_market_open(now, exchange)
+        extended = is_extended_hours(now)
+        open_t = market_open_time(d, exchange)
+        close_t = market_close_time(d, exchange)
+        next_td = next_trading_day(d + timedelta(days=1), exchange)
+
+        lines = [
+            f"# Trading Calendar",
+            f"- **Now**: {now.strftime('%A, %B %d, %Y %I:%M %p %Z')}",
+            f"- **Day of week**: {now.strftime('%A')}",
+            f"- **Trading day**: {'Yes' if trading_day else 'No (weekend or holiday)'}",
+            f"- **Market open**: {'Yes' if market_open else 'No'}",
+            f"- **Extended hours**: {'Yes' if extended else 'No'}",
+            f"- **Session**: {open_t.strftime('%H:%M')} - {close_t.strftime('%H:%M')} ET",
+            f"- **Next trading day**: {next_td.strftime('%A, %B %d, %Y')}",
+        ]
         return "\n".join(lines)
 
     return f"Unknown tool: {name}"

@@ -26,8 +26,9 @@ Or just say: "Run my autonomous trading cycle" or "Analyze Kalshi markets"
 
 When ANY trading-related task is requested (running a cycle, checking portfolio, analyzing a ticker, etc.), ALWAYS do these two things first before proceeding:
 
-1. **Check portfolio state** — Call `get_portfolio` to see current positions, cash, and P&L. Compare with the memory file `memory/portfolio_state.md` for changes since last session.
-2. **Check market regime** — Call `get_market_regime` to get current VIX, DXY, yields, and regime classification.
+1. **Check trading calendar** — Call `get_trading_calendar` to get the current day, time, and market status. **Never guess the day of week** — LLMs hallucinate this. Use the tool.
+2. **Check portfolio state** — Call `get_portfolio` to see current positions, cash, and P&L. Compare with the memory file `memory/portfolio_state.md` for changes since last session.
+3. **Check market regime** — Call `get_market_regime` to get current VIX, DXY, yields, and regime classification.
 
 Report a brief 2-3 line status to the user before proceeding:
 > Portfolio: X positions, $Y cash (Z% reserve). Regime: {regime} (VIX: N).
@@ -175,7 +176,7 @@ tradingagents/
 | `~/.tradingagents/wiki/` | Analysis pages, digests, ticker summaries |
 | `scripts/start-trading-day.sh` | Auto-start script (called by launchd at 9:30 AM) |
 
-## MCP Tools (54)
+## MCP Tools (55)
 
 Data: get_stock_data, get_indicators, get_indicators_bulk, get_fundamentals, get_financial_statements, get_news, get_global_news, get_reddit_sentiment, get_stocktwits_sentiment, get_insider_transactions, get_insider_clusters, get_congress_trades, get_congress_summary, get_market_regime, get_sector_rotation, get_earnings_calendar
 
@@ -192,6 +193,8 @@ State & Cache: get_ticker_state, get_ticker_deltas, get_cache_stats, get_asset_i
 Quant & Risk: get_quant_scores, get_portfolio_risk, get_live_risk
 
 Reflection: get_trade_reflections (past outcome lessons for PM prompt injection)
+
+Calendar: get_trading_calendar (current datetime, day of week, market open status, next trading day)
 
 Analytics: get_analyst_accuracy (per-analyst IC and directional accuracy — shows which analysts are predictive)
 
