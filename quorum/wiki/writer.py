@@ -36,6 +36,13 @@ def _safe_float(v: Any) -> Optional[float]:
         return None
 
 
+def _safe_ticker(ticker: str) -> str:
+    """Sanitize a ticker for safe use as a filename component (strips path
+    separators and any char outside the ticker alphabet, e.g. BRK.B, ES=F)."""
+    t = re.sub(r"[^A-Z0-9.\-=]", "", (ticker or "").upper())
+    return t[:15] or "UNKNOWN"
+
+
 class WikiWriter:
     """Persistent, structured knowledge base for pipeline runs.
 
@@ -257,7 +264,7 @@ class WikiWriter:
         # Write file
         date_dir = self.wiki_dir / "runs" / trade_date
         date_dir.mkdir(parents=True, exist_ok=True)
-        page_path = date_dir / f"{ticker}.md"
+        page_path = date_dir / f"{_safe_ticker(ticker)}.md"
         page_path.write_text("\n".join(body_parts), encoding="utf-8")
 
         # Index in SQLite
@@ -455,7 +462,7 @@ class WikiWriter:
 
         total = len(rows)
         if total == 0:
-            page_path = self.wiki_dir / "tickers" / f"{ticker}.md"
+            page_path = self.wiki_dir / "tickers" / f"{_safe_ticker(ticker)}.md"
             page_path.write_text(
                 f"# {ticker}\n\nNo pipeline runs recorded yet.\n", encoding="utf-8"
             )
@@ -577,7 +584,7 @@ class WikiWriter:
         parts.append("")
 
         # Write
-        page_path = self.wiki_dir / "tickers" / f"{ticker}.md"
+        page_path = self.wiki_dir / "tickers" / f"{_safe_ticker(ticker)}.md"
         page_path.write_text("\n".join(parts), encoding="utf-8")
 
         # Index
@@ -935,8 +942,13 @@ class WikiWriter:
         return [dict(row) for row in rows]
 
     def get_page_content(self, path: str) -> str:
-        """Read the content of a wiki page by its relative path."""
-        full_path = self.wiki_dir / path
-        if full_path.exists():
-            return full_path.read_text(encoding="utf-8")
-        return ""
+        """Read a wiki page by its relative path, confined to wiki_dir.
+
+        Rejects absolute paths and ``..`` traversal so a caller-supplied
+        path cannot read files outside the wiki directory.
+        """
+        base = self.wiki_dir.resolve()
+        full_path = (base / path).resolve()
+        if not full_path.is_relative_to(base) or not full_path.exists():
+            return ""
+        return full_path.read_text(encoding="utf-8")

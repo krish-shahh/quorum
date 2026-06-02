@@ -724,9 +724,11 @@ def _handle_tool(name: str, args: dict) -> str:
             learner = LearningEngine(config)
             reflector = ReflectionEngine(learner, config)
             reflections = reflector.get_reflections(ticker, limit=3)
-            # Append reflections to the wiki page
-            page_path = wiki.wiki_dir / path
-            if page_path.exists():
+            # Append reflections to the wiki page (confined to wiki_dir;
+            # reject absolute/.. paths so an injected path can't escape).
+            _wiki_base = wiki.wiki_dir.resolve()
+            page_path = (_wiki_base / path).resolve()
+            if page_path.is_relative_to(_wiki_base) and page_path.exists():
                 content = page_path.read_text(encoding="utf-8")
                 content += f"\n## Trade Reflections\n\n{reflections}\n"
                 page_path.write_text(content, encoding="utf-8")

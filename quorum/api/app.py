@@ -832,10 +832,30 @@ def get_watchlist():
 api_bp = Blueprint("api_json", __name__)
 
 
+_ALLOWED_ORIGIN_HOSTS = {"localhost", "127.0.0.1", "::1"}
+
+
+def _origin_allowed(origin: str) -> bool:
+    """Allow only the Electron app (file:// → 'null') and localhost dev origins."""
+    if not origin:
+        return False
+    if origin == "null":  # packaged Electron renderer loads via file://
+        return True
+    from urllib.parse import urlparse
+    return urlparse(origin).hostname in _ALLOWED_ORIGIN_HOSTS
+
+
 @api_bp.after_request
 def api_cors(response):
-    """Allow cross-origin requests from Electron/Vite dev server."""
-    response.headers["Access-Control-Allow-Origin"] = "*"
+    """Reflect CORS only for the Electron app / localhost dev — never a wildcard.
+
+    A wildcard would let any website the user visits issue cross-origin
+    requests to this localhost API (e.g. flipping the kill switch).
+    """
+    origin = request.headers.get("Origin", "")
+    if _origin_allowed(origin):
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Vary"] = "Origin"
     response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
     response.headers["Access-Control-Allow-Headers"] = "Content-Type"
     return response
@@ -990,6 +1010,12 @@ def api_v1_report(report_id):
 
 @api_bp.route("/api/v1/kill-switch", methods=["POST"])
 def api_v1_kill_switch():
+    # Block drive-by CSRF: reject a cross-site Origin (a website the user is
+    # browsing). Electron ('null'), localhost dev, and non-browser callers
+    # (curl, no Origin header) are allowed.
+    origin = request.headers.get("Origin", "")
+    if origin and not _origin_allowed(origin):
+        return jsonify({"error": "cross-site request forbidden"}), 403
     config = _cfg()
     from quorum.execution.safety import SafetyMonitor
     safety = SafetyMonitor(config)

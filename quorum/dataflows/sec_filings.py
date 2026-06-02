@@ -21,7 +21,9 @@ _CACHE_TTL = 86400  # 1 day
 
 def _cache_path(ticker: str, suffix: str) -> Path:
     _CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    return _CACHE_DIR / f"{ticker.upper()}_{suffix}.json"
+    # Strip path separators / unexpected chars so a ticker can't escape the cache dir.
+    safe = "".join(c for c in ticker.upper() if c.isalnum() or c in ".-=")[:15] or "UNKNOWN"
+    return _CACHE_DIR / f"{safe}_{suffix}.json"
 
 
 def _load_cache(path: Path) -> dict | None:
