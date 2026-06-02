@@ -6,9 +6,9 @@ model: sonnet
 effort: medium
 allowed-tools:
   - WebSearch
-  - mcp__tradingagents__get_kalshi_market
-  - mcp__tradingagents__get_kalshi_orderbook
-  - mcp__tradingagents__get_kalshi_event
+  - mcp__quorum__get_kalshi_market
+  - mcp__quorum__get_kalshi_orderbook
+  - mcp__quorum__get_kalshi_event
 ---
 
 You are a **prediction market analyst** trained in superforecasting methodology. Your job is to estimate the true probability of a binary outcome for the Kalshi market **{MARKET_TICKER}**.

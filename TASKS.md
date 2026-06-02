@@ -1,4 +1,4 @@
-# TASKS.md — TradingAgents Roadmap
+# TASKS.md — quorum Roadmap
 
 ## Completed
 
@@ -18,7 +18,7 @@ These are blocked or waiting on prerequisites:
 
 - [ ] **Polymarket API integration** — deferred to future phase
 - [ ] **Adaptive council weights via IC** — needs 50+ trades with forward returns for statistical validity. Infrastructure ready (`signal_scores` table + `fill_forward_returns()`)
-- [x] **Quant score backtesting** — `tradingagents/backtest/quant_replay.py`: `replay_quant_scores(ticker, start, end, regime)` downloads historical OHLCV, computes technical indicators at each date, runs scorer, compares with forward returns (1d/5d/20d), computes IC (Spearman rank correlation). Tested: AAPL 83 days scored.
+- [x] **Quant score backtesting** — `quorum/backtest/quant_replay.py`: `replay_quant_scores(ticker, start, end, regime)` downloads historical OHLCV, computes technical indicators at each date, runs scorer, compares with forward returns (1d/5d/20d), computes IC (Spearman rank correlation). Tested: AAPL 83 days scored.
 - [x] **Pipeline dashboard: quant breakdown** — added "Quant Pre-Screen" step (Q) to the decision DAG between Analyst Scores and Council Weighting. Shows fundamental/technical scores, data quality %, vetoes (red badges), and component breakdown.
 
 ---
@@ -61,7 +61,7 @@ Interactive (subscription limits, $0 SDK cost):
 - [ ] **1. Build pre-check prompt** — Minimal prompt that calls only `get_ticker_deltas`, `get_market_regime`, and `get_kalshi_positions`. Outputs structured JSON: `{"action": "SKIP"|"TRADE", "reason": "..."}`. No subagents, no council, no wiki writes.
 - [ ] **2. Update `start-trading-day.sh`** — Two-stage script: run pre-check first with `--output-format json`, parse result, only invoke full council if action is TRADE.
 - [ ] **3. Reduce launchd to 1 headless cycle/day** — Change plist from 4 CalendarIntervals to 1 (9:30 AM only). Midday/afternoon/EOD cycles become interactive-only.
-- [ ] **4. Add cost tracking** — Log estimated token usage per `claude -p` invocation to `~/.tradingagents/logs/sdk-cost-YYYY-MM.log`. Alert if approaching $18 (90% of credit).
+- [ ] **4. Add cost tracking** — Log estimated token usage per `claude -p` invocation to `~/.quorum/logs/sdk-cost-YYYY-MM.log`. Alert if approaching $18 (90% of credit).
 - [ ] **5. Update CLAUDE.md and architecture diagram** — Document the hybrid model.
 - [ ] **6. Test end-to-end** — Dry-run the pre-check script. Measure actual token cost per invocation.
 - [ ] **7. Opt in to Agent SDK credit** — Claim the credit via Claude account before June 15.

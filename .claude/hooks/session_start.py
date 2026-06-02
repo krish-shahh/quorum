@@ -12,8 +12,8 @@ import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
 try:
-    from tradingagents.default_config import DEFAULT_CONFIG
-    from tradingagents.execution.broker.paper_client import PaperBrokerClient
+    from quorum.default_config import DEFAULT_CONFIG
+    from quorum.execution.broker.paper_client import PaperBrokerClient
 
     config = DEFAULT_CONFIG.copy()
     broker = PaperBrokerClient(config)
@@ -35,7 +35,7 @@ try:
 
     # Try regime
     try:
-        from tradingagents.dataflows.regime import CrossAssetRegimeDetector
+        from quorum.dataflows.regime import CrossAssetRegimeDetector
         from datetime import date
         regime = CrossAssetRegimeDetector().detect(date.today().isoformat())
         lines.append(f"Regime: {regime.get('regime', 'unknown').upper()} (VIX {regime.get('vix', '?'):.1f})")

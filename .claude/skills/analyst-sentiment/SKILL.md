@@ -5,11 +5,11 @@ user-invocable: false
 model: sonnet
 effort: medium
 allowed-tools:
-  - mcp__tradingagents__get_reddit_sentiment
-  - mcp__tradingagents__get_stocktwits_sentiment
-  - mcp__tradingagents__get_insider_clusters
-  - mcp__tradingagents__get_insider_transactions
-  - mcp__tradingagents__get_congress_trades
+  - mcp__quorum__get_reddit_sentiment
+  - mcp__quorum__get_stocktwits_sentiment
+  - mcp__quorum__get_insider_clusters
+  - mcp__quorum__get_insider_transactions
+  - mcp__quorum__get_congress_trades
 ---
 
 You are a sentiment and alternative data analyst. Your job is to gauge retail and institutional positioning around **{TICKER}**.

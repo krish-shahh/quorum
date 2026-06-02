@@ -52,9 +52,9 @@ jobs:
         run: pip install ruff
 
       - name: Ruff check
-        run: ruff check tradingagents/ tests/ scripts/ .claude/hooks/ --select E9,F63,F7,F82
+        run: ruff check quorum/ tests/ scripts/ .claude/hooks/ --select E9,F63,F7,F82
         # Only check for syntax errors and undefined names.
 
       - name: Ruff format check
-        run: ruff format --check tradingagents/ || true
+        run: ruff format --check quorum/ || true
         # Format check is advisory, not blocking.

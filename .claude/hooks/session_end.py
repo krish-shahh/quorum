@@ -15,8 +15,8 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..",
 MEMORY_DIR = os.path.expanduser("~/.claude/projects/-Users-krish-Desktop-trader/memory")
 
 try:
-    from tradingagents.default_config import DEFAULT_CONFIG
-    from tradingagents.execution.broker.paper_client import PaperBrokerClient
+    from quorum.default_config import DEFAULT_CONFIG
+    from quorum.execution.broker.paper_client import PaperBrokerClient
 
     config = DEFAULT_CONFIG.copy()
     broker = PaperBrokerClient(config)

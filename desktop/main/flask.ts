@@ -10,7 +10,7 @@ const PROJECT_ROOT = path.resolve(__dirname, "../../..");
 export function startFlask(): void {
   const pythonPath = process.env.PYTHON_PATH || "python";
 
-  flaskProcess = spawn(pythonPath, ["-m", "tradingagents.dashboard_v3"], {
+  flaskProcess = spawn(pythonPath, ["-m", "quorum.api"], {
     cwd: PROJECT_ROOT,
     env: { ...process.env, FLASK_ENV: "production", PYTHONDONTWRITEBYTECODE: "1" },
     stdio: ["ignore", "pipe", "pipe"],

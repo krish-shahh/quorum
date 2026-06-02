@@ -1,4 +1,4 @@
-"""TradingAgents CLI — monitoring and utility commands.
+"""quorum CLI — monitoring and utility commands.
 
 All trading is done through Claude Code or Claude Desktop via MCP tools.
 The CLI provides the dashboard, wiki, regime, and utility commands.
@@ -12,13 +12,13 @@ from rich.table import Table
 from rich import box
 from rich.markdown import Markdown
 
-from tradingagents.default_config import DEFAULT_CONFIG
+from quorum.default_config import DEFAULT_CONFIG
 
 console = Console()
 
 app = typer.Typer(
-    name="TradingAgents",
-    help="TradingAgents — autonomous trading via Claude Code MCP tools",
+    name="quorum",
+    help="quorum — autonomous trading via Claude Code MCP tools",
     add_completion=True,
     invoke_without_command=True,
 )
@@ -29,8 +29,8 @@ def _default(ctx: typer.Context):
     """Launch the JSON API server (Electron desktop app connects to this)."""
     if ctx.invoked_subcommand is not None:
         return
-    from tradingagents.dashboard_v3.app import create_app
-    console.print("[bold]Starting TradingAgents API Server...[/bold]")
+    from quorum.api.app import create_app
+    console.print("[bold]Starting quorum API Server...[/bold]")
     console.print("[dim]JSON API on http://127.0.0.1:5050/api/v1/[/dim]")
     console.print("[dim]Open the Electron desktop app to view the dashboard[/dim]")
     console.print("[dim]  cd desktop && npm run dev[/dim]")
@@ -50,7 +50,7 @@ def _default(ctx: typer.Context):
 @app.command(name="reset-kill-switch")
 def reset_kill_switch():
     """Reset the trading kill switch to re-enable order placement."""
-    from tradingagents.execution.safety import SafetyMonitor
+    from quorum.execution.safety import SafetyMonitor
     safety = SafetyMonitor(DEFAULT_CONFIG)
     safety.reset()
     console.print("[green]Kill switch reset. Trading is re-enabled.[/green]")
@@ -59,7 +59,7 @@ def reset_kill_switch():
 @app.command(name="db-status")
 def db_status():
     """Show SQLite database status and table row counts."""
-    from tradingagents.execution.db import get_db, db_table_counts
+    from quorum.execution.db import get_db, db_table_counts
     try:
         counts = db_table_counts(DEFAULT_CONFIG)
         table = Table(title="Database Status", box=box.SIMPLE)
@@ -80,7 +80,7 @@ def scan(
     ),
 ):
     """Run the discovery scanner to find opportunities beyond your watchlist."""
-    from tradingagents.execution.discovery import DiscoveryEngine
+    from quorum.execution.discovery import DiscoveryEngine
 
     config = DEFAULT_CONFIG.copy()
     config["discovery_mode"] = mode
@@ -109,7 +109,7 @@ def politicians(
     days: int = typer.Option(45, "--days", "-d", help="Lookback window in days"),
 ):
     """Show recent congressional trading disclosures."""
-    from tradingagents.execution.politician_tracker import PoliticianTradesFetcher
+    from quorum.execution.politician_tracker import PoliticianTradesFetcher
 
     console.print(f"\n[bold]Fetching congressional trades (last {days} days)...[/bold]")
     fetcher = PoliticianTradesFetcher(max_pages=5)
@@ -130,7 +130,7 @@ def politicians(
         table.add_row(
             t.politician, t.ticker,
             t.transaction_type, t.amount_range,
-            t.disclosure_date, t.chamber,
+            str(t.disclosure_date), t.chamber,
         )
     console.print(table)
 
@@ -141,12 +141,12 @@ def wiki(
     query: str = typer.Argument("", help="Search query, page path, date, or period"),
 ):
     """Browse the trading wiki knowledge base."""
-    from tradingagents.wiki import WikiWriter
+    from quorum.wiki import WikiWriter
     wiki_writer = WikiWriter(DEFAULT_CONFIG)
 
     if action == "search":
         if not query:
-            console.print("[yellow]Usage: tradingagents wiki search <query>[/yellow]")
+            console.print("[yellow]Usage: quorum wiki search <query>[/yellow]")
             return
         results = wiki_writer.search(query, limit=15)
         if not results:
@@ -165,7 +165,7 @@ def wiki(
 
     elif action == "show":
         if not query:
-            console.print("[yellow]Usage: tradingagents wiki show <path>[/yellow]")
+            console.print("[yellow]Usage: quorum wiki show <path>[/yellow]")
             return
         content = wiki_writer.get_page_content(query)
         if content:
@@ -181,7 +181,7 @@ def wiki(
 
     elif action == "report":
         if not query:
-            console.print("[yellow]Usage: tradingagents wiki report <period> (e.g. 2026-05, 2026-Q1)[/yellow]")
+            console.print("[yellow]Usage: quorum wiki report <period> (e.g. 2026-05, 2026-Q1)[/yellow]")
             return
         path = wiki_writer.generate_report(query)
         console.print(f"[green]Report generated: {path}[/green]")
@@ -193,7 +193,7 @@ def wiki(
 @app.command()
 def regime():
     """Show the current market regime (VIX, DXY, 10Y yield analysis)."""
-    from tradingagents.dataflows.regime import get_market_regime
+    from quorum.dataflows.regime import get_market_regime
 
     today = datetime.date.today().isoformat()
     with console.status("Fetching regime data..."):
@@ -203,10 +203,10 @@ def regime():
 
 @app.command(name="mcp-server")
 def mcp_server():
-    """Start the TradingAgents MCP server (stdio transport)."""
+    """Start the quorum MCP server (stdio transport)."""
     import asyncio
-    from tradingagents.mcp.server import main as mcp_main
-    console.print("[bold]Starting TradingAgents MCP server...[/bold]")
+    from quorum.mcp.server import main as mcp_main
+    console.print("[bold]Starting quorum MCP server...[/bold]")
     console.print("[dim]Connect via Claude Desktop or Claude Code.[/dim]")
     asyncio.run(mcp_main())
 
@@ -214,7 +214,7 @@ def mcp_server():
 @app.command()
 def health():
     """Run system health checks — validates MCP server, data files, dependencies, and market connectivity."""
-    from tradingagents.mcp.health import run_all_checks, print_results
+    from quorum.mcp.health import run_all_checks, print_results
     results = run_all_checks()
     all_pass = print_results(results)
     if not all_pass:
@@ -230,7 +230,7 @@ def reset(
     import json
     import sqlite3
 
-    home = Path.home() / ".tradingagents"
+    home = Path.home() / ".quorum"
 
     if not confirm:
         typer.confirm(
@@ -262,7 +262,7 @@ def reset(
         learning_path.write_text(json.dumps({"outcomes": [], "signal_weights": {}, "ticker_weights": {}}))
 
     # Clear database tables
-    db_path = home / "tradingagents.db"
+    db_path = home / "quorum.db"
     if db_path.exists():
         conn = sqlite3.connect(str(db_path))
         for table in ["trades", "trade_reports", "paper_positions", "paper_account",

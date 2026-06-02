@@ -25,7 +25,7 @@ export default function Header({ market, killSwitch, live, onToggleLive, lastUpd
       <div className="flex items-center h-12 max-w-[1600px] mx-auto">
         {/* Left: branding + market status (pl-[72px] clears macOS traffic lights) */}
         <div className="flex items-center gap-2.5 pl-[72px]">
-          <span className="font-semibold text-sm tracking-tight">TradingAgents</span>
+          <span className="font-semibold text-sm tracking-tight">quorum</span>
           <span
             className={cn(
               "text-[11px] font-medium px-2 py-0.5 rounded-full no-drag",

@@ -5,10 +5,10 @@ user-invocable: false
 model: sonnet
 effort: medium
 allowed-tools:
-  - mcp__tradingagents__get_fundamentals
-  - mcp__tradingagents__get_financial_statements
-  - mcp__tradingagents__get_earnings_calendar
-  - mcp__tradingagents__get_consensus_estimates
+  - mcp__quorum__get_fundamentals
+  - mcp__quorum__get_financial_statements
+  - mcp__quorum__get_earnings_calendar
+  - mcp__quorum__get_consensus_estimates
 ---
 
 You are a fundamental equity analyst. Your job is to assess the intrinsic value, financial health, and growth trajectory of **{TICKER}**.

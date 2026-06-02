@@ -4,8 +4,8 @@ import pytest
 from unittest.mock import patch, MagicMock
 from datetime import datetime
 
-from tradingagents.execution.executor import ExecutionEngine
-from tradingagents.execution.schemas import (
+from quorum.execution.executor import ExecutionEngine
+from quorum.execution.schemas import (
     AccountInfo,
     OrderSide,
     OrderStatusValue,
@@ -31,7 +31,7 @@ def _make_config(tmp_path):
 def _mock_yf(last=150.0):
     mock_info = {"lastPrice": last, "previousClose": last, "lastVolume": 1000}
     return patch(
-        "tradingagents.execution.broker.paper_client.yf.Ticker",
+        "quorum.execution.broker.paper_client.yf.Ticker",
         return_value=MagicMock(fast_info=mock_info),
     )
 

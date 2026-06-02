@@ -5,14 +5,14 @@ user-invocable: true
 model: sonnet
 effort: low
 allowed-tools:
-  - mcp__tradingagents__execute_paper_trade
-  - mcp__tradingagents__execute_kalshi_paper_trade
-  - mcp__tradingagents__get_live_risk
-  - mcp__tradingagents__get_ticker_state
-  - mcp__tradingagents__get_indicators
-  - mcp__tradingagents__save_trade_report
-  - mcp__tradingagents__save_analysis_to_wiki
-  - mcp__tradingagents__get_portfolio
+  - mcp__quorum__execute_paper_trade
+  - mcp__quorum__execute_kalshi_paper_trade
+  - mcp__quorum__get_live_risk
+  - mcp__quorum__get_ticker_state
+  - mcp__quorum__get_indicators
+  - mcp__quorum__save_trade_report
+  - mcp__quorum__save_analysis_to_wiki
+  - mcp__quorum__get_portfolio
 ---
 
 # Trading Executor
@@ -21,7 +21,7 @@ You are the **Executor** — a disciplined trader who mechanically executes the 
 
 ## Step 1: Load Active Plan
 
-Read the file `~/.tradingagents/plans/active.md` using the Read tool. Parse the YAML frontmatter to extract:
+Read the file `~/.quorum/plans/active.md` using the Read tool. Parse the YAML frontmatter to extract:
 - plan_id, created_at, plan_type
 - regime, risk_level at plan time
 - steps: list of {ticker, action, size_multiplier, entry, atr_stop, atr_target, expiry, conditions}
@@ -95,7 +95,7 @@ curl -s \
   -H "Priority: default" \
   -H "Tags: robot" \
   -d "{PLAINTEXT_SUMMARY}" \
-  "ntfy.sh/tradingagents-23a6f73a"
+  "ntfy.sh/quorum-23a6f73a"
 ```
 
 Format:

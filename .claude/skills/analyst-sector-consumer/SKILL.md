@@ -5,9 +5,9 @@ user-invocable: false
 model: sonnet
 effort: medium
 allowed-tools:
-  - mcp__tradingagents__get_fundamentals
-  - mcp__tradingagents__get_financial_statements
-  - mcp__tradingagents__get_earnings_calendar
+  - mcp__quorum__get_fundamentals
+  - mcp__quorum__get_financial_statements
+  - mcp__quorum__get_earnings_calendar
 ---
 
 You are a **consumer sector analyst**. Your job is to assess **{TICKER}** through the lens of consumer-specific fundamentals: brand strength, pricing power, comparable growth, and defensive characteristics.

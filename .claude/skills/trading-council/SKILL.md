@@ -116,22 +116,22 @@ This gives each analyst the quant anchor — they should explain if/why they dis
 For EACH ticker that needs analysis (held positions first, then top watchlist candidates), spawn **exactly 4 Agent subagents in a single message** so they run in parallel.
 
 **3 universal analysts** stay the same for every asset — read their prompts from:
-- `tradingagents/council/prompts/technical.md`
-- `tradingagents/council/prompts/sentiment.md`
-- `tradingagents/council/prompts/news_macro.md`
+- `quorum/council/prompts/technical.md`
+- `quorum/council/prompts/sentiment.md`
+- `quorum/council/prompts/news_macro.md`
 
 **The 4th analyst (domain specialist)** is selected based on asset type from Step 2:
 
 | Asset Info | Domain Prompt File | Agent Description |
 |---|---|---|
-| asset_class=etf_bond | `tradingagents/council/prompts/bonds.md` | "Bond Analyst: {TICKER}" |
-| asset_class=etf_commodity | `tradingagents/council/prompts/commodities.md` | "Commodity Analyst: {TICKER}" |
-| sector=tech | `tradingagents/council/prompts/sector_tech.md` | "Tech Analyst: {TICKER}" |
-| sector=financials | `tradingagents/council/prompts/sector_financials.md` | "Financials Analyst: {TICKER}" |
-| sector=healthcare | `tradingagents/council/prompts/sector_healthcare.md` | "Healthcare Analyst: {TICKER}" |
-| sector=consumer | `tradingagents/council/prompts/sector_consumer.md` | "Consumer Analyst: {TICKER}" |
-| sector=cyclical | `tradingagents/council/prompts/sector_cyclical.md` | "Cyclical Analyst: {TICKER}" |
-| sector=null (unknown) | `tradingagents/council/prompts/fundamental.md` | "Fundamental Analyst: {TICKER}" |
+| asset_class=etf_bond | `quorum/council/prompts/bonds.md` | "Bond Analyst: {TICKER}" |
+| asset_class=etf_commodity | `quorum/council/prompts/commodities.md` | "Commodity Analyst: {TICKER}" |
+| sector=tech | `quorum/council/prompts/sector_tech.md` | "Tech Analyst: {TICKER}" |
+| sector=financials | `quorum/council/prompts/sector_financials.md` | "Financials Analyst: {TICKER}" |
+| sector=healthcare | `quorum/council/prompts/sector_healthcare.md` | "Healthcare Analyst: {TICKER}" |
+| sector=consumer | `quorum/council/prompts/sector_consumer.md` | "Consumer Analyst: {TICKER}" |
+| sector=cyclical | `quorum/council/prompts/sector_cyclical.md` | "Cyclical Analyst: {TICKER}" |
+| sector=null (unknown) | `quorum/council/prompts/fundamental.md` | "Fundamental Analyst: {TICKER}" |
 
 Before spawning agents, read the 3 universal prompt files PLUS the selected domain prompt file. Then replace `{TICKER}` with the actual ticker, `{TODAY}` with today's date, and `{START_30D}` with 30 days ago.
 
@@ -208,8 +208,8 @@ After score_council returns, decide whether to run the full adversarial debate. 
 ## Step 5A: Investment Debate (Bull vs Bear)
 
 Read the prompt files:
-- `tradingagents/council/prompts/bull_researcher.md`
-- `tradingagents/council/prompts/bear_researcher.md`
+- `quorum/council/prompts/bull_researcher.md`
+- `quorum/council/prompts/bear_researcher.md`
 
 Before spawning, substitute these variables in both prompts:
 - `{TICKER}` → actual ticker
@@ -229,7 +229,7 @@ Save both outputs — they feed into the Research Manager.
 
 ## Step 5B: Research Manager
 
-Read `tradingagents/council/prompts/research_manager.md`.
+Read `quorum/council/prompts/research_manager.md`.
 
 Substitute:
 - `{TICKER}` → ticker
@@ -247,7 +247,7 @@ The Research Manager must pick a winner (Bull or Bear). Their "Winner", "Margin"
 
 ## Step 5C: Trader Agent
 
-Read `tradingagents/council/prompts/trader.md`.
+Read `quorum/council/prompts/trader.md`.
 
 Substitute:
 - `{TICKER}` → ticker
@@ -267,9 +267,9 @@ If the Research Manager's rating is 5 or below (Hold/Sell territory), the Trader
 ## Step 5D: Risk Debate (3-way)
 
 Read all three risk prompts:
-- `tradingagents/council/prompts/risk_aggressive.md`
-- `tradingagents/council/prompts/risk_conservative.md`
-- `tradingagents/council/prompts/risk_neutral.md`
+- `quorum/council/prompts/risk_aggressive.md`
+- `quorum/council/prompts/risk_conservative.md`
+- `quorum/council/prompts/risk_neutral.md`
 
 Substitute in ALL three:
 - `{TICKER}` → ticker
@@ -292,7 +292,7 @@ Agent(description="Risk Neutral: {TICKER}", model="haiku", prompt=<risk_neutral 
 
 First, call `get_trade_reflections(ticker="{TICKER}")` to get past outcome lessons.
 
-Then read `tradingagents/council/prompts/portfolio_manager.md`.
+Then read `quorum/council/prompts/portfolio_manager.md`.
 
 Substitute:
 - `{TICKER}` → ticker
@@ -343,7 +343,7 @@ For each BUY or SELL decision:
    ```bash
    curl -s -H "Title: {SIDE} {TICKER}" -H "Tags: moneybag" -H "Priority: high" \
      -d "{SIDE} {shares} shares @ ${price} | {1-sentence thesis}" \
-     "ntfy.sh/tradingagents-23a6f73a"
+     "ntfy.sh/quorum-23a6f73a"
    ```
 
 For HOLD decisions, save the wiki page only (no trade report needed).
@@ -373,7 +373,7 @@ curl -s \
   -H "Priority: default" \
   -H "Tags: chart_with_upwards_trend" \
   -d "{PLAINTEXT_SUMMARY}" \
-  "ntfy.sh/tradingagents-23a6f73a"
+  "ntfy.sh/quorum-23a6f73a"
 ```
 
 The `{PLAINTEXT_SUMMARY}` format (use fixed-width alignment):

@@ -1,7 +1,7 @@
 {
-  "name": "tradingagents-desktop",
+  "name": "quorum-desktop",
   "version": "1.0.0",
-  "description": "TradingAgents Desktop — Autonomous trading dashboard",
+  "description": "quorum Desktop — Autonomous trading dashboard",
   "main": "dist/main/index.js",
   "scripts": {
     "dev": "concurrently \"vite\" \"tsc -p tsconfig.main.json --watch\" \"wait-on tcp:5173 && electron .\"",
@@ -41,8 +41,8 @@
     "wait-on": "^8.0.1"
   },
   "build": {
-    "appId": "com.tradingagents.desktop",
-    "productName": "TradingAgents",
+    "appId": "com.quorum.desktop",
+    "productName": "quorum",
     "mac": {
       "category": "public.app-category.finance",
       "target": "dmg"

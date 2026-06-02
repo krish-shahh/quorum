@@ -7,7 +7,7 @@
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "mcp__tradingagents__execute_paper_trade",
+        "matcher": "mcp__quorum__execute_paper_trade",
         "hooks": [
           {
             "type": "command",
@@ -18,7 +18,7 @@
     ],
     "PostToolUse": [
       {
-        "matcher": "mcp__tradingagents__*",
+        "matcher": "mcp__quorum__*",
         "hooks": [
           {
             "type": "command",
@@ -79,7 +79,7 @@
   },
   "permissions": {
     "allow": [
-      "mcp__tradingagents__*",
+      "mcp__quorum__*",
       "WebSearch"
     ]
   },

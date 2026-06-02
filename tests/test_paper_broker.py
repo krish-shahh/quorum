@@ -4,8 +4,8 @@ import json
 import pytest
 from unittest.mock import patch, MagicMock
 
-from tradingagents.execution.broker.paper_client import PaperBrokerClient
-from tradingagents.execution.schemas import (
+from quorum.execution.broker.paper_client import PaperBrokerClient
+from quorum.execution.schemas import (
     OrderRequest,
     OrderSide,
     OrderStatusValue,
@@ -24,7 +24,7 @@ def broker(tmp_path):
 def _mock_quote(last=150.0):
     """Patch yfinance to return a fixed quote."""
     mock_info = {"lastPrice": last, "previousClose": last, "lastVolume": 1000}
-    return patch("tradingagents.execution.broker.paper_client.yf.Ticker", return_value=MagicMock(fast_info=mock_info))
+    return patch("quorum.execution.broker.paper_client.yf.Ticker", return_value=MagicMock(fast_info=mock_info))
 
 
 @pytest.mark.unit

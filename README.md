@@ -1,8 +1,10 @@
-# TradingAgents
+# quorum
 
-Autonomous paper trading system powered by Claude Code. Specialist AI analysts run in parallel, debate, and execute trades — all through your Claude subscription. No API keys needed.
+Autonomous paper trading system powered by Claude Code. A council of specialist AI analysts runs in parallel, debates, and reaches a **quorum** — then executes trades. All through your Claude subscription, with no LLM API keys.
 
-Based on [TauricResearch/TradingAgents](https://github.com/TauricResearch/TradingAgents) ([arXiv:2412.20138](https://arxiv.org/abs/2412.20138)).
+The architecture is inspired by [TauricResearch/TradingAgents](https://github.com/TauricResearch/TradingAgents) ([arXiv:2412.20138](https://arxiv.org/abs/2412.20138)), but quorum is a different kind of system: where the original framework orchestrates agents via LLM API calls, quorum is harnessed *entirely* through Claude Code — subagents, skills, hooks, and MCP tools — so the model running it is your Claude subscription, not a metered API.
+
+> ⚠️ **Disclaimer** — quorum is a personal project built for educational and experimental purposes only. It trades a **simulated paper account**, not real money. Nothing here is financial, investment, or trading advice, and none of its output should be relied on for real-world decisions. It is provided **as-is, with no warranty of any kind**. If you adapt it toward real capital, you do so **entirely at your own risk**. See [LICENSE](LICENSE).
 
 ---
 
@@ -26,7 +28,7 @@ Based on [TauricResearch/TradingAgents](https://github.com/TauricResearch/Tradin
 ```bash
 pip install .
 pip install ".[mcp]"
-tradingagents health        # verify everything works
+quorum health        # verify everything works
 ```
 
 Then in Claude Code:
@@ -103,39 +105,37 @@ Runs fully unattended via macOS launchd + `claude -p` (subscription, not API):
 | 3:30 PM | Late afternoon |
 | 4:15 PM | EOD report + memory update |
 
-Each cycle is independent — state persists via MCP (SQLite + wiki + memory files). Logs: `~/.tradingagents/logs/trading-YYYY-MM-DD.log`.
+Each cycle is independent — state persists via MCP (SQLite + wiki + memory files). Logs: `~/.quorum/logs/trading-YYYY-MM-DD.log`.
 
 ---
 
 ## Architecture
 
 ```
-tradingagents/
+quorum/
   mcp/             — MCP server (50 tools)
   council/         — Council skills + 11 analyst prompts (4 universal + 7 domain)
   dataflows/       — Market data with TTL caching (yfinance, Reddit, StockTwits, regime, arb scanner)
   execution/       — Paper broker, safety (live risk + circuit breakers), contracts, position sizer, analytics
   quant/           — Deterministic scoring (14 files): Altman Z, FCF yield, technicals, 9 sector scorers, vetoes
   backtest/        — Quant score replay: historical IC computation, signal validation
-  dashboard_v3/    — Flask + Tailwind dashboard (6 pages)
+  api/             — Flask JSON API backend (14 /api/v1 endpoints) that the Electron desktop app reads from
   wiki/            — Knowledge base (run pages, digests, ticker summaries)
 ```
 
 ---
 
-## Dashboard
+## Desktop app
+
+Visualization is a native **Electron desktop app** (`desktop/`, React + Tailwind). It auto-starts the Python JSON API backend (`quorum.api`, served on `127.0.0.1:5050/api/v1/`) and renders everything from it — there is no separate browser dashboard.
 
 ```bash
-tradingagents                          # launches on http://127.0.0.1:5050
+cd desktop && npm install && npm run dev   # launches the desktop app (spawns the API backend for you)
 ```
 
-6 pages:
-- **Trading**: KPIs, positions, regime bar, live risk status (GREEN/YELLOW/ORANGE/RED), activity feed
-- **Council**: Analyst scores, deep dive, trade reports
-- **Predictions**: Kalshi positions, arb scans, event calendar, council candidates, cross-platform comparison, forecast calibration (Brier/Log score)
-- **Performance**: Sharpe, Sortino, Calmar, profit factor, expectancy, SQN, equity curve, win rates
-- **Research**: Wiki browser, trade reports, daily digest
-- **Pipeline**: Cycle timeline, ticker deltas, decision DAG (with quant pre-screen step), cache stats, slippage, sectors, insider clusters
+To run just the API backend on its own (e.g. for debugging), use `quorum` with no subcommand.
+
+Views: **Portfolio** (positions, regime, live-risk status GREEN/YELLOW/ORANGE/RED), **Council** (analyst scores, deep dive, reports), **Predictions** (Kalshi positions, arb scans, calibration), **Performance** (Sharpe/Sortino/Calmar, profit factor, equity curve), **Research** (wiki, reports, digest), and **Pipeline** (cycle timeline, ticker deltas, decision DAG).
 
 ---
 
@@ -146,7 +146,7 @@ tradingagents                          # launches on http://127.0.0.1:5050
 3. **Live intraday risk** (`get_live_risk`): circuit breakers with tiered response — YELLOW (no new buys), ORANGE (sell-only), RED (auto kill switch). Monitors daily P&L, intraday drawdown, ATR stop distances, VIX spikes.
 4. **Kill switch** halts all trading — persists across restarts until manually reset
 5. **`rules.json`** blocks specific tickers (e.g. employer stock)
-6. **Audit trail** logs every tool call to `~/.tradingagents/audit/tool_calls.jsonl`
+6. **Audit trail** logs every tool call to `~/.quorum/audit/tool_calls.jsonl`
 7. **Spread/slippage model** simulates realistic fills (feature-flagged)
 8. **Futures**: notional exposure tracking, max leverage (3.0x), margin checks, contract expiry warnings
 
@@ -179,14 +179,14 @@ The quant layer provides deterministic, auditable scores that anchor LLM analysi
 
 ## Configuration
 
-`tradingagents/default_config.py`, overridable via `TRADINGAGENTS_*` env vars:
+`quorum/default_config.py`, overridable via `QUORUM_*` env vars:
 
 ```bash
-TRADINGAGENTS_PAPER_BALANCE=5000
-TRADINGAGENTS_MAX_DRAWDOWN_PCT=0.10
-TRADINGAGENTS_MAX_POSITION_PCT=0.25
-TRADINGAGENTS_MAX_SINGLE_TICKER_PCT=0.25
-TRADINGAGENTS_MAX_OPEN_POSITIONS=6
+QUORUM_PAPER_BALANCE=5000
+QUORUM_MAX_DRAWDOWN_PCT=0.10
+QUORUM_MAX_POSITION_PCT=0.25
+QUORUM_MAX_SINGLE_TICKER_PCT=0.25
+QUORUM_MAX_OPEN_POSITIONS=6
 ```
 
 ---

@@ -2,8 +2,8 @@
 
 import pytest
 
-from tradingagents.execution.position_sizer import PositionSizer
-from tradingagents.execution.schemas import (
+from quorum.execution.position_sizer import PositionSizer
+from quorum.execution.schemas import (
     AccountInfo,
     OrderSide,
     Position,

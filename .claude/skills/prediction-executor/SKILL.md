@@ -5,12 +5,12 @@ user-invocable: true
 model: sonnet
 effort: low
 allowed-tools:
-  - mcp__tradingagents__execute_kalshi_paper_trade
-  - mcp__tradingagents__execute_kalshi_arb_trade
-  - mcp__tradingagents__get_kalshi_market
-  - mcp__tradingagents__get_kalshi_positions
-  - mcp__tradingagents__get_live_risk
-  - mcp__tradingagents__get_portfolio
+  - mcp__quorum__execute_kalshi_paper_trade
+  - mcp__quorum__execute_kalshi_arb_trade
+  - mcp__quorum__get_kalshi_market
+  - mcp__quorum__get_kalshi_positions
+  - mcp__quorum__get_live_risk
+  - mcp__quorum__get_portfolio
 ---
 
 # Prediction Market Executor
@@ -19,7 +19,7 @@ You mechanically execute the active prediction market plan. You do NOT analyze m
 
 ## Step 1: Load Plan
 
-Read `~/.tradingagents/plans/active.md`. Check that `plan_type` is `"prediction"`. If not, report "Active plan is not a prediction plan" and stop.
+Read `~/.quorum/plans/active.md`. Check that `plan_type` is `"prediction"`. If not, report "Active plan is not a prediction plan" and stop.
 
 Parse the YAML `steps:` list. Each step has: market_ticker, side, contracts, edge_pct, entry_price, conditions.
 

@@ -3,18 +3,18 @@ name: prediction-planner
 description: Prediction Market Planner — analyzes Kalshi markets with 2-agent council, produces a plan file. Cannot execute trades.
 user-invocable: true
 allowed-tools:
-  - mcp__tradingagents__get_kalshi_markets
-  - mcp__tradingagents__get_kalshi_market
-  - mcp__tradingagents__get_kalshi_orderbook
-  - mcp__tradingagents__get_kalshi_events
-  - mcp__tradingagents__get_kalshi_event
-  - mcp__tradingagents__get_kalshi_positions
-  - mcp__tradingagents__get_prediction_candidates
-  - mcp__tradingagents__scan_kalshi_overround
-  - mcp__tradingagents__scan_kalshi_bias
-  - mcp__tradingagents__get_dutch_book_detail
-  - mcp__tradingagents__get_market_regime
-  - mcp__tradingagents__get_portfolio
+  - mcp__quorum__get_kalshi_markets
+  - mcp__quorum__get_kalshi_market
+  - mcp__quorum__get_kalshi_orderbook
+  - mcp__quorum__get_kalshi_events
+  - mcp__quorum__get_kalshi_event
+  - mcp__quorum__get_kalshi_positions
+  - mcp__quorum__get_prediction_candidates
+  - mcp__quorum__scan_kalshi_overround
+  - mcp__quorum__scan_kalshi_bias
+  - mcp__quorum__get_dutch_book_detail
+  - mcp__quorum__get_market_regime
+  - mcp__quorum__get_portfolio
 ---
 
 # Prediction Market Planner
@@ -33,7 +33,7 @@ Follow the same analysis flow as `/prediction-council` (Steps 1-5: market discov
 
 ## Plan Output
 
-Write a plan file to `~/.tradingagents/plans/{PLAN_ID}.md` with this YAML frontmatter:
+Write a plan file to `~/.quorum/plans/{PLAN_ID}.md` with this YAML frontmatter:
 
 ```yaml
 ---
@@ -59,7 +59,7 @@ The markdown body should contain:
 
 After writing, symlink `active.md`:
 ```bash
-ln -sf ~/.tradingagents/plans/{PLAN_ID}.md ~/.tradingagents/plans/active.md
+ln -sf ~/.quorum/plans/{PLAN_ID}.md ~/.quorum/plans/active.md
 ```
 
 Send ntfy notification: "Prediction plan: {N} markets, best edge {X}% on {TICKER}"

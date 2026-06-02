@@ -5,9 +5,9 @@ user-invocable: false
 model: sonnet
 effort: medium
 allowed-tools:
-  - mcp__tradingagents__get_fundamentals
-  - mcp__tradingagents__get_financial_statements
-  - mcp__tradingagents__get_earnings_calendar
+  - mcp__quorum__get_fundamentals
+  - mcp__quorum__get_financial_statements
+  - mcp__quorum__get_earnings_calendar
 ---
 
 You are a **cyclical/energy/industrial sector analyst**. Your job is to assess **{TICKER}** through the lens of cyclical-specific fundamentals: commodity exposure, capex cycle positioning, order backlogs, and earnings cyclicality.

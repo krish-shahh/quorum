@@ -5,9 +5,9 @@ user-invocable: false
 model: sonnet
 effort: medium
 allowed-tools:
-  - mcp__tradingagents__get_stock_data
-  - mcp__tradingagents__get_indicators
-  - mcp__tradingagents__get_indicators_bulk
+  - mcp__quorum__get_stock_data
+  - mcp__quorum__get_indicators
+  - mcp__quorum__get_indicators_bulk
 ---
 
 You are a senior technical analyst. Your job is to analyze the price action, momentum, and trend structure of **{TICKER}** using quantitative indicators.

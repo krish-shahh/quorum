@@ -40,8 +40,8 @@ For each market to analyze:
 Spawn **exactly 2 Agent subagents in a single message** to run in parallel:
 
 Read the prompt files:
-- `tradingagents/council/prompts/events.md` — Event analyst prompt
-- `tradingagents/council/prompts/news_macro.md` — News analyst prompt
+- `quorum/council/prompts/events.md` — Event analyst prompt
+- `quorum/council/prompts/news_macro.md` — News analyst prompt
 
 Before spawning agents, substitute these variables in the event analyst prompt:
 - `{MARKET_TICKER}` → the Kalshi market ticker

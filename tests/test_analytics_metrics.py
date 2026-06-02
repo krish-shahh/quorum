@@ -4,7 +4,7 @@ import pytest
 
 pytestmark = pytest.mark.unit
 
-from tradingagents.execution.analytics import (
+from quorum.execution.analytics import (
     compute_profit_factor,
     compute_expectancy,
     compute_sqn,

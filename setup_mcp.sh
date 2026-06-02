@@ -1,5 +1,5 @@
 #!/bin/bash
-# TradingAgents MCP Setup Script
+# quorum MCP Setup Script
 # Sets up the MCP server for Claude Desktop and Claude Code globally.
 
 set -e
@@ -7,7 +7,7 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PYTHON_PATH="$(which python3 || which python)"
 
-echo "TradingAgents MCP Setup"
+echo "quorum MCP Setup"
 echo "======================="
 echo "Project: $SCRIPT_DIR"
 echo "Python:  $PYTHON_PATH"
@@ -19,12 +19,12 @@ pip install ".[mcp]" -q 2>/dev/null || pip install mcp -q
 echo "  Done."
 
 # 2. Create tickers.txt if it doesn't exist
-TICKERS_FILE="$HOME/.tradingagents/tickers.txt"
+TICKERS_FILE="$HOME/.quorum/tickers.txt"
 if [ ! -f "$TICKERS_FILE" ]; then
     echo "[2/4] Creating default tickers file at $TICKERS_FILE..."
-    mkdir -p "$HOME/.tradingagents"
+    mkdir -p "$HOME/.quorum"
     cat > "$TICKERS_FILE" << 'TICKERS'
-# TradingAgents Autonomous Watchlist
+# quorum Autonomous Watchlist
 # One ticker per line. Blank lines and #comments are ignored.
 AAPL
 MSFT
@@ -47,8 +47,8 @@ CLAUDE_DESKTOP_CONFIG="$CLAUDE_DESKTOP_DIR/claude_desktop_config.json"
 mkdir -p "$CLAUDE_DESKTOP_DIR"
 
 if [ -f "$CLAUDE_DESKTOP_CONFIG" ]; then
-    # Check if tradingagents is already configured
-    if grep -q "tradingagents" "$CLAUDE_DESKTOP_CONFIG" 2>/dev/null; then
+    # Check if quorum is already configured
+    if grep -q "quorum" "$CLAUDE_DESKTOP_CONFIG" 2>/dev/null; then
         echo "  Already configured in Claude Desktop."
     else
         # Add to existing config using python for safe JSON manipulation
@@ -57,14 +57,14 @@ import json, sys
 with open('$CLAUDE_DESKTOP_CONFIG', 'r') as f:
     config = json.load(f)
 config.setdefault('mcpServers', {})
-config['mcpServers']['tradingagents'] = {
+config['mcpServers']['quorum'] = {
     'command': '$PYTHON_PATH',
-    'args': ['-m', 'tradingagents.mcp.server'],
+    'args': ['-m', 'quorum.mcp.server'],
     'cwd': '$SCRIPT_DIR'
 }
 with open('$CLAUDE_DESKTOP_CONFIG', 'w') as f:
     json.dump(config, f, indent=2)
-print('  Added tradingagents to existing Claude Desktop config.')
+print('  Added quorum to existing Claude Desktop config.')
 "
     fi
 else
@@ -72,9 +72,9 @@ else
     cat > "$CLAUDE_DESKTOP_CONFIG" << DESKTOP_EOF
 {
   "mcpServers": {
-    "tradingagents": {
+    "quorum": {
       "command": "$PYTHON_PATH",
-      "args": ["-m", "tradingagents.mcp.server"],
+      "args": ["-m", "quorum.mcp.server"],
       "cwd": "$SCRIPT_DIR"
     }
   }
@@ -91,7 +91,7 @@ CLAUDE_CODE_SETTINGS="$CLAUDE_CODE_DIR/settings.json"
 mkdir -p "$CLAUDE_CODE_DIR"
 
 if [ -f "$CLAUDE_CODE_SETTINGS" ]; then
-    if grep -q "tradingagents" "$CLAUDE_CODE_SETTINGS" 2>/dev/null; then
+    if grep -q "quorum" "$CLAUDE_CODE_SETTINGS" 2>/dev/null; then
         echo "  Already configured in Claude Code."
     else
         "$PYTHON_PATH" -c "
@@ -99,23 +99,23 @@ import json
 with open('$CLAUDE_CODE_SETTINGS', 'r') as f:
     config = json.load(f)
 config.setdefault('mcpServers', {})
-config['mcpServers']['tradingagents'] = {
+config['mcpServers']['quorum'] = {
     'command': '$PYTHON_PATH',
-    'args': ['-m', 'tradingagents.mcp.server'],
+    'args': ['-m', 'quorum.mcp.server'],
     'cwd': '$SCRIPT_DIR'
 }
 with open('$CLAUDE_CODE_SETTINGS', 'w') as f:
     json.dump(config, f, indent=2)
-print('  Added tradingagents to Claude Code settings.')
+print('  Added quorum to Claude Code settings.')
 "
     fi
 else
     cat > "$CLAUDE_CODE_SETTINGS" << CODE_EOF
 {
   "mcpServers": {
-    "tradingagents": {
+    "quorum": {
       "command": "$PYTHON_PATH",
-      "args": ["-m", "tradingagents.mcp.server"],
+      "args": ["-m", "quorum.mcp.server"],
       "cwd": "$SCRIPT_DIR"
     }
   }
@@ -140,7 +140,7 @@ echo ""
 echo "Usage:"
 echo "  /trading-council   — 4 parallel analyst subagents (recommended)"
 echo "  /trading-cycle     — simpler single-agent mode"
-echo "  tradingagents      — open dashboard (separate terminal)"
+echo "  quorum      — open dashboard (separate terminal)"
 echo ""
 echo "Tickers file: $TICKERS_FILE"
 echo "Edit this file to add/remove tickers from the autonomous watchlist."

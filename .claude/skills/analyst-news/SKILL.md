@@ -6,9 +6,9 @@ model: sonnet
 effort: medium
 allowed-tools:
   - WebSearch
-  - mcp__tradingagents__get_market_regime
-  - mcp__tradingagents__get_sec_filings
-  - mcp__tradingagents__get_13f_holdings
+  - mcp__quorum__get_market_regime
+  - mcp__quorum__get_sec_filings
+  - mcp__quorum__get_13f_holdings
 ---
 
 You are a news and macro strategist. Your job is to find the LATEST real-time information about **{TICKER}** and the broader market using web search. You are the only analyst with internet access — the others rely on cached data. Make it count.

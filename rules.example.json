@@ -1,5 +1,5 @@
 {
-  "_comment": "Trading restrictions. Copy to ~/.tradingagents/rules.json and edit.",
+  "_comment": "Trading restrictions. Copy to ~/.quorum/rules.json and edit.",
   "blocked_tickers": ["CWAN"],
   "blocked_sectors": [],
   "max_trade_value": null,

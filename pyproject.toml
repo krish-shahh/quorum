@@ -3,9 +3,9 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "tradingagents"
+name = "quorum"
 version = "1.0.0"
-description = "TradingAgents: Autonomous trading via Claude Code MCP tools"
+description = "quorum: Autonomous paper trading harnessed entirely through Claude Code — a council of analyst subagents debates and reaches a quorum, then trades. No LLM API keys."
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
@@ -26,10 +26,10 @@ push = ["pywebpush>=2.0"]
 schwab = ["schwab-py>=1.4.0"]
 
 [project.scripts]
-tradingagents = "cli.main:app"
+quorum = "cli.main:app"
 
 [tool.setuptools.packages.find]
-include = ["tradingagents*", "cli*"]
+include = ["quorum*", "cli*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -12,12 +12,12 @@
 #
 # Flow: plan → execute → optionally replan → continue executing latest plan
 # Each invocation is independent — state lives in MCP (SQLite + wiki)
-# and plan files (~/.tradingagents/plans/).
+# and plan files (~/.quorum/plans/).
 
 set -euo pipefail
 
 PROJECT_DIR="/Users/krish/Desktop/trader"
-LOG_DIR="$HOME/.tradingagents/logs"
+LOG_DIR="$HOME/.quorum/logs"
 CLAUDE_BIN="$HOME/.local/bin/claude"
 DATE=$(date +%Y-%m-%d)
 DOW=$(date +%u)      # 1=Monday, 7=Sunday
@@ -72,7 +72,7 @@ At the very end, output a push notification summary between "--- NOTIFICATION --
 else
     # 10:00, 13:30, 15:30 — Executor cycles
     CYCLE="executor"
-    PROMPT='Run /trading-executor. Read the active plan from ~/.tradingagents/plans/active.md and execute it. If the plan is stale (3+ steps skip), report that a replan is needed.
+    PROMPT='Run /trading-executor. Read the active plan from ~/.quorum/plans/active.md and execute it. If the plan is stale (3+ steps skip), report that a replan is needed.
 
 At the very end, output a push notification summary between "--- NOTIFICATION ---" markers. Max 4000 chars. Include: trades executed (ticker, action, shares, price), skipped steps, plan adherence %, portfolio cash%, and any alerts. This block is extracted and sent as a mobile notification — make it scannable.'
 fi
@@ -84,7 +84,7 @@ cd "$PROJECT_DIR"
 # Sync congressional trades before first cycle of the day
 if [ "$MINS_TODAY" -eq "$MARKET_OPEN" ]; then
     log "Syncing congressional trades..."
-    "$HOME/miniforge3/bin/python3" -m tradingagents.dataflows.congress --sync >> "$LOG_DIR/trading-$DATE.log" 2>&1 || true
+    "$HOME/miniforge3/bin/python3" -m quorum.dataflows.congress --sync >> "$LOG_DIR/trading-$DATE.log" 2>&1 || true
 fi
 
 # Run claude in non-interactive mode
@@ -130,7 +130,7 @@ At the very end, output a push notification summary between "--- NOTIFICATION --
 fi
 
 # ── Push notification via ntfy.sh ──
-NTFY_TOPIC="tradingagents-23a6f73a"
+NTFY_TOPIC="quorum-23a6f73a"
 
 # Extract the dedicated notification block from Claude's output
 SUMMARY=$(echo "$OUTPUT" | sed -n '/^--- NOTIFICATION ---$/,/^--- NOTIFICATION ---$/p' | sed '1d;$d' | head -c 4096)
@@ -143,7 +143,7 @@ if [ -z "$SUMMARY" ]; then
 fi
 
 # ── Archive notification locally (ntfy only caches 12h) ──
-NOTIF_ARCHIVE="$HOME/.tradingagents/notifications.jsonl"
+NOTIF_ARCHIVE="$HOME/.quorum/notifications.jsonl"
 echo "{\"timestamp\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"cycle\":\"$CYCLE\",\"exit_code\":$EXIT_CODE,\"message\":$(echo "$SUMMARY" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')}" >> "$NOTIF_ARCHIVE" 2>/dev/null || true
 
 curl -s \

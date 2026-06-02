@@ -3,13 +3,13 @@
 
 This runs as a Claude Code hook BEFORE the MCP tool executes.
 It reads the tool input from stdin, checks risk rules AND user rules
-from ~/.tradingagents/rules.json, and exits non-zero to block the
+from ~/.quorum/rules.json, and exits non-zero to block the
 trade if any rule is violated.
 
 Exit 0 = allow trade
 Exit 2 = block trade (message printed to stderr is shown to user)
 
-Rules file (~/.tradingagents/rules.json):
+Rules file (~/.quorum/rules.json):
 {
   "blocked_tickers": ["COMPANY_TICKER"],
   "blocked_sectors": [],
@@ -35,7 +35,7 @@ ticker = tool_input.get("ticker", "").upper()
 signal = tool_input.get("signal", "")
 
 # ── Load user rules ──
-rules_path = Path.home() / ".tradingagents" / "rules.json"
+rules_path = Path.home() / ".quorum" / "rules.json"
 rules = {}
 if rules_path.exists():
     try:
@@ -46,9 +46,9 @@ if rules_path.exists():
 # ── Load portfolio state ──
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 try:
-    from tradingagents.default_config import DEFAULT_CONFIG
-    from tradingagents.execution.broker.paper_client import PaperBrokerClient
-    from tradingagents.execution.safety import SafetyMonitor
+    from quorum.default_config import DEFAULT_CONFIG
+    from quorum.execution.broker.paper_client import PaperBrokerClient
+    from quorum.execution.safety import SafetyMonitor
 
     config = DEFAULT_CONFIG.copy()
     broker = PaperBrokerClient(config)
@@ -91,7 +91,7 @@ if signal in ("Buy", "Overweight"):
 if signal in ("Buy", "Overweight"):
     max_sector_pct = float(config.get("max_sector_concentration_pct", 0.50))
     try:
-        from tradingagents.execution.ticker_utils import detect_asset_type
+        from quorum.execution.ticker_utils import detect_asset_type
         new_asset = detect_asset_type(ticker)
         new_sector = new_asset.get("sector") or new_asset.get("asset_class", "unknown")
 
@@ -120,7 +120,7 @@ if signal in ("Buy", "Overweight"):
 if signal in ("Buy", "Overweight"):
     max_book_pct = float(config.get("max_book_concentration_pct", 0.40))
     try:
-        from tradingagents.execution.ticker_utils import get_book
+        from quorum.execution.ticker_utils import get_book
         new_book = get_book(ticker)
         book_value = sum(
             p.market_value for p in positions
@@ -143,7 +143,7 @@ if signal in ("Buy", "Overweight"):
     # Regime-conditional cash target
     cash_target = 0.10  # base minimum
     try:
-        from tradingagents.dataflows.regime import CrossAssetRegimeDetector
+        from quorum.dataflows.regime import CrossAssetRegimeDetector
         regime_result = CrossAssetRegimeDetector().detect()
         regime_key = regime_result.get("regime", "risk_on").lower() if isinstance(regime_result, dict) else "risk_on"
         regime_strategies = config.get("regime_strategy", {})
@@ -165,7 +165,7 @@ if max_trade_val and signal in ("Buy", "Overweight"):
         errors.append(f"Trade value ~${trade_cost:,.0f} exceeds max ${float(max_trade_val):,.0f} (rules.json)")
 
 # ── Rule 8: Trade must match active plan ──
-active_plan = Path.home() / ".tradingagents" / "plans" / "active.md"
+active_plan = Path.home() / ".quorum" / "plans" / "active.md"
 if active_plan.exists() and active_plan.is_symlink():
     try:
         plan_text = active_plan.resolve().read_text()

@@ -6,7 +6,7 @@ import pytest
 
 pytestmark = pytest.mark.unit
 
-from tradingagents.execution.analytics import (
+from quorum.execution.analytics import (
     compute_brier_score,
     compute_log_score,
 )

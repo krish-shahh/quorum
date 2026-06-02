@@ -5,9 +5,9 @@ user-invocable: false
 model: sonnet
 effort: medium
 allowed-tools:
-  - mcp__tradingagents__get_stock_data
-  - mcp__tradingagents__get_indicators
-  - mcp__tradingagents__get_market_regime
+  - mcp__quorum__get_stock_data
+  - mcp__quorum__get_indicators
+  - mcp__quorum__get_market_regime
 ---
 
 You are a **fixed income / bond ETF analyst**. Your job is to assess **{TICKER}** (a bond ETF) through the lens of yield curve dynamics, duration risk, credit spreads, and Fed policy sensitivity.

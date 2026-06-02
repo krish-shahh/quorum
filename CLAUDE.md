@@ -2,7 +2,11 @@
 
 ## What This Is
 
-Autonomous paper trading system that runs entirely through Claude Code via MCP tools. No LLM API keys needed — Claude (your subscription) is the analyst.
+**quorum** — an autonomous paper trading system that runs entirely through Claude Code via MCP tools. A council of analyst subagents debates and reaches a quorum, then trades. No LLM API keys needed — Claude (your subscription) is the analyst.
+
+> Naming note: this project was renamed from `tradingagents` to **quorum** end-to-end — the Python package, the `quorum` CLI command, the MCP server namespace (`mcp__quorum__*`), the `~/.quorum/` data dir, and the `QUORUM_*` env vars. The academic credit to the original [TradingAgents](https://github.com/TauricResearch/TradingAgents) paper (arXiv:2412.20138) that inspired the architecture is intentionally retained in the README, skill prompts, and source comments — quorum is a Claude-Code-harnessed reimagining, not that LLM-API framework.
+
+> ⚠️ Disclaimer: quorum is a personal, educational project that trades a simulated paper account only. It is not financial advice and carries no warranty. Use at your own risk.
 
 ## How to Trade
 
@@ -55,7 +59,7 @@ After the final trading cycle each day (or when asked for a summary), produce:
 ### Headless Mode (default) — Planner/Executor
 
 The system runs fully unattended via macOS launchd + `claude -p` (uses subscription, not API).
-Planner produces a plan file, Executor mechanically executes it. Plans live at `~/.tradingagents/plans/`.
+Planner produces a plan file, Executor mechanically executes it. Plans live at `~/.quorum/plans/`.
 
 ```
 09:30  Planner — morning plan (full council on all tickers)
@@ -68,11 +72,11 @@ Planner produces a plan file, Executor mechanically executes it. Plans live at `
 
 That's **6 cycles per trading day** (down from 15). The Planner runs the full council analysis and writes a structured plan with YAML frontmatter. The Executor reads the active plan and executes mechanically — it cannot improvise trades. If 3+ Executor steps skip (price drifted), it triggers a replan.
 
-Each cycle is an independent `claude -p` invocation. State persists via MCP (SQLite + wiki + plan files + memory files). Logs go to `~/.tradingagents/logs/trading-YYYY-MM-DD.log`.
+Each cycle is an independent `claude -p` invocation. State persists via MCP (SQLite + wiki + plan files + memory files). Logs go to `~/.quorum/logs/trading-YYYY-MM-DD.log`.
 
-Pre-trade hook enforces plan adherence: `execute_paper_trade` is blocked if the trade doesn't match a step in `~/.tradingagents/plans/active.md`.
+Pre-trade hook enforces plan adherence: `execute_paper_trade` is blocked if the trade doesn't match a step in `~/.quorum/plans/active.md`.
 
-Manage: `launchctl list | grep tradingagents` / `launchctl unload ~/Library/LaunchAgents/com.tradingagents.daily.plist`
+Manage: `launchctl list | grep quorum` / `launchctl unload ~/Library/LaunchAgents/com.quorum.daily.plist`
 
 ### Interactive Mode
 
@@ -138,7 +142,7 @@ Scheduled Monitoring:
 ```
 
 ```
-tradingagents/
+quorum/
   mcp/             — MCP server (54 tools: data, portfolio, execution, wiki, safety, state, asset info, reflections, congress)
   council/         — Council skills + 19 analyst/debate prompts (4 universal + 7 domain + 8 debate) + compact_summary.py
   wiki/            — Knowledge base (run pages, digests, ticker pages, regimes)
@@ -146,7 +150,7 @@ tradingagents/
   execution/       — Paper broker (with spread model + futures multiplier), safety (notional exposure + VaR + live intraday risk), contracts registry, ATR/Kelly position sizer
   quant/           — Deterministic scoring layer (14 files): Altman Z, FCF yield, regime-conditional technicals, 9 sector-specific scorers, 12 hard vetoes
   backtest/        — Quant score replay engine: historical IC computation, signal validation
-  dashboard_v3/    — Flask + Tailwind monitoring dashboard (6 pages: Trading, Council, Predictions, Performance, Research, Pipeline)
+  api/             — Flask JSON API backend (14 /api/v1 endpoints) consumed by the Electron desktop app (desktop/); visualization lives in the desktop app, not here
 ```
 
 ## Key Files
@@ -164,16 +168,16 @@ tradingagents/
 | `.claude/skills/market-monitor/` | Background monitoring skill for /loop |
 | `.claude/skills/analyst-*/` | 11 analyst skills (4 universal + 7 domain) with model:sonnet + allowed-tools |
 | `.claude/skills/debate-*/` | 8 debate skills (bull, bear, research-manager, trader, 3 risk, portfolio-manager) |
-| `tradingagents/execution/plan.py` | Plan file read/write/validate/metrics for Planner/Executor architecture |
-| `tradingagents/execution/reflection.py` | Self-reflection engine: generates lessons from past trade outcomes |
-| `tradingagents/execution/contracts.py` | Futures contract spec registry (22 contracts: multiplier, margin, expiry) |
-| `~/.tradingagents/tickers.txt` | Your watchlist (one ticker per line) |
-| `~/.tradingagents/rules.json` | Trading restrictions (blocked tickers, max trade value) |
-| `~/.tradingagents/tradingagents.db` | SQLite: positions, trades, wiki, reports, ticker_state |
-| `~/.tradingagents/congress_trades.json` | Congressional trade cache (House clerk PTR filings, auto-synced daily) |
-| `~/.tradingagents/plans/` | Trading plan files (YAML frontmatter + markdown thesis) |
-| `~/.tradingagents/plans/active.md` | Symlink to latest approved plan (Executor reads this) |
-| `~/.tradingagents/wiki/` | Analysis pages, digests, ticker summaries |
+| `quorum/execution/plan.py` | Plan file read/write/validate/metrics for Planner/Executor architecture |
+| `quorum/execution/reflection.py` | Self-reflection engine: generates lessons from past trade outcomes |
+| `quorum/execution/contracts.py` | Futures contract spec registry (22 contracts: multiplier, margin, expiry) |
+| `~/.quorum/tickers.txt` | Your watchlist (one ticker per line) |
+| `~/.quorum/rules.json` | Trading restrictions (blocked tickers, max trade value) |
+| `~/.quorum/quorum.db` | SQLite: positions, trades, wiki, reports, ticker_state |
+| `~/.quorum/congress_trades.json` | Congressional trade cache (House clerk PTR filings, auto-synced daily) |
+| `~/.quorum/plans/` | Trading plan files (YAML frontmatter + markdown thesis) |
+| `~/.quorum/plans/active.md` | Symlink to latest approved plan (Executor reads this) |
+| `~/.quorum/wiki/` | Analysis pages, digests, ticker summaries |
 | `scripts/start-trading-day.sh` | Auto-start script (called by launchd at 9:30 AM) |
 
 ## MCP Tools (55)
@@ -213,7 +217,7 @@ Maintenance: prune_wiki, get_analytics_summary, search_wiki, get_wiki_page
 - `kill_switch` tool halts all trading immediately
 - `get_live_risk` tool: intraday circuit breakers (GREEN/YELLOW/ORANGE/RED) — daily P&L limits, ATR stop distances, VIX spike detection. RED auto-triggers kill switch.
 - `rules.json` lets you block specific tickers (e.g. your employer's stock)
-- Audit trail logs every MCP tool call to `~/.tradingagents/audit/`
+- Audit trail logs every MCP tool call to `~/.quorum/audit/`
 - Spread/slippage model simulates realistic fill prices (feature-flagged)
 - Futures: notional exposure tracking, max leverage limit (default 3.0x), margin requirement checks, contract expiry warnings
 
@@ -226,21 +230,21 @@ pytest tests/ -m unit
 ## CLI
 
 ```bash
-tradingagents                  # open dashboard
-tradingagents health           # run 13-point system health check
-tradingagents reset -b 5000    # reset paper account to $5,000
-tradingagents regime           # market regime
-tradingagents wiki search X    # search wiki
-tradingagents mcp-server       # start MCP server manually
-tradingagents reset-kill-switch
-tradingagents db-status
+quorum                  # start the JSON API backend (the Electron desktop app connects to this)
+quorum health           # run 13-point system health check
+quorum reset -b 5000    # reset paper account to $5,000
+quorum regime           # market regime
+quorum wiki search X    # search wiki
+quorum mcp-server       # start MCP server manually
+quorum reset-kill-switch
+quorum db-status
 ```
 
 ## Troubleshooting
 
 If MCP tools aren't loading in Claude Code:
-1. Run `tradingagents health` to validate the full stack
-2. Check `.mcp.json` has the `tradingagents` MCP server with absolute python path
+1. Run `quorum health` to validate the full stack
+2. Check `.mcp.json` has the `quorum` MCP server with absolute python path
 3. Restart the Claude Code session (MCP connections are established at session init)
 4. The MCP stdio protocol test in `health` proves the server works end-to-end
 

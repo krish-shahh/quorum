@@ -24,7 +24,7 @@ Run a strategy backtest in isolation using Claude Code's worktree feature.
      isolation="worktree",
      model="sonnet",
      prompt="Run backtest for {ticker} using {strategy} strategy from {start} to {end}. 
-             Use the backtest engine at tradingagents/backtest/. 
+             Use the backtest engine at quorum/backtest/. 
              Report: total return %, Sharpe ratio, max drawdown, win rate, trade count.
              Save results to the backtest_runs table."
    )

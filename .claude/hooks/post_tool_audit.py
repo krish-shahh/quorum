@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """PostToolCall hook: logs every MCP tool invocation to an audit trail.
 
-Writes to ~/.tradingagents/audit/tool_calls.jsonl — one JSON line per call.
+Writes to ~/.quorum/audit/tool_calls.jsonl — one JSON line per call.
 This creates a complete, tamper-evident record of every action Claude took.
 """
 
@@ -27,7 +27,7 @@ record = {
 }
 
 # Write to audit log
-audit_dir = Path.home() / ".tradingagents" / "audit"
+audit_dir = Path.home() / ".quorum" / "audit"
 audit_dir.mkdir(parents=True, exist_ok=True)
 audit_file = audit_dir / "tool_calls.jsonl"
 

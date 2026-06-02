@@ -15,14 +15,14 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from tradingagents.execution.broker.paper_client import PaperBrokerClient
-from tradingagents.execution.executor import ExecutionEngine
-from tradingagents.execution.execution_log import ExecutionLog
-from tradingagents.execution.position_sizer import PositionSizer
-from tradingagents.execution.safety import SafetyMonitor
+from quorum.execution.broker.paper_client import PaperBrokerClient
+from quorum.execution.executor import ExecutionEngine
+from quorum.execution.execution_log import ExecutionLog
+from quorum.execution.position_sizer import PositionSizer
+from quorum.execution.safety import SafetyMonitor
 
-from tradingagents.execution.trade_data import compute_equity_curve
-from tradingagents.execution.schemas import (
+from quorum.execution.trade_data import compute_equity_curve
+from quorum.execution.schemas import (
     AccountInfo,
     OrderRequest,
     OrderSide,
@@ -59,7 +59,7 @@ def _mock_yf(last=150.0):
     """Patch yfinance to return a deterministic quote."""
     mock_info = {"lastPrice": last, "previousClose": last, "lastVolume": 1000}
     return patch(
-        "tradingagents.execution.broker.paper_client.yf.Ticker",
+        "quorum.execution.broker.paper_client.yf.Ticker",
         return_value=MagicMock(fast_info=mock_info),
     )
 

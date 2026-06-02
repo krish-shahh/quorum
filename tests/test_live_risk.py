@@ -4,7 +4,7 @@ import pytest
 
 pytestmark = pytest.mark.unit
 
-from tradingagents.execution.safety import _classify_risk_level
+from quorum.execution.safety import _classify_risk_level
 
 
 class TestCircuitBreakers:

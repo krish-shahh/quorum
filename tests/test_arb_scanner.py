@@ -9,7 +9,7 @@ from unittest.mock import patch, MagicMock
 
 pytestmark = pytest.mark.unit
 
-from tradingagents.dataflows.arb_scanner import (
+from quorum.dataflows.arb_scanner import (
     scan_overround,
     scan_bias,
     calculate_dutch_book,
@@ -19,7 +19,7 @@ from tradingagents.dataflows.arb_scanner import (
     DutchBookPlan,
     KALSHI_FEE_PCT,
 )
-from tradingagents.dataflows.kalshi import KalshiMarket, KalshiEvent
+from quorum.dataflows.kalshi import KalshiMarket, KalshiEvent
 
 
 def _make_market(ticker="M1", title="Test", yes_ask=0.50, yes_bid=None,
@@ -104,7 +104,7 @@ class TestBiasBucketing:
 
 
 class TestOverroundScanner:
-    @patch("tradingagents.dataflows.arb_scanner.kalshi.get_events")
+    @patch("quorum.dataflows.arb_scanner.kalshi.get_events")
     def test_detects_dutch_book(self, mock_events):
         """Sum < $1.00 should be flagged as a Dutch book."""
         markets = [
@@ -125,7 +125,7 @@ class TestOverroundScanner:
         assert opps[0].gross_profit_pct == pytest.approx(10.0, abs=0.1)
         assert opps[0].net_profit_pct > 0  # should still be positive after fees
 
-    @patch("tradingagents.dataflows.arb_scanner.kalshi.get_events")
+    @patch("quorum.dataflows.arb_scanner.kalshi.get_events")
     def test_ignores_efficient_market(self, mock_events):
         """Sum ~$1.02 should NOT be flagged as a Dutch book."""
         markets = [
@@ -142,7 +142,7 @@ class TestOverroundScanner:
         assert opps[0].gross_profit_pct == 0  # no Dutch book
         assert opps[0].overround_pct == pytest.approx(2.0, abs=0.1)
 
-    @patch("tradingagents.dataflows.arb_scanner.kalshi.get_events")
+    @patch("quorum.dataflows.arb_scanner.kalshi.get_events")
     def test_requires_mutually_exclusive(self, mock_events):
         """Non-mutually exclusive events should be filtered out."""
         markets = [
@@ -156,7 +156,7 @@ class TestOverroundScanner:
         opps = scan_overround.__wrapped__(limit=10, min_markets=2)
         assert len(opps) == 0
 
-    @patch("tradingagents.dataflows.arb_scanner.kalshi.get_events")
+    @patch("quorum.dataflows.arb_scanner.kalshi.get_events")
     def test_requires_min_markets(self, mock_events):
         """Events with fewer than min_markets should be filtered out."""
         markets = [_make_market("M1", "A", yes_ask=0.50)]
@@ -167,7 +167,7 @@ class TestOverroundScanner:
         opps = scan_overround.__wrapped__(limit=10, min_markets=2)
         assert len(opps) == 0
 
-    @patch("tradingagents.dataflows.arb_scanner.kalshi.get_events")
+    @patch("quorum.dataflows.arb_scanner.kalshi.get_events")
     def test_fee_aware_profit(self, mock_events):
         """Net profit should account for Kalshi's 7% fee."""
         # Sum = 0.90, gross profit = 10%
@@ -190,7 +190,7 @@ class TestOverroundScanner:
 
 
 class TestBiasScanner:
-    @patch("tradingagents.dataflows.arb_scanner.kalshi.get_events")
+    @patch("quorum.dataflows.arb_scanner.kalshi.get_events")
     def test_filters_low_volume(self, mock_events):
         """Markets below min_volume should be excluded."""
         markets = [
@@ -205,7 +205,7 @@ class TestBiasScanner:
         assert len(opps) == 1
         assert opps[0].ticker == "M2"
 
-    @patch("tradingagents.dataflows.arb_scanner.kalshi.get_events")
+    @patch("quorum.dataflows.arb_scanner.kalshi.get_events")
     def test_correct_bucket_assignment(self, mock_events):
         """Markets should be placed in correct buckets."""
         markets = [
@@ -224,7 +224,7 @@ class TestBiasScanner:
         assert by_ticker["M2"].price_bucket == "favorite"
         assert by_ticker["M2"].recommended_action == "buy_yes"
 
-    @patch("tradingagents.dataflows.arb_scanner.kalshi.get_events")
+    @patch("quorum.dataflows.arb_scanner.kalshi.get_events")
     def test_sorted_by_edge(self, mock_events):
         """Results should be sorted by edge, best first."""
         markets = [
@@ -245,7 +245,7 @@ class TestBiasScanner:
 
 
 class TestDutchBookCalculation:
-    @patch("tradingagents.dataflows.arb_scanner.kalshi.get_event")
+    @patch("quorum.dataflows.arb_scanner.kalshi.get_event")
     def test_profitable_dutch_book(self, mock_event):
         """Should calculate correct profit for a 3-leg Dutch book."""
         markets = [
@@ -266,7 +266,7 @@ class TestDutchBookCalculation:
         assert plan.net_profit > 0
         assert plan.is_profitable
 
-    @patch("tradingagents.dataflows.arb_scanner.kalshi.get_event")
+    @patch("quorum.dataflows.arb_scanner.kalshi.get_event")
     def test_unprofitable_dutch_book(self, mock_event):
         """Sum > $1 means no profit — should flag as not profitable."""
         markets = [
@@ -281,7 +281,7 @@ class TestDutchBookCalculation:
         assert not plan.is_profitable
         assert plan.net_profit <= 0
 
-    @patch("tradingagents.dataflows.arb_scanner.kalshi.get_event")
+    @patch("quorum.dataflows.arb_scanner.kalshi.get_event")
     def test_non_exclusive_event(self, mock_event):
         """Non-mutually exclusive events should return empty plan."""
         mock_event.return_value = _make_event(
@@ -292,7 +292,7 @@ class TestDutchBookCalculation:
         assert plan.num_legs == 0
         assert not plan.is_profitable
 
-    @patch("tradingagents.dataflows.arb_scanner.kalshi.get_event")
+    @patch("quorum.dataflows.arb_scanner.kalshi.get_event")
     def test_multi_contract_scaling(self, mock_event):
         """Cost and payout should scale linearly with contracts."""
         markets = [

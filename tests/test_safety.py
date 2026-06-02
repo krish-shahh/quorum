@@ -3,8 +3,8 @@
 import json
 import pytest
 
-from tradingagents.execution.safety import SafetyMonitor
-from tradingagents.execution.schemas import AccountInfo
+from quorum.execution.safety import SafetyMonitor
+from quorum.execution.schemas import AccountInfo
 
 
 @pytest.fixture
