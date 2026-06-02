@@ -12,6 +12,8 @@ The architecture is inspired by [TauricResearch/TradingAgents](https://github.co
 
 ![Architecture](architecture.png)
 
+<sub>High-level overview. For the full per-component detail (every analyst's tools, the scoring formula, vetoes, debate gates), see the [detailed diagram](architecture-detailed.png).</sub>
+
 ### Key Design Decisions
 
 - **Model tiering**: Analysts run on Haiku (fast, cheap). Chairman runs on Opus (deep reasoning). Cuts cost ~75% vs all-Opus.
