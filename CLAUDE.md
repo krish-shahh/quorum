@@ -231,6 +231,8 @@ pytest tests/ -m unit
 
 ```bash
 quorum                  # start the JSON API backend (the Electron desktop app connects to this)
+quorum pipeline         # run the FULL pipeline end-to-end (ungated, even off-hours) + ntfy status
+quorum pipeline --dry-run  # test the plumbing + send a test notification (no trading)
 quorum health           # run 13-point system health check
 quorum reset -b 5000    # reset paper account to $5,000
 quorum regime           # market regime

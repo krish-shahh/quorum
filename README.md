@@ -109,6 +109,8 @@ Runs fully unattended via macOS launchd + `claude -p` (subscription, not API):
 
 Each cycle is independent — state persists via MCP (SQLite + wiki + memory files). Logs: `~/.quorum/logs/trading-YYYY-MM-DD.log`.
 
+**Run it on demand:** `quorum pipeline` runs the whole flow front-to-back *regardless* of market hours / trading day, then pushes a status notification via [ntfy.sh](https://ntfy.sh) (set `QUORUM_NTFY_TOPIC` in `.env`). Use `quorum pipeline --dry-run` to test the plumbing without trading.
+
 ---
 
 ## Architecture

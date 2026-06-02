@@ -212,6 +212,29 @@ def regime():
     console.print(result)
 
 
+@app.command()
+def pipeline(
+    dry_run: bool = typer.Option(
+        False, "--dry-run",
+        help="Validate plumbing and send a test notification without trading.",
+    ),
+):
+    """Run the full trading pipeline end-to-end (ungated), then ntfy the status.
+
+    Unlike the scheduled launchd cycles, this runs front-to-back regardless of
+    whether the market is open or it's a trading day. Set QUORUM_NTFY_TOPIC in
+    .env to receive the status push notification.
+    """
+    import subprocess
+    script = Path(__file__).resolve().parent.parent / "scripts" / "run-pipeline.sh"
+    if not script.exists():
+        console.print(f"[red]Pipeline script not found: {script}[/red]")
+        raise typer.Exit(1)
+    cmd = ["bash", str(script)] + (["--dry-run"] if dry_run else [])
+    console.print(f"[bold]Running quorum pipeline{' (dry run)' if dry_run else ''}…[/bold]")
+    raise typer.Exit(subprocess.run(cmd).returncode)
+
+
 @app.command(name="mcp-server")
 def mcp_server():
     """Start the quorum MCP server (stdio transport)."""

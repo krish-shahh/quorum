@@ -90,12 +90,13 @@ Compute and report:
 
 Send ntfy notification:
 ```bash
-curl -s \
+set -a; [ -f .env ] && . ./.env; set +a   # load QUORUM_NTFY_TOPIC from .env (gitignored)
+[ -n "${QUORUM_NTFY_TOPIC:-}" ] && curl -s \
   -H "Title: Executor {TODAY}" \
   -H "Priority: default" \
   -H "Tags: robot" \
   -d "{PLAINTEXT_SUMMARY}" \
-  "ntfy.sh/quorum-23a6f73a"
+  "ntfy.sh/$QUORUM_NTFY_TOPIC"
 ```
 
 Format:

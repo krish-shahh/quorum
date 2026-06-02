@@ -341,9 +341,10 @@ For each BUY or SELL decision:
 
 5. **Notify** — After each executed trade, send via ntfy.sh:
    ```bash
-   curl -s -H "Title: {SIDE} {TICKER}" -H "Tags: moneybag" -H "Priority: high" \
+   set -a; [ -f .env ] && . ./.env; set +a   # load QUORUM_NTFY_TOPIC from .env (gitignored)
+   [ -n "${QUORUM_NTFY_TOPIC:-}" ] && curl -s -H "Title: {SIDE} {TICKER}" -H "Tags: moneybag" -H "Priority: high" \
      -d "{SIDE} {shares} shares @ ${price} | {1-sentence thesis}" \
-     "ntfy.sh/quorum-23a6f73a"
+     "ntfy.sh/$QUORUM_NTFY_TOPIC"
    ```
 
 For HOLD decisions, save the wiki page only (no trade report needed).
@@ -368,12 +369,13 @@ After completing the cycle, update the native memory files so the next session h
 After the cycle summary, send the full summary via **ntfy.sh** in plaintext (no markdown — it doesn't render on phone push):
 
 ```bash
-curl -s \
+set -a; [ -f .env ] && . ./.env; set +a   # load QUORUM_NTFY_TOPIC from .env (gitignored)
+[ -n "${QUORUM_NTFY_TOPIC:-}" ] && curl -s \
   -H "Title: Council {TODAY}" \
   -H "Priority: default" \
   -H "Tags: chart_with_upwards_trend" \
   -d "{PLAINTEXT_SUMMARY}" \
-  "ntfy.sh/quorum-23a6f73a"
+  "ntfy.sh/$QUORUM_NTFY_TOPIC"
 ```
 
 The `{PLAINTEXT_SUMMARY}` format (use fixed-width alignment):

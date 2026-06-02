@@ -485,12 +485,13 @@ After the plan is written, report:
 Send notification via **ntfy.sh**:
 
 ```bash
-curl -s \
+set -a; [ -f .env ] && . ./.env; set +a   # load QUORUM_NTFY_TOPIC from .env (gitignored)
+[ -n "${QUORUM_NTFY_TOPIC:-}" ] && curl -s \
   -H "Title: Planner {TODAY}" \
   -H "Priority: default" \
   -H "Tags: memo" \
   -d "{PLAINTEXT_SUMMARY}" \
-  "ntfy.sh/quorum-23a6f73a"
+  "ntfy.sh/$QUORUM_NTFY_TOPIC"
 ```
 
 Format:

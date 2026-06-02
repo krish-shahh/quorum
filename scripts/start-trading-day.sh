@@ -21,6 +21,13 @@ set -euo pipefail
 PROJECT_DIR="${QUORUM_PROJECT_DIR:-$HOME/quorum}"
 LOG_DIR="$HOME/.quorum/logs"
 CLAUDE_BIN="$HOME/.local/bin/claude"
+
+# Load .env (gitignored) so QUORUM_NTFY_TOPIC is available. The ntfy topic is a
+# secret (anyone who knows it can read your alerts) — keep it out of the repo.
+if [ -f "$PROJECT_DIR/.env" ]; then
+    set -a; . "$PROJECT_DIR/.env"; set +a
+fi
+NTFY_TOPIC="${QUORUM_NTFY_TOPIC:-}"
 DATE=$(date +%Y-%m-%d)
 DOW=$(date +%u)      # 1=Monday, 7=Sunday
 HOUR=$(date +%H)
@@ -121,7 +128,7 @@ At the very end, output a push notification summary between "--- NOTIFICATION --
             log "=== Auto-replan completed successfully ==="
             # Merge replan notification into main output
             REPLAN_NOTIF=$(echo "$REPLAN_OUTPUT" | sed -n '/^--- NOTIFICATION ---$/,/^--- NOTIFICATION ---$/p' | sed '1d;$d' | head -c 4096)
-            if [ -n "$REPLAN_NOTIF" ]; then
+            if [ -n "$REPLAN_NOTIF" ] && [ -n "$NTFY_TOPIC" ]; then
                 curl -s -H "Title: auto-replan $TIMESTAMP" -H "Priority: default" -H "Tags: memo" \
                     -d "$REPLAN_NOTIF" "ntfy.sh/$NTFY_TOPIC" >> "$LOG_DIR/trading-$DATE.log" 2>&1 || true
             fi
@@ -131,8 +138,7 @@ At the very end, output a push notification summary between "--- NOTIFICATION --
     fi
 fi
 
-# ── Push notification via ntfy.sh ──
-NTFY_TOPIC="quorum-23a6f73a"
+# ── Push notification via ntfy.sh (topic loaded from .env at top — secret, not in repo) ──
 
 # Extract the dedicated notification block from Claude's output
 SUMMARY=$(echo "$OUTPUT" | sed -n '/^--- NOTIFICATION ---$/,/^--- NOTIFICATION ---$/p' | sed '1d;$d' | head -c 4096)
@@ -148,9 +154,13 @@ fi
 NOTIF_ARCHIVE="$HOME/.quorum/notifications.jsonl"
 echo "{\"timestamp\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"cycle\":\"$CYCLE\",\"exit_code\":$EXIT_CODE,\"message\":$(echo "$SUMMARY" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')}" >> "$NOTIF_ARCHIVE" 2>/dev/null || true
 
-curl -s \
-    -H "Title: $CYCLE $TIMESTAMP" \
-    -H "Priority: $(echo "$CYCLE" | grep -q 'eod' && echo 'high' || echo 'default')" \
-    -H "Tags: $([ $EXIT_CODE -eq 0 ] && echo 'chart_with_upwards_trend' || echo 'warning')" \
-    -d "$SUMMARY" \
-    "ntfy.sh/$NTFY_TOPIC" >> "$LOG_DIR/trading-$DATE.log" 2>&1 || true
+if [ -n "$NTFY_TOPIC" ]; then
+    curl -s \
+        -H "Title: $CYCLE $TIMESTAMP" \
+        -H "Priority: $(echo "$CYCLE" | grep -q 'eod' && echo 'high' || echo 'default')" \
+        -H "Tags: $([ $EXIT_CODE -eq 0 ] && echo 'chart_with_upwards_trend' || echo 'warning')" \
+        -d "$SUMMARY" \
+        "ntfy.sh/$NTFY_TOPIC" >> "$LOG_DIR/trading-$DATE.log" 2>&1 || true
+else
+    log "ntfy skipped (QUORUM_NTFY_TOPIC unset)"
+fi
