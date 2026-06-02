@@ -26,20 +26,31 @@ app = typer.Typer(
 
 @app.callback()
 def _default(ctx: typer.Context):
-    """Launch the JSON API server (Electron desktop app connects to this)."""
+    """Open the quorum desktop app (Electron). It auto-starts its own API backend."""
     if ctx.invoked_subcommand is not None:
         return
-    from quorum.api.app import create_app
-    console.print("[bold]Starting quorum API Server...[/bold]")
-    console.print("[dim]JSON API on http://127.0.0.1:5050/api/v1/[/dim]")
-    console.print("[dim]Open the Electron desktop app to view the dashboard[/dim]")
-    console.print("[dim]  cd desktop && npm run dev[/dim]")
-    console.print("Press Ctrl-C to stop\n")
+    import shutil
+    import subprocess
+
+    desktop_dir = Path(__file__).resolve().parent.parent / "desktop"
+    npm = shutil.which("npm")
+    if npm is None:
+        console.print("[red]npm not found.[/red] Install Node.js to run the desktop app.")
+        console.print("[dim]Headless API only? Run: python -m quorum.api[/dim]")
+        raise typer.Exit(1)
+    if not (desktop_dir / "node_modules").exists():
+        console.print("[yellow]Desktop dependencies not installed.[/yellow]")
+        console.print(f"[dim]Run: cd {desktop_dir} && npm install[/dim]")
+        raise typer.Exit(1)
+
+    console.print("[bold]Launching quorum desktop app…[/bold]")
+    console.print("[dim]The app starts its own JSON API backend on port 5050.[/dim]")
+    console.print("[dim]Headless API only? Run: python -m quorum.api[/dim]")
+    console.print("Close the window or press Ctrl-C to stop.\n")
     try:
-        flask_app = create_app()
-        flask_app.run(host="127.0.0.1", port=5050)
+        subprocess.run([npm, "run", "dev"], cwd=str(desktop_dir))
     except KeyboardInterrupt:
-        console.print("\nAPI server stopped.")
+        console.print("\nDesktop app stopped.")
 
 
 # ──────────────────────────────────────────────────────────────────
