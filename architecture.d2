@@ -16,7 +16,7 @@ title: quorum — a council of analyst subagents, harnessed by Claude Code {
 harness: Runtime Harness {
   style: {fill: "#f9fafb"; stroke: "#9ca3af"; border-radius: 10}
 
-  trigger: You · or · launchd {
+  trigger: You · launchd\nquorum pipeline {
     shape: oval
     style: {fill: "#ffffff"; stroke: "#9ca3af"}
   }
@@ -93,6 +93,10 @@ kalshi: Prediction Markets · Kalshi\n2-agent superforecaster\nedge > 10% → tr
   style: {fill: "#f3e8ff"; stroke: "#8b5cf6"; border-radius: 10}
 }
 
+notify: Notifications · ntfy.sh\nstatus push to your phone\nafter every cycle / quorum pipeline {
+  style: {fill: "#fef3c7"; stroke: "#f59e0b"; border-radius: 10}
+}
+
 # ── cross-layer flow ──
 harness.claude -> pipeline.pre: orchestrates
 data -> pipeline.council: market data {style.stroke-dash: 4; style.stroke: "#f59e0b"}
@@ -101,3 +105,5 @@ persist -> pipeline.debate: past reflections {style.stroke-dash: 4; style.stroke
 harness.mcp -> ui: SQLite + API {style.stroke-dash: 4; style.stroke: "#3b82f6"}
 harness.claude -> kalshi: 2-agent council {style.stroke-dash: 4; style.stroke: "#8b5cf6"}
 data -> kalshi {style.stroke-dash: 4; style.stroke: "#f59e0b"}
+pipeline.exec -> notify: status push {style.stroke-dash: 4; style.stroke: "#f59e0b"}
+kalshi -> notify {style.stroke-dash: 4; style.stroke: "#f59e0b"}

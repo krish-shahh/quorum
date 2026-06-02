@@ -25,7 +25,7 @@ runtime: RUNTIME HARNESS {
     style.fill: "#eff6ff"
     style.stroke: "#3b82f6"
   }
-  launchd: launchd (macOS)\n6 cycles 9:30 - 16:15\nplanner + executor {
+  launchd: launchd (macOS)\n6 cycles 9:30 - 16:15\nplanner + executor\n(+ quorum pipeline on demand) {
     style.fill: "#fffbeb"
     style.stroke: "#f59e0b"
   }
@@ -310,7 +310,7 @@ execution: EXECUTION + SAFETY {
     style.stroke: "#10b981"
   }
 
-  report: Post-Execution\n\n• save_trade_report (pre + post)\n• save_analysis_to_wiki\n  (debate sections auto-fill)\n• PushNotification\n• LearningEngine.record_entry\n• Confidence scoring\n• Stop-loss registration {
+  report: Post-Execution\n\n• save_trade_report (pre + post)\n• save_analysis_to_wiki\n  (debate sections auto-fill)\n• ntfy.sh status push (phone)\n• LearningEngine.record_entry\n• Confidence scoring\n• Stop-loss registration {
     style.fill: "#fff"
     style.stroke: "#e5e7eb"
   }
