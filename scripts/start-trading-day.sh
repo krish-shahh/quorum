@@ -20,7 +20,8 @@ set -euo pipefail
 # or edit the default below to point at your checkout.
 PROJECT_DIR="${QUORUM_PROJECT_DIR:-$HOME/quorum}"
 LOG_DIR="$HOME/.quorum/logs"
-CLAUDE_BIN="$HOME/.local/bin/claude"
+CLAUDE_BIN="${CLAUDE_BIN:-$(command -v claude || echo "$HOME/.local/bin/claude")}"
+PYTHON_BIN="${PYTHON_BIN:-$(command -v python3 || echo "$HOME/miniforge3/bin/python3")}"
 
 # Load .env (gitignored) so QUORUM_NTFY_TOPIC is available. The ntfy topic is a
 # secret (anyone who knows it can read your alerts) — keep it out of the repo.
@@ -93,7 +94,7 @@ cd "$PROJECT_DIR"
 # Sync congressional trades before first cycle of the day
 if [ "$MINS_TODAY" -eq "$MARKET_OPEN" ]; then
     log "Syncing congressional trades..."
-    "$HOME/miniforge3/bin/python3" -m quorum.dataflows.congress --sync >> "$LOG_DIR/trading-$DATE.log" 2>&1 || true
+    "$PYTHON_BIN" -m quorum.dataflows.congress --sync >> "$LOG_DIR/trading-$DATE.log" 2>&1 || true
 fi
 
 # Run claude in non-interactive mode

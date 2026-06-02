@@ -1,6 +1,6 @@
 {
-  "_comment": "Trading restrictions. Copy to ~/.quorum/rules.json and edit.",
-  "blocked_tickers": ["CWAN"],
+  "_comment": "Trading restrictions. Copy to ~/.quorum/rules.json and edit. Block tickers you can't trade (e.g. your employer's stock).",
+  "blocked_tickers": ["YOUR_EMPLOYER_TICKER"],
   "blocked_sectors": [],
   "max_trade_value": null,
   "require_confirmation_above": null

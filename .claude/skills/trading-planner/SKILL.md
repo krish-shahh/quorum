@@ -539,4 +539,4 @@ Over time, the `get_trade_reflections` tool will accumulate outcome data that sh
 - Reduce size 50% if earnings within 3 days
 - Score 3.2-3.5 = Hold (not Buy) — need clear edge on small account
 - **Underweight vs Sell** — when trimming for concentration or fading conviction, use action `Underweight` (sells ~50%), NOT `Sell` (liquidates 100%). The position sizer handles the quantity math.
-- **Diversify beyond tech** — the user's 401K already has heavy large-cap growth exposure (JLGMX). This paper account should complement it with healthcare, financials, industrials, consumer staples, and energy.
+- **Diversify beyond tech** — complement a large-cap-growth-heavy retirement portfolio with healthcare, financials, industrials, consumer staples, and energy.

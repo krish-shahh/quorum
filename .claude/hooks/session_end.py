@@ -12,7 +12,13 @@ from datetime import datetime
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
-MEMORY_DIR = os.path.expanduser("~/.claude/projects/-Users-krish-Desktop-trader/memory")
+# Claude Code stores per-project memory under ~/.claude/projects/<slug>/memory,
+# where <slug> is the project's absolute path with "/" replaced by "-".
+_project_dir = os.environ.get("CLAUDE_PROJECT_DIR") or os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..", "..")
+)
+_slug = _project_dir.replace(os.sep, "-")
+MEMORY_DIR = os.path.expanduser(f"~/.claude/projects/{_slug}/memory")
 
 try:
     from quorum.default_config import DEFAULT_CONFIG

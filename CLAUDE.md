@@ -41,7 +41,7 @@ This ensures every trading session starts with current context, even if native m
 
 ## Account Constraints
 
-$5,000 paper account. Full rules in the trading-planner skill (Portfolio Rules section). Pre-trade hook enforces: 50% sector cap, 25% single-ticker cap, cash reserve (regime-conditional), blocked tickers, kill switch, plan matching. No artificial limits on position count, holding period, or averaging down — risk is managed via concentration, exposure, and sizing. Use Underweight (not Sell) for partial trims. User's 401K is in JLGMX (large-cap growth) — this account should diversify beyond tech.
+$5,000 paper account. Full rules in the trading-planner skill (Portfolio Rules section). Pre-trade hook enforces: 50% sector cap, 25% single-ticker cap, cash reserve (regime-conditional), blocked tickers, kill switch, plan matching. No artificial limits on position count, holding period, or averaging down — risk is managed via concentration, exposure, and sizing. Use Underweight (not Sell) for partial trims. This account should diversify beyond tech (e.g. to complement a large-cap-growth-heavy retirement portfolio).
 
 ## End-of-Day Report
 

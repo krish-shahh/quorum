@@ -33,6 +33,7 @@ DATE=$(date +%Y-%m-%d)
 TS=$(date '+%H:%M')
 LOG="$LOG_DIR/pipeline-$DATE.log"
 CLAUDE_BIN="${CLAUDE_BIN:-$(command -v claude || echo "$HOME/.local/bin/claude")}"
+PYTHON_BIN="${PYTHON_BIN:-$(command -v python3 || echo "$HOME/miniforge3/bin/python3")}"
 NTFY_TOPIC="${QUORUM_NTFY_TOPIC:-}"
 
 log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a "$LOG"; }
@@ -65,7 +66,7 @@ if [ $DRY_RUN -eq 1 ]; then
 fi
 
 # ── Best-effort: refresh congressional trades cache ──
-"$HOME/miniforge3/bin/python3" -m quorum.dataflows.congress --sync >>"$LOG" 2>&1 || true
+"$PYTHON_BIN" -m quorum.dataflows.congress --sync >>"$LOG" 2>&1 || true
 
 # ── Full front-to-back pipeline prompt ──
 PROMPT='You are running the COMPLETE quorum trading pipeline end-to-end, on demand. This is a MANUAL full run: proceed even if the market is closed or it is not a trading day, using the latest available data (do NOT abort just because the market is closed).
