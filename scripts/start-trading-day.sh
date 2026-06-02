@@ -16,7 +16,9 @@
 
 set -euo pipefail
 
-PROJECT_DIR="/Users/krish/Desktop/trader"
+# Path to your cloned repo. Set QUORUM_PROJECT_DIR (the launchd plist does this),
+# or edit the default below to point at your checkout.
+PROJECT_DIR="${QUORUM_PROJECT_DIR:-$HOME/quorum}"
 LOG_DIR="$HOME/.quorum/logs"
 CLAUDE_BIN="$HOME/.local/bin/claude"
 DATE=$(date +%Y-%m-%d)

@@ -150,6 +150,8 @@ Views: **Portfolio** (positions, regime, live-risk status GREEN/YELLOW/ORANGE/RE
 7. **Spread/slippage model** simulates realistic fills (feature-flagged)
 8. **Futures**: notional exposure tracking, max leverage (3.0x), margin checks, contract expiry warnings
 
+> **Live trading**: the default and intended mode is a **simulated paper account**. A Schwab broker integration (`quorum/execution/broker/schwab_client.py`) exists and *can* place real orders if you supply real API credentials and switch execution mode — this path is **unsupported, untested for production, and entirely at your own risk**. Don't point this at real money.
+
 ---
 
 ## Quantitative Scoring

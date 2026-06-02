@@ -65,7 +65,9 @@ def get_sec_filings(ticker: str, filing_type: str = "all", limit: int = 5) -> st
         return f"SEC filings unavailable — install edgartools: pip install edgartools"
 
     try:
-        set_identity("quorum 2003kshah@gmail.com")
+        # SEC EDGAR asks for a contact identity in the request header. Set
+        # QUORUM_SEC_IDENTITY in your .env (e.g. "your-name you@example.com").
+        set_identity(os.environ.get("QUORUM_SEC_IDENTITY", "quorum-research research@example.com"))
         company = Company(ticker.upper())
         filings_obj = company.get_filings(form=["10-K", "10-Q", "8-K"]).latest(20)
 

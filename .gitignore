@@ -224,3 +224,8 @@ __marimo__/
 
 # Flask dashboard
 __pycache__/
+
+# Local machine config (absolute paths / personal permissions) — do not commit
+.mcp.json
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
