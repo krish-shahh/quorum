@@ -44,11 +44,14 @@ Call `get_trading_calendar`, `get_live_risk`, `get_portfolio`, and `get_market_r
 
 ## Step 1: Build the DYNAMIC Scalp Universe
 
-The scalp universe is **dynamic** — each cycle you trade what's actually moving *today*, not a fixed list. Run the screener:
+The scalp universe is **dynamic** — each cycle you trade what's actually moving *today*, not a fixed list. Run the screener **with the interpreter that has `quorum` installed** (the same one behind the `quorum` CLI — plain `python3` may be a different interpreter without the package):
 
 ```bash
-python3 scripts/scalp_screen.py --move 2.0 --vol 2.0 --top 15
+PYBIN="$(dirname "$(command -v quorum 2>/dev/null || command -v python3)")/python3"
+"$PYBIN" scripts/scalp_screen.py --move 2.0 --vol 2.0 --top 15
 ```
+
+If that errors with `No module named 'quorum'`, fall back to `~/miniforge3/bin/python3 scripts/scalp_screen.py …`, and if the screener still fails, just `cat ~/.quorum/scalp_tickers.txt` and use the seed list.
 
 This scans a ~200-name liquid universe (the curated `~/.quorum/scalp_tickers.txt` seed list + a broad equity set), ranks by live anomalies (top % movers + unusual volume), and **excludes every blocked ticker** from `~/.quorum/rules.json` (crypto proxies are banned and can never appear). It prints:
 - **Movers** — names that cleared the thresholds today, ranked by signal strength (these are your prime scalp candidates).
