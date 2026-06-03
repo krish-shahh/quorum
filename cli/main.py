@@ -318,5 +318,134 @@ def reset(
     console.print("[dim]All positions, trades, and history cleared.[/dim]")
 
 
+_PROFILES = ("default", "moderate", "scalp")
+# Which headless launchd schedule each profile uses.
+_PROFILE_SCHEDULE = {
+    "default":  "com.quorum.daily",
+    "moderate": "com.quorum.daily",
+    "scalp":    "com.quorum.scalp",
+}
+
+
+def _profile_yaml_path() -> Path:
+    return Path.home() / ".quorum" / "profile.yaml"
+
+
+def _read_profile() -> str:
+    """Read the profile from profile.yaml (env var wins at runtime, shown separately)."""
+    path = _profile_yaml_path()
+    if path.exists():
+        try:
+            import yaml
+            data = yaml.safe_load(path.read_text()) or {}
+            if isinstance(data, dict) and data.get("profile"):
+                return str(data["profile"]).strip().lower()
+        except Exception:
+            pass
+    return "default"
+
+
+def _write_profile(name: str) -> None:
+    """Rewrite the `profile:` line in profile.yaml, preserving the header comments."""
+    path = _profile_yaml_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists():
+        import re
+        src = path.read_text()
+        if re.search(r"(?m)^profile:.*$", src):
+            path.write_text(re.sub(r"(?m)^profile:.*$", f"profile: {name}", src))
+            return
+    path.write_text(f"# Quorum risk profile. One of: {', '.join(_PROFILES)}.\nprofile: {name}\n")
+
+
+def _loaded_quorum_jobs() -> list[str]:
+    import subprocess
+    try:
+        out = subprocess.run(["launchctl", "list"], capture_output=True, text=True, timeout=10).stdout
+    except Exception:
+        return []
+    return [ln.split()[-1] for ln in out.splitlines() if "com.quorum." in ln]
+
+
+def _swap_schedule(target_label: str) -> None:
+    """Load the target launchd job, unload any other quorum trading job (mutually exclusive account)."""
+    import shutil
+    import subprocess
+
+    agents_dir = Path.home() / "Library" / "LaunchAgents"
+    repo_root = Path(__file__).resolve().parent.parent
+
+    # Stage the scalp plist from the repo if it isn't installed yet.
+    if target_label == "com.quorum.scalp":
+        dest = agents_dir / "com.quorum.scalp.plist"
+        src = repo_root / "scripts" / "com.quorum.scalp.plist"
+        if src.exists():
+            agents_dir.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(src, dest)
+
+    # Unload the OTHER trading schedule so they don't both trade the account.
+    other = "com.quorum.daily" if target_label == "com.quorum.scalp" else "com.quorum.scalp"
+    other_plist = agents_dir / f"{other}.plist"
+    if other in _loaded_quorum_jobs() and other_plist.exists():
+        subprocess.run(["launchctl", "unload", str(other_plist)], capture_output=True, text=True)
+        console.print(f"[dim]Unloaded {other}[/dim]")
+
+    target_plist = agents_dir / f"{target_label}.plist"
+    if not target_plist.exists():
+        console.print(f"[yellow]{target_label}.plist not found in ~/Library/LaunchAgents — schedule not loaded.[/yellow]")
+        return
+    # Reload to pick up any changes (unload is harmless if not loaded).
+    subprocess.run(["launchctl", "unload", str(target_plist)], capture_output=True, text=True)
+    res = subprocess.run(["launchctl", "load", str(target_plist)], capture_output=True, text=True)
+    if res.returncode == 0:
+        console.print(f"[green]Loaded {target_label}[/green]")
+    else:
+        console.print(f"[yellow]launchctl load {target_label} said: {res.stderr.strip() or 'see logs'}[/yellow]")
+
+
+@app.command()
+def mode(
+    name: str = typer.Argument(None, help=f"Profile to switch to: {', '.join(_PROFILES)}. Omit to show current."),
+    schedule: bool = typer.Option(True, "--schedule/--no-schedule", help="Also swap the headless launchd schedule."),
+):
+    """Switch trading risk profile (default | moderate | scalp), incl. tomorrow's autonomous schedule.
+
+    Examples:
+      quorum mode            # show current
+      quorum mode scalp      # aggressive day-trading + load 30-min scalp schedule
+      quorum mode default    # conservative council + load 6-cycle daily schedule
+      quorum mode moderate --no-schedule   # just flip the profile, leave launchd alone
+    """
+    if name is None:
+        file_profile = _read_profile()
+        import os
+        env_profile = os.environ.get("QUORUM_PROFILE", "").strip().lower()
+        jobs = _loaded_quorum_jobs()
+        console.print(f"[bold]profile.yaml:[/bold] {file_profile}")
+        if env_profile:
+            console.print(f"[bold]QUORUM_PROFILE env (overrides file this shell):[/bold] {env_profile}")
+        console.print(f"[bold]loaded launchd jobs:[/bold] {', '.join(jobs) if jobs else '(none)'}")
+        console.print(f"[dim]Switch with: quorum mode {{{'|'.join(_PROFILES)}}}[/dim]")
+        return
+
+    name = name.strip().lower()
+    if name not in _PROFILES:
+        console.print(f"[red]Unknown profile '{name}'.[/red] Choose one of: {', '.join(_PROFILES)}")
+        raise typer.Exit(1)
+
+    _write_profile(name)
+    console.print(f"[green]Profile set to '{name}'[/green] in {_profile_yaml_path()}")
+
+    if schedule:
+        _swap_schedule(_PROFILE_SCHEDULE[name])
+    else:
+        console.print("[dim]--no-schedule: launchd jobs untouched.[/dim]")
+
+    if name == "scalp":
+        console.print("[dim]Scalp: tight stops, micro-trades, dynamic mover universe. Use /scalp-planner + /scalp-executor interactively.[/dim]")
+    else:
+        console.print("[dim]Restart any open Claude Code session so the MCP server reloads the profile.[/dim]")
+
+
 if __name__ == "__main__":
     app()

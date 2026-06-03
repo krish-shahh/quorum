@@ -77,7 +77,7 @@ pipeline: Decision Pipeline {
 # ──────────────────────────────────────────────
 # SUPPORTING LAYERS
 # ──────────────────────────────────────────────
-data: Data Layer\nyfinance · Reddit · StockTwits\nWebSearch · Kalshi · TTL cache {
+data: Data Layer\nyfinance · Reddit · StockTwits\nWebSearch · TTL cache {
   style: {fill: "#fef3c7"; stroke: "#f59e0b"; border-radius: 10}
 }
 
@@ -87,10 +87,6 @@ persist: Persistence + Learning\nSQLite · wiki · memory\nlearning engine {
 
 ui: Electron desktop app\nReact UI ← Flask JSON API {
   style: {fill: "#dbeafe"; stroke: "#3b82f6"; border-radius: 10}
-}
-
-kalshi: Prediction Markets · Kalshi\n2-agent superforecaster\nedge > 10% → trade {
-  style: {fill: "#f3e8ff"; stroke: "#8b5cf6"; border-radius: 10}
 }
 
 notify: Notifications · ntfy.sh\nstatus push to your phone\nafter every cycle / quorum pipeline {
@@ -103,7 +99,4 @@ data -> pipeline.council: market data {style.stroke-dash: 4; style.stroke: "#f59
 pipeline.exec -> persist: writes outcomes {style.stroke-dash: 4; style.stroke: "#64748b"}
 persist -> pipeline.debate: past reflections {style.stroke-dash: 4; style.stroke: "#64748b"}
 harness.mcp -> ui: SQLite + API {style.stroke-dash: 4; style.stroke: "#3b82f6"}
-harness.claude -> kalshi: 2-agent council {style.stroke-dash: 4; style.stroke: "#8b5cf6"}
-data -> kalshi {style.stroke-dash: 4; style.stroke: "#f59e0b"}
 pipeline.exec -> notify: status push {style.stroke-dash: 4; style.stroke: "#f59e0b"}
-kalshi -> notify {style.stroke-dash: 4; style.stroke: "#f59e0b"}

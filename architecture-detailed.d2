@@ -321,41 +321,6 @@ execution: EXECUTION + SAFETY {
 }
 
 # ══════════════════════════════════════════════════════════════
-# PREDICTION MARKETS
-# ══════════════════════════════════════════════════════════════
-
-predictions: PREDICTION MARKETS (Kalshi) {
-  style.fill: "#faf5ff"
-  style.stroke: "#8b5cf6"
-  style.stroke-dash: 5
-  style.border-radius: 10
-
-  event_analyst: Event Analyst (haiku)\n\nSuperforecaster method:\n  Decompose into sub-Qs\n  Base rates (outside view)\n  Specific evidence (inside)\n  Dragonfly Eye (causal forces)\n  Calibration vs market\n\nTools: WebSearch, Kalshi tools {
-    style.fill: "#eff6ff"
-    style.stroke: "#3b82f6"
-  }
-
-  news_analyst: News Analyst (haiku)\n\nWebSearch + get_market_regime\n\nWhat has the market NOT\npriced in yet?\nEvidence score 1-5 {
-    style.fill: "#eff6ff"
-    style.stroke: "#3b82f6"
-  }
-
-  forecaster: Chief Forecaster (Opus)\n\nBayesian synthesis:\n  Prior = market price\n  Update with analyst evidence\n\nEdge = |my_prob - market_prob|\nEdge > 10 pct → trade\nQuarter-Kelly sizing\nMax 250 per market, 15% cap {
-    style.fill: "#f5f3ff"
-    style.stroke: "#8b5cf6"
-  }
-
-  arb: Arbitrage Scanner\n\nscan_kalshi_overround:\n  Dutch book (sum < 1.00)\nscan_kalshi_bias:\n  Favorites 75-92% underpriced\nget_prediction_candidates:\n  Ranked by edge × volume\nexecute_kalshi_arb_trade:\n  Multi-leg atomic {
-    style.fill: "#fffbeb"
-    style.stroke: "#f59e0b"
-  }
-
-  event_analyst -> forecaster: probability
-  news_analyst -> forecaster: evidence
-  forecaster -> arb: positions inform
-}
-
-# ══════════════════════════════════════════════════════════════
 # DATA LAYER
 # ══════════════════════════════════════════════════════════════
 
@@ -377,10 +342,6 @@ data: DATA LAYER {
     style.fill: "#fffbeb"
     style.stroke: "#fcd34d"
   }
-  kalshi_api: Kalshi API\n\nEvents, markets\nOrderbooks, positions\nHistorical resolution {
-    style.fill: "#f5f3ff"
-    style.stroke: "#c4b5fd"
-  }
   cache: TTL Cache Layer\n\nprice: 60s\ntechnicals: 60s\nfundamentals: 86400s\nnews: 3600s\nsentiment: 900s\nregime: 300s {
     style.fill: "#fff"
     style.stroke: "#e5e7eb"
@@ -397,7 +358,7 @@ persistence: PERSISTENCE + KNOWLEDGE {
   style.stroke-dash: 5
   style.border-radius: 10
 
-  db: SQLite Database\n\nTables:\n  paper_account, paper_positions\n  trades, trade_reports\n  ticker_state (+ debate_triggered)\n  wiki_pages, quant_scores\n  kalshi_positions, arb_scans\n  signal_scores (IC tracking) {
+  db: SQLite Database\n\nTables:\n  paper_account, paper_positions\n  trades, trade_reports\n  ticker_state (+ debate_triggered)\n  wiki_pages, quant_scores\n  signal_scores (IC tracking) {
     style.fill: "#f5f3ff"
     style.stroke: "#c4b5fd"
   }
@@ -417,7 +378,7 @@ persistence: PERSISTENCE + KNOWLEDGE {
     style.stroke: "#e5e7eb"
   }
 
-  quant_math: Quant Math (deterministic)\n\n9 sector scorers\nAltman Z-score\nFCF yield\nRegime-conditional RSI\nVaR, CVaR\nKelly criterion\nBrier score, Log score\nIC (information coefficient)\nProfit factor, SQN {
+  quant_math: Quant Math (deterministic)\n\n9 sector scorers\nAltman Z-score\nFCF yield\nRegime-conditional RSI\nVaR, CVaR\nKelly criterion\nIC (information coefficient)\nProfit factor, SQN {
     style.fill: "#f0fdf4"
     style.stroke: "#86efac"
   }
@@ -435,6 +396,5 @@ scoring -> execution: clear → execute {style.stroke: "#10b981"}
 layer2 -> layer3: trader proposal {style.stroke: "#8b5cf6"}
 layer3 -> execution: PM final signal {style.stroke: "#ef4444"}
 data -> layer1: market data {style.stroke-dash: 3}
-data -> predictions: Kalshi + news {style.stroke-dash: 3}
 execution -> persistence: writes {style.stroke-dash: 3}
 persistence -> layer3.reflection: outcome lessons {style.stroke-dash: 3}

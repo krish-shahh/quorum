@@ -400,61 +400,6 @@ def compute_sqn(trades: List[Dict], risk_per_trade: Optional[float] = None) -> f
     return float(np.sqrt(len(r_multiples)) * np.mean(r_multiples) / std)
 
 
-# ---------------------------------------------------------------------------
-# Prediction market calibration
-# ---------------------------------------------------------------------------
-
-
-def compute_brier_score(positions: List[Dict]) -> Optional[float]:
-    """Brier Score for resolved prediction market positions.
-
-    Each position dict needs: 'entry_price' (0-1), 'side' ('yes'/'no'),
-    'result' ('win'/'loss').
-    BS = (1/N) * sum((forecast - outcome)^2). 0=perfect, 0.25=coin flip.
-    """
-    if not positions:
-        return None
-    scores = []
-    for p in positions:
-        entry = p.get("entry_price", 0.5)
-        side = p.get("side", "yes")
-        result = p.get("result", "")
-        if result not in ("win", "loss"):
-            continue
-        forecast = entry if side == "yes" else 1.0 - entry
-        outcome = 1.0 if result == "win" else 0.0
-        scores.append((forecast - outcome) ** 2)
-    if not scores:
-        return None
-    return sum(scores) / len(scores)
-
-
-def compute_log_score(positions: List[Dict]) -> Optional[float]:
-    """Log scoring rule for resolved prediction market positions.
-
-    log_score = mean(outcome * log(p) + (1-outcome) * log(1-p)).
-    0 = perfect, more negative = worse.
-    """
-    if not positions:
-        return None
-    scores = []
-    for p in positions:
-        entry = p.get("entry_price", 0.5)
-        side = p.get("side", "yes")
-        result = p.get("result", "")
-        if result not in ("win", "loss"):
-            continue
-        forecast = entry if side == "yes" else 1.0 - entry
-        forecast = max(min(forecast, 0.999), 0.001)
-        outcome = 1.0 if result == "win" else 0.0
-        scores.append(
-            outcome * math.log(forecast) + (1.0 - outcome) * math.log(1.0 - forecast)
-        )
-    if not scores:
-        return None
-    return sum(scores) / len(scores)
-
-
 def generate_performance_summary(
     trades: List[Dict],
     starting_balance: float,

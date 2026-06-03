@@ -183,24 +183,6 @@ CREATE TABLE IF NOT EXISTS notification_preferences (
     on_stop_loss   INTEGER NOT NULL DEFAULT 1
 );
 
-CREATE TABLE IF NOT EXISTS kalshi_positions (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    ticker      TEXT    NOT NULL,
-    title       TEXT    NOT NULL DEFAULT '',
-    side        TEXT    NOT NULL DEFAULT 'yes',
-    contracts   INTEGER NOT NULL DEFAULT 1,
-    entry_price REAL    NOT NULL DEFAULT 0.0,
-    cost        REAL    NOT NULL DEFAULT 0.0,
-    council_probability REAL,
-    reasoning   TEXT    NOT NULL DEFAULT '',
-    status      TEXT    NOT NULL DEFAULT 'open',
-    result      TEXT    NOT NULL DEFAULT '',
-    settlement  REAL,
-    pnl         REAL,
-    created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
-    settled_at  TEXT
-);
-
 CREATE TABLE IF NOT EXISTS quant_scores (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     ticker          TEXT    NOT NULL,
@@ -215,38 +197,6 @@ CREATE TABLE IF NOT EXISTS quant_scores (
     scored_at       TEXT    NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_qs_ticker ON quant_scores(ticker);
-
-CREATE TABLE IF NOT EXISTS arb_scans (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    scan_type       TEXT    NOT NULL,
-    event_ticker    TEXT,
-    market_ticker   TEXT,
-    implied_prob_sum REAL,
-    overround_pct   REAL,
-    profit_pct      REAL,
-    price_bucket    TEXT,
-    bucket_edge     REAL,
-    num_markets     INTEGER,
-    details_json    TEXT    NOT NULL DEFAULT '{}',
-    scanned_at      TEXT    NOT NULL DEFAULT (datetime('now'))
-);
-CREATE INDEX IF NOT EXISTS idx_arb_scan_type ON arb_scans(scan_type);
-
-CREATE TABLE IF NOT EXISTS arb_executions (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    scan_id         INTEGER,
-    event_ticker    TEXT    NOT NULL,
-    strategy        TEXT    NOT NULL,
-    markets_json    TEXT    NOT NULL DEFAULT '[]',
-    total_cost      REAL    NOT NULL DEFAULT 0.0,
-    expected_profit REAL    NOT NULL DEFAULT 0.0,
-    status          TEXT    NOT NULL DEFAULT 'open',
-    result_pnl      REAL,
-    created_at      TEXT    NOT NULL DEFAULT (datetime('now')),
-    settled_at      TEXT,
-    FOREIGN KEY (scan_id) REFERENCES arb_scans(id)
-);
-CREATE INDEX IF NOT EXISTS idx_arb_exec_status ON arb_executions(status);
 
 CREATE TABLE IF NOT EXISTS intraday_risk (
     date        TEXT PRIMARY KEY,
@@ -341,7 +291,6 @@ def get_db(config: Optional[Dict[str, Any]] = None) -> sqlite3.Connection:
 
         # Migrate: add columns if missing
         for migration in [
-            "ALTER TABLE kalshi_positions ADD COLUMN council_probability REAL",
             "ALTER TABLE paper_positions ADD COLUMN trailing_high REAL",
             "ALTER TABLE paper_positions ADD COLUMN multiplier INTEGER NOT NULL DEFAULT 1",
             "ALTER TABLE ticker_state ADD COLUMN debate_triggered INTEGER NOT NULL DEFAULT 0",

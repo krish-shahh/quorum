@@ -34,16 +34,6 @@ CronCreate(cron="30 16 {DD} {MM} *", recurring=false, durable=true, prompt="Run 
 
 Replace `{DD}` and `{MM}` with today's day-of-month and month number.
 
-### Kalshi Position Monitor
-
-Always schedule a recurring Kalshi position monitor for the session:
-
-```
-CronCreate(cron="47 8 * * 1-5", recurring=true, prompt="Check Kalshi prediction market positions and monitor for resolution triggers.\n\n1. Call `get_kalshi_positions` to see all open positions\n2. For each open position, call `get_kalshi_market(ticker=...)` to get current pricing\n3. Compare current price vs entry price — flag any moves >5%\n4. Run a quick WebSearch for resolution-relevant news (check watchlist_notes.md for monitoring triggers)\n5. If any position has edge that flipped (our thesis is now wrong), flag for exit\n6. If any market is approaching resolution, alert immediately\n7. Report: position status, price changes, news, and any action needed")
-```
-
-This runs weekday mornings at 8:47 AM. If there are no open Kalshi positions, the monitor simply reports "no positions" and exits quickly.
-
 Report the scheduled jobs and their IDs to the user.
 
 ## Step 3: Run Immediate Cycle
@@ -56,5 +46,4 @@ Invoke `/trading-council` now for the first cycle.
 - Jobs only fire while the REPL is idle (not mid-query)
 - The user can list jobs with CronList and cancel with CronDelete
 - The final cycle (4:30 PM) has a special prompt that triggers the EOD report
-- The Kalshi monitor runs every weekday morning regardless of whether trading cycles are scheduled
 - macOS launchd agent auto-starts Claude Code at 9:30 AM weekdays (see `scripts/start-trading-day.sh`)

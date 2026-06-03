@@ -93,7 +93,115 @@ def _apply_env_overrides(config: dict) -> dict:
     return config
 
 
-DEFAULT_CONFIG = _apply_env_overrides({
+# ──────────────────────────────────────────────────────────────────────
+# Risk profiles
+# ──────────────────────────────────────────────────────────────────────
+# A named risk profile is a flat dict of config-key overrides that is
+# deep-merged over DEFAULT_CONFIG *after* env overrides. This is the single
+# switch that flips the whole system between the conservative swing council
+# ("default") and aggressive short-term day-trading ("scalp").
+#
+# Selection priority (first match wins):
+#   1. QUORUM_PROFILE env var       → per-process (used by the scalp launchd job)
+#   2. ~/.quorum/profile.yaml       → `profile: scalp|default` master file switch
+#   3. "default"                    → conservative council, nothing changes
+#
+# Because every consumer (MCP server, pre-trade hook, PositionSizer) reads
+# DEFAULT_CONFIG, overriding here propagates the profile everywhere at once.
+PROFILES = {
+    # The swing council baseline. Empty = no overrides.
+    "default": {},
+    # Middle dial — "normal but a bit more active." Keeps the full council and
+    # analysis (debate on, earnings avoidance on) but trims the holding period,
+    # sizes a touch larger, and tightens stops. Use this when you want the
+    # careful council with a higher risk appetite than the conservative default.
+    "moderate": {
+        "max_position_pct": 0.08,
+        "max_single_ticker_pct": 0.22,
+        "min_cash_target": 0.10,
+        "atr_sizing_enabled": True,
+        "atr_risk_per_trade_pct": 0.02,
+        "atr_stop_multiplier": 1.5,
+        "min_holding_days": 1,           # can exit next day (vs 7)
+        # earnings avoidance + debate + correlation stay ON (still careful)
+        "regime_strategy": {
+            "risk_on":    {"buy_threshold": 3.3, "sell_threshold": 2.6, "cash_target": 0.12, "size_mult": 1.0},
+            "risk_off":   {"buy_threshold": 3.6, "sell_threshold": 2.9, "cash_target": 0.20, "size_mult": 0.85},
+            "volatile":   {"buy_threshold": 3.4, "sell_threshold": 2.6, "cash_target": 0.15, "size_mult": 0.8},
+            "transition": {"buy_threshold": 3.3, "sell_threshold": 2.6, "cash_target": 0.12, "size_mult": 1.0},
+        },
+    },
+    # Aggressive short-term scalping. Bigger micro-positions, thin cash floor,
+    # tight ATR stops, swing guardrails (min-hold, earnings/macro avoidance,
+    # correlation throttle, debate layers) switched off, looser concentration.
+    "scalp": {
+        # Sizing — many micro-positions, larger per-trade allocation
+        "max_position_pct": 0.12,            # ~12% per new trade (was 25%)
+        "max_single_ticker_pct": 0.20,       # 20% single-name cap
+        "max_open_positions": 12,            # room for lots of small bets
+        "min_cash_target": 0.05,             # thin 5% cash floor
+        # ATR scalp sizing — risk 3% of account per trade, tight 1.25 ATR stop
+        "atr_sizing_enabled": True,
+        "atr_risk_per_trade_pct": 0.03,
+        "atr_stop_multiplier": 1.25,
+        # Drop the swing guardrails that make intraday trading impossible
+        "min_holding_days": 0,               # sell same-day / same-bar
+        "earnings_avoidance_enabled": False, # day traders FEED on earnings vol
+        "macro_event_adjustment_enabled": False,
+        "correlation_aware_enabled": False,  # we WANT concentrated momentum bets
+        # Loosen concentration — leveraged/index ETFs cluster in tech/broad-beta
+        "max_sector_concentration_pct": 0.80,
+        "max_book_concentration_pct": 0.80,
+        # Skip the slow adversarial debate layers — scalps need speed
+        "debate_enabled": False,
+        # Narrower hold band → more action across every regime
+        "regime_strategy": {
+            "risk_on":    {"buy_threshold": 3.2, "sell_threshold": 2.8, "cash_target": 0.05, "size_mult": 1.0},
+            "risk_off":   {"buy_threshold": 3.4, "sell_threshold": 3.0, "cash_target": 0.10, "size_mult": 0.9},
+            "volatile":   {"buy_threshold": 3.2, "sell_threshold": 2.8, "cash_target": 0.05, "size_mult": 1.0},
+            "transition": {"buy_threshold": 3.2, "sell_threshold": 2.8, "cash_target": 0.05, "size_mult": 1.0},
+        },
+    },
+}
+
+
+def _resolve_profile_name() -> str:
+    """Resolve the active profile name from env var, then the yaml file."""
+    name = os.environ.get("QUORUM_PROFILE")
+    if name and name.strip():
+        return name.strip().lower()
+    profile_file = os.path.join(_QUORUM_HOME, "profile.yaml")
+    if os.path.exists(profile_file):
+        try:
+            import yaml
+            with open(profile_file) as fh:
+                data = yaml.safe_load(fh) or {}
+            if isinstance(data, dict) and data.get("profile"):
+                return str(data["profile"]).strip().lower()
+        except Exception:
+            pass
+    return "default"
+
+
+def _apply_profile(config: dict) -> dict:
+    """Deep-merge the active named profile's overrides over the config."""
+    name = _resolve_profile_name()
+    overrides = PROFILES.get(name)
+    if overrides is None:
+        # Unknown profile name — fail safe to the conservative baseline.
+        name, overrides = "default", {}
+    for key, val in overrides.items():
+        if isinstance(val, dict) and isinstance(config.get(key), dict):
+            merged = config[key].copy()
+            merged.update(val)
+            config[key] = merged
+        else:
+            config[key] = val
+    config["active_profile"] = name
+    return config
+
+
+DEFAULT_CONFIG = _apply_profile(_apply_env_overrides({
     "project_dir": os.path.abspath(os.path.join(os.path.dirname(__file__), ".")),
     "results_dir": os.getenv("QUORUM_RESULTS_DIR", os.path.join(_QUORUM_HOME, "logs")),
     "data_cache_dir": os.getenv("QUORUM_CACHE_DIR", os.path.join(_QUORUM_HOME, "cache")),
@@ -159,6 +267,10 @@ DEFAULT_CONFIG = _apply_env_overrides({
     "max_position_pct": 0.25,           # 25% of portfolio per new trade (matches single-ticker cap)
     "max_single_ticker_pct": 0.25,      # 25% cap in any single ticker
     "max_open_positions": 6,
+    # Minimum cash reserve floor (fraction of account). Used as the base
+    # reserve in the pre-trade gates when regime detection is unavailable.
+    # The scalp profile lowers this; regime_strategy can override per regime.
+    "min_cash_target": 0.10,
     # Safety / kill switch
     "max_drawdown_pct": 0.10,           # halt trading if drawdown exceeds 10%
     # Stop-loss monitoring
@@ -294,4 +406,4 @@ DEFAULT_CONFIG = _apply_env_overrides({
         "etf_bond":      "AGG",   # iShares Core U.S. Aggregate Bond ETF
         "etf_commodity":  "DBC",   # Invesco DB Commodity Index Tracking Fund
     },
-})
+}))

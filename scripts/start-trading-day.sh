@@ -61,7 +61,7 @@ log "=== Cycle triggered at $TIMESTAMP ==="
 if [ "$MINS_TODAY" -eq 570 ]; then
     # 09:30 — Morning Planner
     CYCLE="planner-morning"
-    PROMPT='Follow the Session Start Protocol (check portfolio + regime), then run /trading-planner for the market open. This is the first plan of the day — full analysis on all tickers. Also check Kalshi positions via get_kalshi_positions.
+    PROMPT='Follow the Session Start Protocol (check portfolio + regime), then run /trading-planner for the market open. This is the first plan of the day — full analysis on all tickers.
 
 At the very end, output a push notification summary between "--- NOTIFICATION ---" markers. Max 4000 chars. Include: trades planned (ticker, action, size), portfolio snapshot (positions, cash%, P&L), regime, risk level, and any alerts. This block is extracted and sent as a mobile notification — make it scannable.'
 

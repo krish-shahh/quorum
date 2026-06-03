@@ -27,7 +27,7 @@ from pathlib import Path
 hook_input = json.loads(sys.stdin.read())
 tool_name = hook_input.get("tool_name", "")
 
-if "execute_paper_trade" not in tool_name and "execute_kalshi_arb_trade" not in tool_name:
+if "execute_paper_trade" not in tool_name:
     sys.exit(0)
 
 tool_input = hook_input.get("tool_input", {})
@@ -140,8 +140,9 @@ if signal in ("Buy", "Overweight"):
 if signal in ("Buy", "Overweight"):
     trade_cost = account.account_value * float(config.get("max_position_pct", 0.05))
     cash_after = account.cash_balance - trade_cost
-    # Regime-conditional cash target
-    cash_target = 0.10  # base minimum
+    # Regime-conditional cash target. Base floor comes from config so the
+    # scalp profile (min_cash_target=0.05) lowers it; regime overrides below.
+    cash_target = float(config.get("min_cash_target", 0.10))  # base minimum
     try:
         from quorum.dataflows.regime import CrossAssetRegimeDetector
         regime_result = CrossAssetRegimeDetector().detect()

@@ -36,10 +36,9 @@ quorum health        # verify everything works
 Then in Claude Code:
 ```
 /trading-council            # 4 parallel analyst subagents (recommended)
-/prediction-council         # Kalshi prediction markets (2-agent superforecaster)
 /trading-day                # full day: immediate cycle + scheduled follow-ups
 /loop /trading-council      # continuous 30-min delta-aware cycles
-/prediction-arb-scan        # scan Kalshi for Dutch book + bias arbitrage
+/scalp-planner              # aggressive short-term day-trading on today's movers
 /market-monitor             # background regime/position monitoring (use with /loop)
 ```
 
@@ -52,9 +51,9 @@ Then in Claude Code:
 | Skill | Model | Purpose |
 |-------|-------|---------|
 | `/trading-council` | Opus | Full council: delta check -> 4 parallel analysts -> score -> execute |
-| `/prediction-council` | Opus | 2-agent superforecaster council for Kalshi binary markets |
-| `/prediction-arb-scan` | Opus | Dutch book overround + favorite-longshot bias scanner |
-| `/trading-day` | Opus | Schedule a full trading day (CronCreate + Kalshi monitor) |
+| `/scalp-planner` | Sonnet | Aggressive short-term momentum plan on today's dynamic movers |
+| `/scalp-executor` | Sonnet | Fast mechanical execution of the scalp plan (tight stops) |
+| `/trading-day` | Opus | Schedule a full trading day (CronCreate) |
 | `/market-monitor` | Opus | Background regime/position monitoring (use with /loop) |
 | `/trading-cycle` | Opus | Simpler single-agent mode |
 | `/backtest` | Opus | Run backtests in isolated git worktrees |
@@ -68,7 +67,6 @@ Then in Claude Code:
 | `analyst-commodities` | Haiku | Supply/demand, contango, geopolitical risk |
 | `analyst-sentiment` | Haiku | StockTwits, Reddit, insider activity |
 | `analyst-news` | Haiku | Real-time web search + regime |
-| `analyst-events` | Haiku | Superforecaster probability estimation for Kalshi |
 | `analyst-fundamental` | Haiku | Generic valuation fallback |
 
 ### Hooks
@@ -81,7 +79,7 @@ Then in Claude Code:
 | `SessionStart` | `session_start.py` | Auto-injects portfolio state + regime |
 | `Stop` | `session_end.py` | Auto-saves portfolio state to memory |
 
-### MCP Tools (50)
+### MCP Tools (38)
 
 | Category | Count | Tools |
 |----------|-------|-------|
@@ -92,8 +90,6 @@ Then in Claude Code:
 | Council | 6 | get_autonomous_tickers, get_full_ticker_data, save_analysis_to_wiki, save_trade_report, get_trade_reports, score_council |
 | State & Cache | 4 | get_ticker_state, get_ticker_deltas, get_cache_stats, get_asset_info |
 | Quant & Risk | 3 | get_quant_scores, get_portfolio_risk, get_live_risk |
-| Kalshi | 7 | get_kalshi_markets, get_kalshi_market, get_kalshi_orderbook, get_kalshi_events, get_kalshi_event, execute_kalshi_paper_trade, get_kalshi_positions |
-| Kalshi Arb | 5 | scan_kalshi_overround, scan_kalshi_bias, get_dutch_book_detail, execute_kalshi_arb_trade, get_prediction_candidates |
 | Maintenance | 4 | prune_wiki, get_analytics_summary, search_wiki, get_wiki_page |
 
 ### Automation
@@ -102,7 +98,7 @@ Runs fully unattended via macOS launchd + `claude -p` (subscription, not API):
 
 | Time | Cycle |
 |------|-------|
-| 9:30 AM | Market open: council + Kalshi position check |
+| 9:30 AM | Market open: council |
 | 1:30 PM | Midday rebalance |
 | 3:30 PM | Late afternoon |
 | 4:15 PM | EOD report + memory update |
@@ -139,7 +135,7 @@ cd desktop && npm install && npm run dev   # launches the desktop app (spawns th
 
 To run just the API backend on its own (e.g. for debugging), use `quorum` with no subcommand.
 
-Views: **Portfolio** (positions, regime, live-risk status GREEN/YELLOW/ORANGE/RED), **Council** (analyst scores, deep dive, reports), **Predictions** (Kalshi positions, arb scans, calibration), **Performance** (Sharpe/Sortino/Calmar, profit factor, equity curve), **Research** (wiki, reports, digest), and **Pipeline** (cycle timeline, ticker deltas, decision DAG).
+Views: **Portfolio** (positions, regime, live-risk status GREEN/YELLOW/ORANGE/RED), **Council** (analyst scores, deep dive, reports), **Performance** (Sharpe/Sortino/Calmar, profit factor, equity curve), **Research** (wiki, reports, digest), and **Pipeline** (cycle timeline, ticker deltas, decision DAG).
 
 ---
 
@@ -176,8 +172,6 @@ The quant layer provides deterministic, auditable scores that anchor LLM analysi
 | `technical.py` | All | RSI, MACD, SMA, Bollinger, volume — regime-conditional thresholds |
 
 **Trade quality metrics**: Profit Factor, Expectancy, SQN (Van Tharp), Sharpe, Sortino, Calmar, VaR, CVaR, alpha/beta.
-
-**Prediction calibration**: Brier Score, Log Score for resolved Kalshi positions.
 
 **Backtesting**: `replay_quant_scores()` replays technical scores over historical dates, computes IC (Information Coefficient) vs actual forward returns.
 

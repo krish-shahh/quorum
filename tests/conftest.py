@@ -1,6 +1,14 @@
 """Shared pytest fixtures that prevent CI hangs when API keys are absent."""
 
 import os
+
+# Pin the test session to the default risk profile BEFORE any test module
+# imports quorum.default_config. Otherwise the user's active ~/.quorum/profile.yaml
+# (e.g. "scalp") would leak into DEFAULT_CONFIG and break tests that assert the
+# conservative baseline (regime thresholds, correlation flag, etc.). Tests that
+# specifically exercise a profile set QUORUM_PROFILE themselves.
+os.environ["QUORUM_PROFILE"] = "default"
+
 from unittest.mock import MagicMock, patch
 
 import pytest

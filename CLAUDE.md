@@ -14,17 +14,35 @@
 /trading-planner    — Planner: full council analysis → writes plan file (recommended)
 /trading-executor   — Executor: mechanically executes active plan (no analysis)
 /trading-council    — Legacy monolithic council (use planner+executor instead)
-/prediction-planner — Kalshi planner: 2-agent council → plan file
-/prediction-executor — Kalshi executor: executes prediction plan
-/prediction-council — Legacy monolithic prediction council
+/scalp-planner      — SCALP mode: fast momentum plan from today's dynamic movers (aggressive, short-term)
+/scalp-executor     — SCALP mode: fast mechanical execution (tight stops, quick exits)
 /trading-cycle      — simpler single-agent mode
 /trading-day        — full day: immediate cycle + scheduled follow-ups
 /market-monitor     — background regime/position monitoring (use with /loop)
-/prediction-arb-scan — scan Kalshi for Dutch book + bias arbitrage opportunities
 ```
 
 Flow: `/trading-planner` → plan file → `/trading-executor` → trades
-Or just say: "Run my autonomous trading cycle" or "Analyze Kalshi markets"
+Or just say: "Run my autonomous trading cycle"
+
+### Risk profiles: default · moderate · scalp
+
+Three risk profiles share the paper account. Switch with **`quorum mode <name>`**
+(flips the profile AND swaps the headless launchd schedule), or by hand via the
+master toggle `~/.quorum/profile.yaml` / `QUORUM_PROFILE` env var (env wins).
+Defined in one place: `PROFILES` in `quorum/default_config.py` — flipping it
+changes sizing, stops, cash reserve, min-hold, and gates everywhere at once.
+
+- **`default`** — conservative swing council (7-day min-hold, earnings avoidance, 20% cash, 12-agent debate). `/trading-planner` + `/trading-executor`.
+- **`moderate`** — same full council, higher appetite (1-day min-hold, ~8% positions, 1.5× ATR stops, ~10% cash). `/trading-planner` + `/trading-executor`.
+- **`scalp`** — aggressive day-trading (no min-hold, trades earnings, 5% cash, ~12% positions, tight 1.25× ATR stops, dynamic universe of today's movers, 30-min schedule). `/scalp-planner` + `/scalp-executor`.
+
+```
+quorum mode scalp      # aggressive + 30-min autonomous schedule
+quorum mode default    # conservative council + 6-cycle schedule
+quorum mode            # show what's active
+```
+
+**Full switching guide: [docs/MODES.md](docs/MODES.md).** Crypto is hard-banned in all profiles via `~/.quorum/rules.json`.
 
 ## Session Start Protocol
 
@@ -122,28 +140,11 @@ You (Chairman, Opus)
   
   Self-reflection: get_trade_reflections → past outcome lessons injected into PM
   Delta detection: get_ticker_deltas → skip unchanged tickers → 30-min loop
-
-Prediction Markets (Kalshi):
-  You (Chief Forecaster, Opus)
-    ├── Event Analyst (Sonnet)  → Superforecaster decomposition + WebSearch + Kalshi tools
-    └── News Analyst (Sonnet)   → WebSearch + get_market_regime
-  
-  2 agents in PARALLEL → probability estimates with edge calculation
-  
-  Edge > 10% → execute_kalshi_paper_trade (quarter-Kelly sizing)
-
-Scheduled Monitoring:
-  CronCreate (weekday 8:47 AM) → Kalshi position monitor
-    ├── get_kalshi_positions → check open positions
-    ├── get_kalshi_market    → price changes vs entry
-    ├── WebSearch            → resolution-relevant news
-    └── Alert on: edge flip, resolution approaching, price move >5%
-  Session-only — re-schedule on restart via /trading-day
 ```
 
 ```
 quorum/
-  mcp/             — MCP server (54 tools: data, portfolio, execution, wiki, safety, state, asset info, reflections, congress)
+  mcp/             — MCP server (49 tools: data, portfolio, execution, wiki, safety, state, asset info, reflections, congress)
   council/         — Council skills + 19 analyst/debate prompts (4 universal + 7 domain + 8 debate) + compact_summary.py
   wiki/            — Knowledge base (run pages, digests, ticker pages, regimes)
   dataflows/       — Market data with TTL caching (yfinance, Reddit, StockTwits, regime, sectors, congressional trades)
@@ -180,7 +181,7 @@ quorum/
 | `~/.quorum/wiki/` | Analysis pages, digests, ticker summaries |
 | `scripts/start-trading-day.sh` | Auto-start script (called by launchd at 9:30 AM) |
 
-## MCP Tools (55)
+## MCP Tools (49)
 
 Data: get_stock_data, get_indicators, get_indicators_bulk, get_fundamentals, get_financial_statements, get_news, get_global_news, get_reddit_sentiment, get_stocktwits_sentiment, get_insider_transactions, get_insider_clusters, get_congress_trades, get_congress_summary, get_market_regime, get_sector_rotation, get_earnings_calendar
 
@@ -203,10 +204,6 @@ Calendar: get_trading_calendar (current datetime, day of week, market open statu
 Analytics: get_analyst_accuracy (per-analyst IC and directional accuracy — shows which analysts are predictive)
 
 Transparency: save_council_reports (persist individual analyst reports from each council cycle), get_council_reports (retrieve past analyst reasoning for a ticker)
-
-Kalshi: get_kalshi_markets, get_kalshi_market, get_kalshi_orderbook, get_kalshi_events, get_kalshi_event, execute_kalshi_paper_trade, get_kalshi_positions
-
-Kalshi Arbitrage: scan_kalshi_overround, scan_kalshi_bias, get_dutch_book_detail, execute_kalshi_arb_trade, get_prediction_candidates
 
 Maintenance: prune_wiki, get_analytics_summary, search_wiki, get_wiki_page
 
@@ -231,6 +228,7 @@ pytest tests/ -m unit
 
 ```bash
 quorum                  # start the JSON API backend (the Electron desktop app connects to this)
+quorum mode scalp       # switch risk profile (default|moderate|scalp) + swap headless schedule
 quorum pipeline         # run the FULL pipeline end-to-end (ungated, even off-hours) + ntfy status
 quorum pipeline --dry-run  # test the plumbing + send a test notification (no trading)
 quorum health           # run 13-point system health check

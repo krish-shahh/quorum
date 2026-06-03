@@ -75,10 +75,9 @@ Run these stages in order and record the outcome of each:
 1. Session Start Protocol — get_trading_calendar, get_portfolio, get_market_regime, get_live_risk.
 2. /trading-planner — full council analysis across the watchlist; write a plan file.
 3. /trading-executor — execute the active plan (paper trades).
-4. Brief Kalshi check — get_kalshi_positions (skip gracefully if none).
-5. End-of-run summary.
+4. End-of-run summary.
 
-At the very end, output a status block between "--- NOTIFICATION ---" markers (max 4000 chars) covering: overall pipeline status (which of stages 1-5 ran and whether each succeeded or failed), trades executed (ticker/side/shares/price), portfolio snapshot (positions, cash %, total P&L), market regime, live-risk level, and any errors encountered. Keep it scannable.'
+At the very end, output a status block between "--- NOTIFICATION ---" markers (max 4000 chars) covering: overall pipeline status (which of stages 1-4 ran and whether each succeeded or failed), trades executed (ticker/side/shares/price), portfolio snapshot (positions, cash %, total P&L), market regime, live-risk level, and any errors encountered. Keep it scannable.'
 
 OUTPUT=$("$CLAUDE_BIN" -p "$PROMPT" --dangerously-skip-permissions --output-format text 2>&1 | tee -a "$LOG")
 EXIT_CODE=${PIPESTATUS[0]}

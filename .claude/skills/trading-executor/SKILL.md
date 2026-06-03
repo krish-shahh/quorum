@@ -6,7 +6,6 @@ model: sonnet
 effort: low
 allowed-tools:
   - mcp__quorum__execute_paper_trade
-  - mcp__quorum__execute_kalshi_paper_trade
   - mcp__quorum__get_live_risk
   - mcp__quorum__get_ticker_state
   - mcp__quorum__get_indicators

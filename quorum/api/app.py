@@ -712,33 +712,6 @@ def get_sector_rotation():
         return {"sectors": [], "direction": "neutral"}
 
 
-def get_kalshi_positions():
-    """Get open Kalshi prediction market positions."""
-    try:
-        config = _cfg()
-        from quorum.execution.db import get_db
-        conn = get_db(config)
-        rows = conn.execute(
-            "SELECT * FROM kalshi_positions WHERE status = 'open' ORDER BY created_at DESC"
-        ).fetchall()
-        results = []
-        for r in rows:
-            results.append({
-                "id": r["id"],
-                "ticker": r["ticker"],
-                "title": r["title"],
-                "side": r["side"],
-                "contracts": r["contracts"],
-                "entry_price": r["entry_price"],
-                "cost": r["cost"],
-                "reasoning": r["reasoning"],
-                "created_at": r["created_at"],
-            })
-        return results
-    except Exception:
-        return []
-
-
 def get_live_risk_data():
     """Get live intraday risk status for the trading dashboard."""
     try:

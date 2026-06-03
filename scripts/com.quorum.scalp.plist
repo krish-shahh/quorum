@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.quorum.scalp</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/krish/Desktop/trader/scripts/start-scalp-day.sh</string>
+    </array>
+
+    <!-- Scalp schedule: every 30 min, 9:30 AM - 4:00 PM ET.
+         :00 = plan + execute, :30 = execute only.
+         Mutually exclusive with com.quorum.daily (shared paper account). -->
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict><key>Hour</key><integer>9</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>10</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>10</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>11</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>11</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>12</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>12</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>13</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>13</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>14</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>14</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>15</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>15</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>16</integer><key>Minute</key><integer>0</integer></dict>
+    </array>
+
+    <key>StandardOutPath</key>
+    <string>/Users/krish/.quorum/logs/launchd-scalp-stdout.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/krish/.quorum/logs/launchd-scalp-stderr.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/Users/krish/.local/bin:/Users/krish/.nvm/versions/node/v22.22.2/bin:/Users/krish/miniforge3/bin:/usr/local/bin:/usr/bin:/bin</string>
+        <key>HOME</key>
+        <string>/Users/krish</string>
+        <key>QUORUM_PROJECT_DIR</key>
+        <string>/Users/krish/Desktop/trader</string>
+        <!-- THE switch: runs this whole schedule under the aggressive scalp profile -->
+        <key>QUORUM_PROFILE</key>
+        <string>scalp</string>
+        <key>QUORUM_ALERTS_ENABLED</key>
+        <string>true</string>
+    </dict>
+</dict>
+</plist>
