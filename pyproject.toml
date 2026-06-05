@@ -24,6 +24,7 @@ dependencies = [
 mcp = ["mcp>=1.0"]
 push = ["pywebpush>=2.0"]
 schwab = ["schwab-py>=1.4.0"]
+api = ["flask>=3.0"]
 
 [project.scripts]
 quorum = "cli.main:app"

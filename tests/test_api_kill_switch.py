@@ -13,6 +13,10 @@ import pytest
 
 from quorum.execution.safety import SafetyMonitor
 
+# The dashboard API backend needs Flask (the `api` extra). Skip cleanly where
+# it isn't installed rather than erroring the suite.
+pytest.importorskip("flask")
+
 pytestmark = pytest.mark.unit
 
 
