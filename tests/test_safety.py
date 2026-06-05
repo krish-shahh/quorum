@@ -74,6 +74,52 @@ class TestKillSwitchReset:
 
 
 @pytest.mark.unit
+class TestCliResetKillSwitch:
+    """Regression coverage for the `quorum reset-kill-switch` CLI command.
+
+    The command once called ``SafetyMonitor.reset()`` — a method that does
+    not exist — so it raised AttributeError and exited *before* clearing the
+    flag. The kill switch stayed active and the running system never picked
+    up the (failed) reset. These tests exercise the command end-to-end so a
+    future typo in the method name fails here instead of leaving the switch
+    stuck on in production.
+    """
+
+    def test_command_clears_persisted_kill_switch(self, tmp_path, monkeypatch):
+        from typer.testing import CliRunner
+        import cli.main as cli_main
+
+        state_path = str(tmp_path / "safety.json")
+        config = {"max_drawdown_pct": 0.10, "safety_state_path": state_path}
+
+        # Trip the kill switch and persist it.
+        tripped = SafetyMonitor(config)
+        peak = AccountInfo(account_id="t", cash_balance=100_000, buying_power=100_000, account_value=100_000)
+        tripped.check_drawdown(peak)
+        down = AccountInfo(account_id="t", cash_balance=89_000, buying_power=89_000, account_value=89_000)
+        tripped.check_drawdown(down)
+        assert tripped.kill_switch_active is True
+
+        # Point the CLI at the same isolated state, then run the command.
+        monkeypatch.setattr(cli_main, "DEFAULT_CONFIG", config)
+        result = CliRunner().invoke(cli_main.app, ["reset-kill-switch"])
+
+        # A bad method name (e.g. `safety.reset()`) surfaces as a non-zero exit.
+        assert result.exit_code == 0, result.output
+        assert result.exception is None
+
+        # A fresh monitor must load the cleared state from disk.
+        reloaded = SafetyMonitor(config)
+        assert reloaded.kill_switch_active is False
+        assert reloaded._peak_value is None
+
+    def test_command_calls_a_real_method(self):
+        # Guards the exact regression: the CLI must invoke a method that exists.
+        assert hasattr(SafetyMonitor, "reset_kill_switch")
+        assert not hasattr(SafetyMonitor, "reset")
+
+
+@pytest.mark.unit
 class TestPersistence:
     def test_survives_restart(self, tmp_path):
         state_path = str(tmp_path / "safety.json")

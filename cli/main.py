@@ -63,7 +63,7 @@ def reset_kill_switch():
     """Reset the trading kill switch to re-enable order placement."""
     from quorum.execution.safety import SafetyMonitor
     safety = SafetyMonitor(DEFAULT_CONFIG)
-    safety.reset()
+    safety.reset_kill_switch()
     console.print("[green]Kill switch reset. Trading is re-enabled.[/green]")
 
 
