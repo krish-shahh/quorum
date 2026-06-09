@@ -37,6 +37,7 @@ class SafetyMonitor:
 
         self.kill_switch_active: bool = False
         self._peak_value: float | None = None
+        self._last_manual_reset_at: float | None = None
         self._load_state()
 
     def check_drawdown(self, account: AccountInfo) -> bool:
@@ -118,6 +119,16 @@ class SafetyMonitor:
             "within_limits": within_limits,
         }
 
+    def manual_reset_cooldown_active(self) -> bool:
+        """Return True if a manual reset happened within the last 4 hours.
+
+        While the cooldown is active, compute_live_risk will not auto-fire the
+        kill switch so that a deliberate user reset actually sticks.
+        """
+        if self._last_manual_reset_at is None:
+            return False
+        return (time.time() - self._last_manual_reset_at) < 4 * 3600
+
     def reset_kill_switch(self) -> None:
         """Manually reset the kill switch and clear peak tracking.
 
@@ -126,6 +137,7 @@ class SafetyMonitor:
         """
         self.kill_switch_active = False
         self._peak_value = None
+        self._last_manual_reset_at = time.time()
         self._save_state()
         logger.info("Kill switch reset — trading re-enabled")
 
@@ -151,6 +163,7 @@ class SafetyMonitor:
         data = {
             "kill_switch_active": self.kill_switch_active,
             "peak_value": self._peak_value,
+            "last_manual_reset_at": self._last_manual_reset_at,
         }
 
         # ---- SQLite (primary) ----
@@ -186,6 +199,12 @@ class SafetyMonitor:
                 if pv_row is not None:
                     pv = json.loads(pv_row[0])
                     self._peak_value = float(pv) if pv is not None else None
+                lmr_row = conn.execute(
+                    "SELECT value FROM safety_state WHERE key = 'last_manual_reset_at'"
+                ).fetchone()
+                if lmr_row is not None:
+                    lmr = json.loads(lmr_row[0])
+                    self._last_manual_reset_at = float(lmr) if lmr is not None else None
                 loaded_from = "sqlite"
                 if self.kill_switch_active:
                     logger.warning("Kill switch is ACTIVE from previous session (SQLite)")
@@ -201,6 +220,8 @@ class SafetyMonitor:
                 self.kill_switch_active = bool(data.get("kill_switch_active", False))
                 pv = data.get("peak_value")
                 self._peak_value = float(pv) if pv is not None else None
+                lmr = data.get("last_manual_reset_at")
+                self._last_manual_reset_at = float(lmr) if lmr is not None else None
                 loaded_from = "json"
                 if self.kill_switch_active:
                     logger.warning("Kill switch is ACTIVE from previous session")
@@ -385,10 +406,12 @@ def compute_live_risk(config: Dict[str, Any]) -> Dict[str, Any]:
         logger.warning("Failed to persist intraday_risk: %s", exc)
 
     # --- Auto kill switch if RED ---
+    # Skipped if the user manually reset within the last 4 hours so the reset
+    # actually sticks rather than being immediately overwritten.
     if risk_level == "red":
         try:
             safety = SafetyMonitor(config)
-            if not safety.kill_switch_active:
+            if not safety.kill_switch_active and not safety.manual_reset_cooldown_active():
                 safety.kill_switch_active = True
                 safety._save_state()
                 logger.critical(

@@ -65,13 +65,14 @@ blocked_tickers = [t.upper() for t in rules.get("blocked_tickers", [])]
 if ticker in blocked_tickers:
     errors.append(f"RESTRICTED: {ticker} is on your blocked tickers list (rules.json)")
 
-# ── Rule 2: Kill switch ──
-try:
-    safety = SafetyMonitor(config)
-    if not safety.check_drawdown(account):
-        errors.append("Kill switch is active — all trading halted")
-except Exception:
-    pass
+# ── Rule 2: Kill switch (buys only — sells must always be allowed to exit) ──
+if signal in ("Buy", "Overweight"):
+    try:
+        safety = SafetyMonitor(config)
+        if not safety.check_drawdown(account):
+            errors.append("Kill switch is active — all trading halted")
+    except Exception:
+        pass
 
 # ── Rule 3: (removed — position count limit is artificial; risk is managed
 #    via concentration %, cash reserve, notional exposure, and VaR) ──

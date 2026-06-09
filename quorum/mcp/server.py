@@ -369,11 +369,12 @@ def _handle_tool(name: str, args: dict) -> str:
             if cash_after < min_cash:
                 rejections.append(f"BLOCKED: Trade would leave ${cash_after:,.0f} cash ({cash_after/account.account_value:.0%}), below {cash_floor:.0%} reserve.")
 
-        # Rule 5: Kill switch check
+        # Rule 5: Kill switch check (buys only — sells must always be allowed to exit)
         from quorum.execution.safety import SafetyMonitor
         safety = SafetyMonitor(config)
-        if not safety.check_drawdown(account):
-            rejections.append("BLOCKED: Kill switch is active. Reset with `quorum reset-kill-switch`.")
+        if signal in ("Buy", "Overweight"):
+            if not safety.check_drawdown(account):
+                rejections.append("BLOCKED: Kill switch is active. Reset with `quorum reset-kill-switch`.")
 
         # Rule 6: Notional exposure check for futures
         if signal in ("Buy", "Overweight"):
