@@ -196,3 +196,86 @@ def probability_of_backtest_overfitting(
     # PBO = P[logit <= 0] = P[the in-sample winner is at/below the
     # out-of-sample median] across all train/test combinations.
     return sum(1 for logit in logits if logit <= 0) / len(logits)
+
+
+# ---------------------------------------------------------------------------
+# Walk-Forward Efficiency
+#
+# Pardo, R. (2008), "The Evaluation and Optimization of Trading Strategies"
+# (2nd ed.), Wiley — the OOS/IS ratio used to detect whether a strategy
+# re-optimized on each walk-forward window is actually generalizing, rather
+# than re-curve-fitting to each in-sample slice.
+# ---------------------------------------------------------------------------
+
+def walk_forward_efficiency(is_performance: Sequence[float], oos_performance: Sequence[float]) -> float:
+    """Aggregate out-of-sample / in-sample performance ratio across
+    walk-forward windows. Performance can be per-window Sharpe or return —
+    whatever `is_performance`/`oos_performance` were computed as, as long as
+    both sides use the same metric. Aggregating sums (rather than averaging
+    per-window ratios) avoids blow-ups from windows with a near-zero
+    in-sample denominator.
+    """
+    is_sum = sum(is_performance)
+    oos_sum = sum(oos_performance)
+    if is_sum == 0:
+        return float("nan")
+    return oos_sum / is_sum
+
+
+# ---------------------------------------------------------------------------
+# Minimum Backtest Length
+#
+# Bailey & López de Prado (2012) "The Sharpe Ratio Efficient Frontier"
+# derives the Minimum Track Record Length (MinTRL): how many return
+# observations are needed for an observed Sharpe ratio to be
+# distinguishable from a benchmark SR* at a given confidence. Bailey &
+# López de Prado (2014), section "Minimum Backtest Length", combines this
+# with the E[max SR_N] selection-bias benchmark from the same paper's DSR
+# derivation, self-consistently solving for the sample size at which the
+# observed SR clears its own selection-bias benchmark.
+# ---------------------------------------------------------------------------
+
+def minimum_backtest_length(sr: float, n_trials: int, skew: float, kurtosis: float, confidence: float = 0.95) -> float:
+    """Minimum number of return observations (same periodicity as `sr`,
+    e.g. daily) needed for `sr` — the best of `n_trials` independent
+    trials — to be statistically distinguishable from the luck expected
+    from selection bias alone, at `confidence`.
+
+    Derivation: MinTRL solves n from
+        Z_alpha = (SR - SR*) * sqrt(n-1) / sqrt(var_term)
+    Substituting SR* = E[max SR_N] = sqrt(var_term/(n-1)) * K(N) (the same
+    benchmark DSR deflates against) and solving for n gives
+        n = 1 + var_term * (Z_alpha + K(N))^2 / SR^2
+    which correctly reduces to the plain MinTRL formula when n_trials=1
+    (K(1)=0, no selection-bias benchmark to clear).
+    """
+    if sr <= 0:
+        return float("inf")  # a non-positive Sharpe is never distinguishable from luck
+    var_term = _sharpe_variance_term(sr, skew, kurtosis)
+    z_alpha = stats.norm.ppf(confidence)
+    k_n = _expected_max_sharpe_multiplier(n_trials)
+    return 1.0 + var_term * (z_alpha + k_n) ** 2 / sr ** 2
+
+
+# ---------------------------------------------------------------------------
+# Cost-stress test
+# ---------------------------------------------------------------------------
+
+def run_cost_stress(
+    spec, ohlcv, symbols, *, multipliers: Sequence[float] = (1.0, 3.0), **run_kwargs,
+) -> Dict[float, Dict[str, Any]]:
+    """Convenience wrapper: re-run run_bar_loop with execution.cost_bps
+    scaled by each of `multipliers`. Thin by design — callers that already
+    have precomputed results at each multiplier (e.g. from a cached sweep)
+    should build the `cost_stress_results` dict for run_gate directly and
+    skip this entirely.
+    """
+    from .engine import run_bar_loop  # local import: engine.py pulls in execution/decision_log/db, which gate.py's core checks don't need
+
+    results = {}
+    base_cost_bps = spec.execution.cost_bps
+    for multiplier in multipliers:
+        scaled_spec = spec.model_copy(deep=True)
+        scaled_spec.execution.cost_bps = base_cost_bps * multiplier
+        results[multiplier] = run_bar_loop(scaled_spec, ohlcv, symbols, **run_kwargs)
+    return results

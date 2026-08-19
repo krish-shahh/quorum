@@ -80,3 +80,67 @@ def test_pbo_is_low_when_the_in_sample_winner_genuinely_generalizes():
     pbo = gate.probability_of_backtest_overfitting(trials, n_blocks=16)
 
     assert pbo < 0.20
+
+
+def test_wfe_is_one_when_oos_matches_is_exactly():
+    wfe = gate.walk_forward_efficiency(is_performance=[1.0, 0.8, 1.2], oos_performance=[1.0, 0.8, 1.2])
+    assert wfe == pytest.approx(1.0)
+
+
+def test_wfe_below_one_when_oos_underperforms_is():
+    wfe = gate.walk_forward_efficiency(is_performance=[1.0, 1.0], oos_performance=[0.2, 0.2])
+    assert wfe == pytest.approx(0.2)
+
+
+def test_wfe_is_nan_when_in_sample_sums_to_zero():
+    assert math.isnan(gate.walk_forward_efficiency(is_performance=[1.0, -1.0], oos_performance=[0.5, 0.5]))
+
+
+def test_min_backtest_length_with_single_trial_matches_plain_min_trl_by_hand():
+    sr, skew, kurt, confidence = 0.1, 0.0, 3.0, 0.95
+    var_term = 1 + 0.5 * sr ** 2
+    z_alpha = stats.norm.ppf(confidence)
+    expected = 1 + var_term * z_alpha ** 2 / sr ** 2
+    actual = gate.minimum_backtest_length(sr, n_trials=1, skew=skew, kurtosis=kurt, confidence=confidence)
+    assert actual == pytest.approx(expected)
+
+
+def test_min_backtest_length_grows_with_more_trials():
+    kwargs = dict(sr=0.15, skew=0.0, kurtosis=3.0, confidence=0.95)
+    few = gate.minimum_backtest_length(n_trials=2, **kwargs)
+    many = gate.minimum_backtest_length(n_trials=500, **kwargs)
+    assert many > few
+
+
+def test_min_backtest_length_is_infinite_for_non_positive_sharpe():
+    assert gate.minimum_backtest_length(sr=0.0, n_trials=1, skew=0.0, kurtosis=3.0) == float("inf")
+
+
+def test_run_cost_stress_scales_cost_bps_and_reruns_the_engine():
+    import pandas as pd
+    from quorum.strategy.schema import load_strategy
+
+    spec = load_strategy({
+        "strategy_id": "cost_stress_test", "version": "0.1",
+        "universe": {"source": "static", "tickers": ["TEST"]},
+        "features": [
+            {"name": "above", "op": "gt", "inputs": ["TEST.close", "TEST.threshold"]},
+            {"name": "below", "op": "lt", "inputs": ["TEST.close", "TEST.threshold"]},
+        ],
+        "signal": {"entry": {"all_of": ["above"]}, "exit": {"any_of": ["below"]}},
+        "sizing": {"method": "flat_pct", "flat_pct": 0.5, "max_position_pct": 0.6},
+        "risk": {"max_single_ticker_pct": 0.6},
+        "execution": {"cost_bps": 10.0},
+    })
+    closes = [90, 90, 90, 95, 105, 110, 105, 95, 90, 90]
+    idx = pd.date_range("2026-01-01", periods=len(closes), freq="D")
+    close = pd.Series(closes, index=idx, dtype=float)
+    ohlcv = {"TEST": pd.DataFrame({"open": close, "high": close, "low": close, "close": close,
+                                    "volume": 1000, "threshold": 100.0})}
+
+    results = gate.run_cost_stress(spec, ohlcv, symbols=["TEST"], multipliers=(1.0, 3.0), starting_cash=100_000.0)
+
+    assert set(results.keys()) == {1.0, 3.0}
+    # 3x cost eats into the trade's entry/exit fill prices more, so equity
+    # after the trade must be no better than the 1x-cost run.
+    assert results[3.0]["final_equity"] <= results[1.0]["final_equity"]
