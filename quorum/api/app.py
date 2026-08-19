@@ -1025,6 +1025,24 @@ def api_v1_gate(run_id):
     return jsonify(detail["gate"])
 
 
+@api_bp.route("/api/v1/runs/<run_id>/performance")
+def api_v1_run_performance(run_id):
+    """Same shape as /api/v1/performance, scoped to one run's own closed
+    trades instead of the whole live book — lets the Performance view
+    work for a specific backtest or pod-cycle run."""
+    from quorum.default_config import DEFAULT_CONFIG
+    from quorum.execution.decision_log import get_run_detail
+
+    if get_run_detail(DEFAULT_CONFIG, run_id) is None:
+        return jsonify({"error": f"no run {run_id}"}), 404
+    try:
+        from quorum.execution.analytics import generate_run_performance_summary
+        return jsonify(generate_run_performance_summary(DEFAULT_CONFIG, run_id))
+    except Exception as e:
+        print(f"[v3] run-performance error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
 @api_bp.route("/api/v1/portfolio-risk")
 def api_v1_portfolio_risk():
     """Notional exposure + historical VaR. Read-only — unlike live-risk,

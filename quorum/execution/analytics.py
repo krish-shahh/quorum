@@ -490,3 +490,60 @@ def generate_performance_summary(
         "expectancy": round(compute_expectancy(trades), 2),
         "sqn": round(compute_sqn(trades), 4),
     }
+
+
+def generate_run_performance_summary(
+    config: Dict[str, Any], run_id: str, starting_balance: Optional[float] = None,
+) -> Dict[str, Any]:
+    """The same performance summary as generate_performance_summary(), but
+    scoped to one run's own closed_trade rows instead of the whole live
+    book — lets the Performance view work for a single backtest or
+    pod-cycle run, not just "everything, live."
+
+    closed_trade rows (symbol/qty/entry_price/exit_price/pnl/entry_ts/
+    exit_ts) get adapted into the flat legacy-trade-row shape
+    generate_performance_summary() already consumes, so this run reuses
+    the exact same, already-tested win-rate/Sharpe/SQN/etc. logic instead
+    of a parallel implementation — same methodology as the live-book
+    endpoint, so the two are directly comparable in the UI.
+
+    One field is necessarily approximate at run scope: `signal` isn't
+    stored on closed_trade (every row's FIFO round-trip is long-only
+    today), so win_rate_by_signal degenerates to one unlabeled bucket.
+    `account_before`/`account_after` are reconstructed as a running
+    cumulative balance (starting_balance + pnl-so-far) rather than real
+    broker snapshots, so total_trades/cumulative_return/alpha_vs_benchmark
+    all derive correctly instead of being silently dropped by
+    _executed_trades' account-field requirement.
+    """
+    from . import db as db_module
+
+    if starting_balance is None:
+        # Not recorded per-run (a backtest's --cash isn't persisted to
+        # `run` today) — fall back to the account's real configured
+        # balance rather than an arbitrary CLI-testing default.
+        starting_balance = float(config.get("paper_starting_balance", 5_000.0))
+
+    conn = db_module.get_db(config)
+    closed = conn.execute(
+        "SELECT symbol, qty, entry_price, exit_price, pnl, exit_ts "
+        "FROM closed_trade WHERE run_id = ? ORDER BY exit_ts ASC",
+        (run_id,),
+    ).fetchall()
+
+    rows = []
+    running_balance = starting_balance
+    for t in closed:
+        account_before = running_balance
+        running_balance += t["pnl"]
+        rows.append({
+            "timestamp": t["exit_ts"], "ticker": t["symbol"], "signal": "",
+            "action_taken": "executed", "side": "sell", "quantity": t["qty"],
+            "fill_price": t["exit_price"], "account_before": account_before,
+            "account_after": running_balance, "realized_pnl": t["pnl"], "reason": "",
+        })
+
+    summary = generate_performance_summary(rows, starting_balance)
+    total_pnl = sum(t["pnl"] for t in closed) if closed else 0.0
+    summary["cumulative_return"] = round(total_pnl / starting_balance, 6) if starting_balance > 0 else 0.0
+    return summary
