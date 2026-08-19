@@ -101,31 +101,6 @@ CREATE INDEX IF NOT EXISTS idx_wiki_ticker ON wiki_pages(ticker);
 CREATE INDEX IF NOT EXISTS idx_wiki_date ON wiki_pages(trade_date);
 CREATE INDEX IF NOT EXISTS idx_wiki_type ON wiki_pages(page_type);
 
-CREATE TABLE IF NOT EXISTS backtest_runs (
-    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    run_id       TEXT    NOT NULL UNIQUE,
-    tickers      TEXT    NOT NULL DEFAULT '',
-    start_date   TEXT    NOT NULL,
-    end_date     TEXT    NOT NULL,
-    created_at   TEXT    NOT NULL DEFAULT (datetime('now')),
-    config_json  TEXT    NOT NULL DEFAULT '{}',
-    summary_json TEXT    NOT NULL DEFAULT '{}'
-);
-
-CREATE TABLE IF NOT EXISTS backtest_trades (
-    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    run_id       TEXT    NOT NULL,
-    trade_date   TEXT    NOT NULL,
-    ticker       TEXT    NOT NULL,
-    signal       TEXT    NOT NULL DEFAULT '',
-    fill_price   REAL,
-    quantity     INTEGER DEFAULT 0,
-    side         TEXT    NOT NULL DEFAULT '',
-    account_after REAL,
-    raw_json     TEXT    NOT NULL DEFAULT '{}'
-);
-CREATE INDEX IF NOT EXISTS idx_bt_run ON backtest_trades(run_id);
-
 CREATE TABLE IF NOT EXISTS trade_reports (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     ticker        TEXT    NOT NULL,
@@ -168,22 +143,6 @@ CREATE TABLE IF NOT EXISTS ticker_state (
 );
 CREATE INDEX IF NOT EXISTS idx_ts_ticker ON ticker_state(ticker);
 CREATE INDEX IF NOT EXISTS idx_ts_analyzed ON ticker_state(analyzed_at);
-
-CREATE TABLE IF NOT EXISTS push_subscriptions (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    endpoint    TEXT    NOT NULL UNIQUE,
-    keys_json   TEXT    NOT NULL DEFAULT '{}',
-    created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
-);
-
-CREATE TABLE IF NOT EXISTS notification_preferences (
-    id             INTEGER PRIMARY KEY AUTOINCREMENT,
-    endpoint       TEXT    NOT NULL UNIQUE,
-    on_trade       INTEGER NOT NULL DEFAULT 1,
-    on_kill_switch INTEGER NOT NULL DEFAULT 1,
-    on_discovery   INTEGER NOT NULL DEFAULT 0,
-    on_stop_loss   INTEGER NOT NULL DEFAULT 1
-);
 
 CREATE TABLE IF NOT EXISTS quant_scores (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -288,17 +247,6 @@ CREATE TABLE IF NOT EXISTS run (
 CREATE INDEX IF NOT EXISTS idx_run_strategy ON run(strategy_id);
 CREATE INDEX IF NOT EXISTS idx_run_mode ON run(mode);
 
-CREATE TABLE IF NOT EXISTS sweep (
-    sweep_id            TEXT PRIMARY KEY,
-    strategy_id         TEXT NOT NULL,
-    hypothesis          TEXT NOT NULL DEFAULT '',
-    search_space_json   TEXT NOT NULL DEFAULT '{}',
-    n_trials            INTEGER NOT NULL DEFAULT 0,
-    n_trials_cumulative INTEGER NOT NULL DEFAULT 0,
-    effective_k         REAL,
-    created_at          TEXT NOT NULL DEFAULT (datetime('now'))
-);
-
 CREATE TABLE IF NOT EXISTS signal (
     signal_id         TEXT PRIMARY KEY,
     run_id            TEXT NOT NULL,
@@ -366,6 +314,11 @@ CREATE TABLE IF NOT EXISTS fill (
 );
 CREATE INDEX IF NOT EXISTS idx_fill_order ON fill(order_id);
 
+-- Write-only in production today: generate_run_performance_summary()
+-- currently reconstructs the equity curve from closed_trade instead of
+-- reading this table. Kept intentionally (not dead code) -- it holds
+-- exactly the real per-day snapshot data that reconstruction
+-- approximates, and the engine is actively accumulating it.
 CREATE TABLE IF NOT EXISTS portfolio_snapshot (
     run_id         TEXT NOT NULL,
     d              TEXT NOT NULL,

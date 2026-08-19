@@ -684,12 +684,11 @@ def reset(
         conn = sqlite3.connect(str(db_path))
         account_tables = [
             "trades", "trade_reports", "paper_positions", "paper_account",
-            "backtest_runs", "backtest_trades",
         ]
         decision_log_tables = [
             "trace_event", "fill", "order_intent", "target", "signal",
             "closed_trade", "journal", "portfolio_snapshot",
-            "run_recap", "daily_recap", "run", "sweep",
+            "run_recap", "daily_recap", "run",
         ]
         tables = account_tables + ([] if keep_history else decision_log_tables)
         for table in tables:
