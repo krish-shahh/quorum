@@ -178,7 +178,7 @@ strategies/        — Strategy YAML, one file per pod (git-committed)
 
 ## MCP Tools
 
-Pod shop (Phase 4): `get_pod_candidates`, `get_pod_exits`, `record_pod_decision`
+Pod shop (Phase 4): `get_pod_candidates`, `get_pod_exits`, `record_pod_decision`, `save_pod_evidence`, `get_pod_evidence`
 
 Data: get_stock_data, get_indicators, get_indicators_bulk, get_fundamentals, get_financial_statements, get_news, get_global_news, get_reddit_sentiment, get_stocktwits_sentiment, get_insider_transactions, get_insider_clusters, get_congress_trades, get_congress_summary, get_market_regime, get_sector_rotation, get_earnings_calendar
 

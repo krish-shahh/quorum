@@ -911,6 +911,105 @@ class WikiWriter:
         logger.info("Wiki report generated: %s (%d runs)", report_path, total)
         return report_path
 
+    # ── Pod Evidence ─────────────────────────────────────────────────
+    # pod-analyst (see .claude/skills/pod-analyst) extracts cited facts
+    # for one ticker every pod-cycle, but until this had nowhere to
+    # persist to it was thrown away the moment pod-pm read it once —
+    # unlike the legacy council path, which accumulates into run/ticker
+    # pages above. This closes that gap without touching pod-analyst's
+    # "evidence only, never a score" contract: what's stored here is
+    # exactly what it already produces, just kept.
+
+    def write_pod_evidence(
+        self,
+        ticker: str,
+        trade_date: str,
+        pod_id: str,
+        evidence: List[Dict[str, Any]],
+        strategy_rationale: str = "",
+    ) -> Path:
+        """Persist pod-analyst's structured, cited evidence for one ticker.
+
+        ``evidence`` is a list of ``{"claim", "source", "directional_tag"}``
+        dicts — pod-analyst's exact output shape, unmodified.
+        """
+        all_text = " ".join(e.get("claim", "") for e in evidence)
+        tags = extract_tags(all_text)
+        related = extract_related_tickers(all_text, exclude=ticker)
+        bullish = sum(1 for e in evidence if e.get("directional_tag") == "bullish")
+        bearish = sum(1 for e in evidence if e.get("directional_tag") == "bearish")
+
+        lines = [
+            "---",
+            f"ticker: {ticker}",
+            f"date: {trade_date}",
+            f"pod: {pod_id}",
+            f"n_facts: {len(evidence)}",
+            f"bullish: {bullish}",
+            f"bearish: {bearish}",
+        ]
+        if tags:
+            lines.append(f"tags: {json.dumps(tags)}")
+        if related:
+            lines.append(f"related_tickers: {json.dumps(related)}")
+        lines.append("---")
+        lines.append("")
+        lines.append(f"# {ticker} — Pod Evidence ({pod_id}, {trade_date})")
+        lines.append("")
+        if strategy_rationale:
+            lines.append(f"**Strategy rationale:** {strategy_rationale}")
+            lines.append("")
+        if not evidence:
+            lines.append("*No material evidence found beyond routine coverage.*")
+        for e in evidence:
+            tag = e.get("directional_tag", "neutral")
+            lines.append(f"- **[{tag}]** {e.get('claim', '')}")
+            if e.get("source"):
+                lines.append(f"  Source: {e['source']}")
+        lines.append("")
+
+        date_dir = self.wiki_dir / "pod_evidence" / trade_date
+        date_dir.mkdir(parents=True, exist_ok=True)
+        page_path = date_dir / f"{_safe_ticker(ticker)}_{pod_id}.md"
+        page_path.write_text("\n".join(lines), encoding="utf-8")
+
+        rel_path = str(page_path.relative_to(self.wiki_dir))
+        self._index_page(WikiPageIndex(
+            path=rel_path, ticker=ticker, trade_date=trade_date,
+            signal="", regime="", confidence=0.0, tags=tags, page_type="pod_evidence",
+        ))
+        logger.info("Pod evidence page written: %s", page_path)
+        return page_path
+
+    def get_pod_evidence_context(self, ticker: str, before_date: str, limit: int = 5) -> str:
+        """Prior pod-analyst evidence for a ticker, strictly before
+        ``before_date`` (excludes the current cycle's own just-saved
+        output) — for a pod PM to check before deciding, so evidence
+        accumulates across cycles instead of being rediscovered every
+        time.
+        """
+        conn = self._get_db()
+        rows = conn.execute(
+            "SELECT path, trade_date FROM wiki_pages "
+            "WHERE ticker = ? AND page_type = 'pod_evidence' AND trade_date < ? "
+            "ORDER BY trade_date DESC LIMIT ?",
+            (ticker, before_date, limit),
+        ).fetchall()
+
+        if not rows:
+            return ""
+
+        parts = [f"## Prior Pod Evidence — {ticker}", ""]
+        for row in rows:
+            content = self.get_page_content(row["path"])
+            if not content:
+                continue
+            body = content.split("---", 2)[-1].strip() if content.startswith("---") else content
+            parts.append(f"### {row['trade_date']}")
+            parts.append(body)
+            parts.append("")
+        return "\n".join(parts)
+
     # ── Search ───────────────────────────────────────────────────────
 
     def search(self, query: str, limit: int = 10) -> List[Dict[str, Any]]:

@@ -114,6 +114,8 @@ def create_server():
         Tool(name="get_pod_candidates", description="Run one pod's strategy (strategies/<strategy_id>.yaml) against the latest market data and return today's ranked candidates — the Phase 4 auto-mode coordination artifact, replacing the plan file. Every symbol's entry condition is logged to the decision log (fired or suppressed) under a new run row, whether or not it becomes a candidate. Call once per pod per cycle; each candidate then goes to pod-analyst for evidence and pod-pm for the veto/size call.", inputSchema={"type": "object", "properties": {"strategy_id": {"type": "string", "description": "Filename stem under strategies/, e.g. 'regime_gate'"}, "lookback_days": {"type": "integer", "description": "Calendar days of history to fetch for feature computation (default 400 — covers a 252-day window plus buffer)", "default": 400}}, "required": ["strategy_id"]}),
         Tool(name="get_pod_exits", description="Check whether any currently-held position opened by this pod should exit now — stop-loss, max_holding_days, or the strategy's own exit rule (same priority order as the backtest engine). The counterpart to get_pod_candidates for the sell side; call it every cycle alongside get_pod_candidates so open positions aren't left to drift once entered ('winners get cut, losers get held' was the account's original failure mode). Exits found here should be executed as a plain 'Sell' (full unwind) — no pod-pm review needed, these are mechanical risk-desk rules, not judgment calls.", inputSchema={"type": "object", "properties": {"strategy_id": {"type": "string", "description": "Filename stem under strategies/, e.g. 'regime_gate'"}}, "required": ["strategy_id"]}),
         Tool(name="record_pod_decision", description="Record a pod PM's decision on a strategy-generated candidate: approve at proposed size, reduce size, or veto entirely. Every override MUST be logged here with a reason — this is the audit trail the plan requires ('every override is written to journal with a reason'). Not for use with the legacy full council (trading-planner/trading-council) — those use save_council_reports instead.", inputSchema={"type": "object", "properties": {"ticker": {"type": "string"}, "decision": {"type": "string", "enum": ["approve", "reduce", "veto"]}, "proposed_weight": {"type": "number", "description": "The candidate's proposed position weight from the strategy engine"}, "final_weight": {"type": "number", "description": "The weight after this decision (0 if veto, < proposed_weight if reduce, == proposed_weight if approve)"}, "reason": {"type": "string", "description": "Why — cite the pod-analyst findings that drove this decision"}, "run_id": {"type": "string", "description": "The decision-log run_id this candidate came from, if known"}}, "required": ["ticker", "decision", "reason"]}),
+        Tool(name="save_pod_evidence", description="Persist pod-analyst's structured, cited evidence for one ticker to the wiki so future cycles (this pod or another) can build on it instead of re-deriving from scratch. Call this at the end of your evidence-extraction pass, with your exact facts list — never a score or recommendation.", inputSchema={"type": "object", "properties": {"ticker": {"type": "string"}, "pod_id": {"type": "string", "description": "The pod/strategy_id this evidence is for, e.g. 'regime_gate'"}, "evidence": {"type": "array", "description": "Your facts list, unmodified", "items": {"type": "object", "properties": {"claim": {"type": "string"}, "source": {"type": "string"}, "directional_tag": {"type": "string", "enum": ["bullish", "bearish", "neutral"]}}, "required": ["claim", "directional_tag"]}}, "strategy_rationale": {"type": "string", "description": "Why the strategy's candidate fired, if given to you"}}, "required": ["ticker", "pod_id", "evidence"]}),
+        Tool(name="get_pod_evidence", description="Retrieve prior pod-analyst evidence for a ticker from earlier cycles (today's is excluded — you already have that in context). Check this before deciding so evidence already on record isn't silently ignored.", inputSchema={"type": "object", "properties": {"ticker": {"type": "string"}, "limit": {"type": "integer", "default": 5}}, "required": ["ticker"]}),
     ]
 
     @server.list_tools()
@@ -1643,6 +1645,24 @@ def _handle_tool(name: str, args: dict) -> str:
             author="pod_pm", tags=[ticker, decision],
         )
         return f"Recorded: {body}"
+
+    if name == "save_pod_evidence":
+        from quorum.wiki import WikiWriter
+        wiki = WikiWriter(config)
+        ticker = args["ticker"].upper()
+        pod_id = args["pod_id"]
+        evidence = args.get("evidence", [])
+        strategy_rationale = args.get("strategy_rationale", "")
+        path = wiki.write_pod_evidence(ticker, today, pod_id, evidence, strategy_rationale)
+        return f"Pod evidence saved to wiki: {path} ({len(evidence)} fact(s))"
+
+    if name == "get_pod_evidence":
+        from quorum.wiki import WikiWriter
+        wiki = WikiWriter(config)
+        ticker = args["ticker"].upper()
+        limit = args.get("limit", 5)
+        context = wiki.get_pod_evidence_context(ticker, today, limit)
+        return context if context else f"No prior pod evidence found for {ticker}."
 
     return f"Unknown tool: {name}"
 

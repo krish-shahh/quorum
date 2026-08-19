@@ -7,6 +7,7 @@ allowed-tools:
   - mcp__quorum__get_portfolio_risk
   - mcp__quorum__get_live_risk
   - mcp__quorum__get_trade_reflections
+  - mcp__quorum__get_pod_evidence
   - mcp__quorum__record_pod_decision
 ---
 
@@ -30,11 +31,12 @@ Portfolio construction and weighting is explicitly **not** a role the redesign's
 1. Call `get_live_risk` first — if the circuit breaker is anything but GREEN, that's a firm-wide constraint the strategy engine's own risk layer should already reflect; don't re-litigate it here, but do treat a RED/ORANGE reading as grounds to veto new entries regardless of how good the evidence looks.
 2. Call `get_portfolio` and `get_portfolio_risk` — check concentration (sector, single-name) the proposed trade would create across the WHOLE firm book, not just your pod. The strategy engine already enforces `max_single_ticker_pct`/`max_positions` at its own layer; you're checking for cross-pod effects it can't see in isolation (e.g. two different pods' candidates landing in the same sub-industry bucket on the same day).
 3. Call `get_trade_reflections` for the ticker — past outcomes on this name specifically.
-4. Weigh `pod-analyst`'s findings:
+4. Call `get_pod_evidence` for the ticker — prior cycles' `pod-analyst` findings on record, so you don't decide blind to evidence surfaced before today.
+5. Weigh `pod-analyst`'s findings (today's, plus whatever `get_pod_evidence` returned):
    - A genuinely material bearish fact (not routine noise) the strategy's price/volume-based entry condition couldn't have seen → **veto**, and say exactly which fact drove it.
    - Mixed or minor findings, or a real cross-pod concentration concern → **reduce**, with the adjusted weight and why.
    - Clean evidence, no conflict → **approve** at the proposed weight.
-5. **Always** call `record_pod_decision` — ticker, decision, proposed_weight, final_weight, reason (cite the specific `pod-analyst` finding or portfolio-risk figure that drove the call), and run_id if you have it. This is not optional even for a plain approve — the plan's requirement is that every decision is auditable, not just the overrides.
+6. **Always** call `record_pod_decision` — ticker, decision, proposed_weight, final_weight, reason (cite the specific `pod-analyst` finding or portfolio-risk figure that drove the call), and run_id if you have it. This is not optional even for a plain approve — the plan's requirement is that every decision is auditable, not just the overrides.
 
 ## What "reason" should look like
 

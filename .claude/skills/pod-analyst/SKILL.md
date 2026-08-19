@@ -9,6 +9,7 @@ allowed-tools:
   - mcp__quorum__get_earnings_calendar
   - mcp__quorum__get_congress_trades
   - mcp__quorum__get_asset_info
+  - mcp__quorum__save_pod_evidence
   - WebSearch
 ---
 
@@ -45,3 +46,7 @@ A structured list of facts, each one:
 If you find nothing material beyond routine noise, say so explicitly — "no material evidence found beyond routine coverage" is a valid and useful output. Do not manufacture significance to have something to report.
 
 Do not editorialize past this format. Do not propose a position size. Do not tell the pod PM what to do — give it the facts to decide with.
+
+## Persist your evidence
+
+After you've finished extraction, call `save_pod_evidence` with the ticker, the pod's `strategy_id`, your exact facts list (unmodified — same claim/source/directional_tag shape as your output), and the strategy's stated rationale if you were given one. This writes your findings to the wiki so a later cycle (this pod or another) can build on them via `get_pod_evidence` instead of re-deriving from scratch. Call it even when your output is "no material evidence found" — that's still useful for the pod PM's retrieval step to see.
