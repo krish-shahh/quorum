@@ -497,8 +497,8 @@ class PositionSizer:
         Returns number of shares, or None if ATR can't be computed.
         """
         try:
-            from quorum.quant.integration import _fetch_indicators
-            indicators = _fetch_indicators(ticker)
+            from quorum.execution.indicators import fetch_indicators
+            indicators = fetch_indicators(ticker)
             atr = indicators.get("atr", 0)
             if atr <= 0:
                 return None

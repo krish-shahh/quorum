@@ -126,7 +126,8 @@ def get_quant_scores(
             regime_data = {"regime": "transition"}
 
     # Fetch indicators for technical scoring
-    indicators = _fetch_indicators(ticker)
+    from quorum.execution.indicators import fetch_indicators
+    indicators = fetch_indicators(ticker)
 
     # Route to fundamental/domain scorer
     fundamental_score = route_fundamental_scorer(
@@ -157,82 +158,3 @@ def get_quant_scores(
     )
 
 
-def _fetch_indicators(ticker: str) -> Dict[str, float]:
-    """Fetch technical indicators for a ticker. Returns a flat dict."""
-    import yfinance as yf
-    from .data_quality import safe_float
-
-    try:
-        data = yf.download(ticker, period="250d", progress=False)
-        if data.empty:
-            return {}
-
-        close = data["Close"].squeeze()
-        high = data["High"].squeeze()
-        low = data["Low"].squeeze()
-        volume = data["Volume"].squeeze()
-
-        price = safe_float(close.iloc[-1])
-
-        # RSI (14-period)
-        delta = close.diff()
-        gain = delta.where(delta > 0, 0.0).rolling(14).mean()
-        loss = (-delta.where(delta < 0, 0.0)).rolling(14).mean()
-        rs = gain / loss
-        rsi_series = 100 - (100 / (1 + rs))
-        rsi = safe_float(rsi_series.iloc[-1])
-
-        # MACD
-        ema12 = close.ewm(span=12).mean()
-        ema26 = close.ewm(span=26).mean()
-        macd = ema12 - ema26
-        macd_signal = macd.ewm(span=9).mean()
-        macd_hist = macd - macd_signal
-
-        # SMAs
-        sma50 = safe_float(close.rolling(50).mean().iloc[-1])
-        sma200 = safe_float(close.rolling(200).mean().iloc[-1]) if len(close) >= 200 else 0.0
-
-        # Bollinger Bands
-        sma20 = close.rolling(20).mean()
-        std20 = close.rolling(20).std()
-        boll_ub = safe_float((sma20 + 2 * std20).iloc[-1])
-        boll_lb = safe_float((sma20 - 2 * std20).iloc[-1])
-
-        # ATR (14-period)
-        tr1 = high - low
-        tr2 = abs(high - close.shift(1))
-        tr3 = abs(low - close.shift(1))
-        import pandas as pd
-        tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-        atr = safe_float(tr.rolling(14).mean().iloc[-1])
-
-        # ATR 1-year range (for vol percentile)
-        atr_series = tr.rolling(14).mean().dropna()
-        atr_min = safe_float(atr_series.min()) if len(atr_series) > 20 else atr
-        atr_max = safe_float(atr_series.max()) if len(atr_series) > 20 else atr
-
-        # Volume
-        current_vol = safe_float(volume.iloc[-1])
-        avg_vol_20 = safe_float(volume.rolling(20).mean().iloc[-1])
-
-        return {
-            "price": price,
-            "rsi": rsi,
-            "macd": safe_float(macd.iloc[-1]),
-            "macd_signal": safe_float(macd_signal.iloc[-1]),
-            "macd_hist": safe_float(macd_hist.iloc[-1]),
-            "macd_hist_prev": safe_float(macd_hist.iloc[-2]) if len(macd_hist) > 1 else 0.0,
-            "sma50": sma50,
-            "sma200": sma200,
-            "boll_ub": boll_ub,
-            "boll_lb": boll_lb,
-            "atr": atr,
-            "atr_min_1y": atr_min,
-            "atr_max_1y": atr_max,
-            "volume": current_vol,
-            "avg_volume": avg_vol_20,
-        }
-    except Exception as exc:
-        logger.warning("Failed to fetch indicators for %s: %s", ticker, exc)
-        return {}
