@@ -64,10 +64,6 @@
     --shadow-sm: 0 1px 2px 0 hsl(220 15% 10% / 0.05);
     --shadow-md: 0 2px 8px -2px hsl(220 15% 10% / 0.08), 0 1px 3px -1px hsl(220 15% 10% / 0.06);
     --shadow-lg: 0 8px 24px -4px hsl(220 15% 10% / 0.12), 0 2px 6px -2px hsl(220 15% 10% / 0.08);
-
-    /* Motion */
-    --transition-fast: 120ms ease-out;
-    --transition-base: 200ms ease-out;
   }
 }
 

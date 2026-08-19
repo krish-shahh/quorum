@@ -10,11 +10,6 @@ export function formatUsd(v: number | null | undefined): string {
   return `$${v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
-export function formatUsdInt(v: number | null | undefined): string {
-  if (v == null) return "---";
-  return `$${v.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
-}
-
 export function formatPct(v: number | null | undefined): string {
   if (v == null) return "---";
   return `${(v * 100).toFixed(1)}%`;
