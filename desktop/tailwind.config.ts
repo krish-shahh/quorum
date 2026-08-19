@@ -45,6 +45,10 @@ const config: Config = {
   				DEFAULT: 'hsl(var(--card))',
   				foreground: 'hsl(var(--card-foreground))'
   			},
+  			popover: {
+  				DEFAULT: 'hsl(var(--popover))',
+  				foreground: 'hsl(var(--popover-foreground))'
+  			},
   			profit: {
   				DEFAULT: 'hsl(var(--profit))',
   				foreground: 'hsl(var(--profit-foreground))'

@@ -1,8 +1,15 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import { createChart, ColorType, CandlestickSeries, AreaSeries, HistogramSeries } from "lightweight-charts";
+import { createChart, ColorType, CandlestickSeries, HistogramSeries } from "lightweight-charts";
 import { Home } from "lucide-react";
 import { fetchChart, type CandleData, type Position, type BookData } from "@/lib/api";
 import { themeColor } from "@/lib/utils";
+import { AreaChart } from "@/components/dither-kit/area-chart";
+import { Area } from "@/components/dither-kit/area";
+import { Grid } from "@/components/dither-kit/grid";
+import { XAxis } from "@/components/dither-kit/x-axis";
+import { YAxis } from "@/components/dither-kit/y-axis";
+import { Tooltip as DitherTooltip } from "@/components/dither-kit/tooltip";
+import type { ChartConfig } from "@/components/dither-kit/chart-context";
 
 interface Props {
   equity: { time: string; value: number }[];
@@ -55,102 +62,42 @@ export default function EquityCurve({ equity, positions, books }: Props) {
   );
 }
 
-// ── Portfolio / Book: area chart ──
+// ── Portfolio / Book: dither area chart ──
+
+function formatUsd(v: number): string {
+  return `$${v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
 
 function PortfolioChart({ equity }: { equity: { time: string; value: number }[] }) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const chartRef = useRef<ReturnType<typeof createChart> | null>(null);
-
   const points = equity.filter((p) => p.time !== "Start" && p.time.includes("-"));
 
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container || points.length < 2) return;
+  // Deduplicate by date — keep last value per day
+  const byDate = new Map<string, number>();
+  for (const p of points) {
+    byDate.set(p.time.slice(0, 10), p.value);
+  }
+  const data = Array.from(byDate.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([time, value]) => ({ time, value }));
 
-    if (chartRef.current) {
-      chartRef.current.remove();
-      chartRef.current = null;
-    }
-
-    const positive = points[points.length - 1].value >= points[0].value;
-    const color = positive ? themeColor("--profit") : themeColor("--loss");
-    const areaTopColor = positive ? themeColor("--profit", 0.08) : themeColor("--loss", 0.08);
-
-    const chart = createChart(container, {
-      layout: {
-        background: { type: ColorType.Solid, color: "transparent" },
-        textColor: themeColor("--muted-foreground"),
-        fontSize: 10,
-        fontFamily: "JetBrains Mono, monospace",
-        attributionLogo: false,
-      },
-      grid: {
-        vertLines: { visible: false },
-        horzLines: { color: themeColor("--border") },
-      },
-      width: container.clientWidth,
-      height: 180,
-      rightPriceScale: {
-        borderVisible: false,
-        scaleMargins: { top: 0.1, bottom: 0.05 },
-      },
-      leftPriceScale: { visible: false },
-      timeScale: { borderVisible: false },
-      crosshair: {
-        horzLine: { visible: true, labelVisible: true },
-        vertLine: { visible: true, labelVisible: true },
-      },
-      handleScroll: false,
-      handleScale: false,
-    });
-
-    const areaSeries = chart.addSeries(AreaSeries, {
-      lineColor: color,
-      lineWidth: 2,
-      topColor: areaTopColor,
-      bottomColor: "transparent",
-      crosshairMarkerVisible: true,
-      crosshairMarkerRadius: 3,
-      priceFormat: {
-        type: "custom",
-        formatter: (v: number) => `$${v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
-      },
-    });
-
-    // Deduplicate by date — keep last value per day
-    const byDate = new Map<string, number>();
-    for (const p of points) {
-      byDate.set(p.time.slice(0, 10), p.value);
-    }
-    areaSeries.setData(
-      Array.from(byDate.entries())
-        .sort(([a], [b]) => a.localeCompare(b))
-        .map(([time, value]) => ({ time, value }))
-    );
-
-    chart.priceScale("right").applyOptions({ autoScale: true });
-    chart.timeScale().fitContent();
-    chartRef.current = chart;
-
-    const observer = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        chart.applyOptions({ width: entry.contentRect.width });
-      }
-    });
-    observer.observe(container);
-
-    return () => {
-      observer.disconnect();
-      chart.remove();
-      chartRef.current = null;
-    };
-  }, [points]);
-
-  if (points.length < 2) {
+  if (data.length < 2) {
     return <p className="text-xs text-muted-foreground text-center py-8">Insufficient equity data</p>;
   }
 
-  return <div ref={containerRef} className="min-h-[180px]" />;
+  const positive = data[data.length - 1].value >= data[0].value;
+  const config: ChartConfig = { value: { label: "Equity", color: positive ? "green" : "red" } };
+
+  return (
+    <div className="h-[180px]">
+      <AreaChart data={data} config={config}>
+        <Grid />
+        <XAxis dataKey="time" tickFormatter={(v) => String(v).slice(5)} />
+        <YAxis tickFormatter={formatUsd} />
+        <Area dataKey="value" />
+        <DitherTooltip valueFormatter={formatUsd} />
+      </AreaChart>
+    </div>
+  );
 }
 
 // ── Ticker: candlestick + volume (pure price data, no trade overlays) ──

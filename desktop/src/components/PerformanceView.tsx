@@ -1,8 +1,14 @@
 import { useState } from "react";
-import {
-  ResponsiveContainer, LineChart, Line, BarChart, Bar, Cell,
-  XAxis, YAxis, CartesianGrid, Tooltip as RTooltip, ReferenceLine,
-} from "recharts";
+import { LineChart } from "@/components/dither-kit/area-chart";
+import { BarChart } from "@/components/dither-kit/bar-chart";
+import { Line } from "@/components/dither-kit/area";
+import { Bar } from "@/components/dither-kit/bar";
+import { Grid } from "@/components/dither-kit/grid";
+import { XAxis } from "@/components/dither-kit/x-axis";
+import { YAxis } from "@/components/dither-kit/y-axis";
+import { ReferenceLine } from "@/components/dither-kit/reference-line";
+import { Tooltip as DitherTooltip } from "@/components/dither-kit/tooltip";
+import type { ChartConfig } from "@/components/dither-kit/chart-context";
 import { usePerformance } from "@/hooks/use-performance";
 import { useRuns } from "@/hooks/use-runs";
 import { cn, formatPct, formatSignedUsd, pnlTextColor } from "@/lib/utils";
@@ -69,19 +75,17 @@ function PerformanceBody({ data }: { data: NonNullable<ReturnType<typeof usePerf
             {data.rolling_metrics.length === 0 ? (
               <p className="text-xs text-muted-foreground py-6 text-center">Need at least 20 trades for a rolling window.</p>
             ) : (
-              <ResponsiveContainer width="100%" height={200}>
-                <LineChart data={data.rolling_metrics}>
-                  <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-                  <XAxis dataKey="time" tick={{ fontSize: 10 }} className="fill-muted-foreground" />
-                  <YAxis tick={{ fontSize: 10 }} className="fill-muted-foreground" />
-                  <ReferenceLine y={0} className="stroke-border" />
-                  <RTooltip
-                    contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 6, fontSize: 11 }}
-                  />
-                  <Line type="monotone" dataKey="rolling_sharpe" name="Sharpe" stroke="hsl(var(--profit))" strokeWidth={1.5} dot={false} />
-                  <Line type="monotone" dataKey="rolling_sortino" name="Sortino" stroke="hsl(var(--accent-foreground))" strokeWidth={1.5} dot={false} />
+              <div className="h-[200px]">
+                <LineChart data={data.rolling_metrics} config={ROLLING_METRICS_CONFIG}>
+                  <Grid />
+                  <XAxis dataKey="time" />
+                  <YAxis />
+                  <ReferenceLine y={0} />
+                  <Line dataKey="rolling_sharpe" />
+                  <Line dataKey="rolling_sortino" />
+                  <DitherTooltip />
                 </LineChart>
-              </ResponsiveContainer>
+              </div>
             )}
           </div>
 
@@ -119,6 +123,15 @@ function PerformanceBody({ data }: { data: NonNullable<ReturnType<typeof usePerf
   );
 }
 
+const ROLLING_METRICS_CONFIG: ChartConfig = {
+  rolling_sharpe: { label: "Sharpe", color: "green" },
+  rolling_sortino: { label: "Sortino", color: "blue" },
+};
+
+const WIN_RATE_CONFIG: ChartConfig = {
+  win_rate: { label: "Win rate", color: "blue" },
+};
+
 function sortDayOfWeek(byDay: Record<string, WinRateBucket>) {
   return DAY_ORDER
     .filter((d) => byDay[d])
@@ -132,23 +145,16 @@ function WinRateBarCard({ title, data }: { title: string; data: (WinRateBucket &
       {data.length === 0 ? (
         <p className="text-xs text-muted-foreground py-6 text-center">No data yet.</p>
       ) : (
-        <ResponsiveContainer width="100%" height={180}>
-          <BarChart data={data}>
-            <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-            <XAxis dataKey="key" tick={{ fontSize: 10 }} className="fill-muted-foreground" />
-            <YAxis tick={{ fontSize: 10 }} className="fill-muted-foreground" tickFormatter={(v) => `${Math.round(v * 100)}%`} />
-            <RTooltip
-              formatter={(v: number) => `${(v * 100).toFixed(0)}%`}
-              contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 6, fontSize: 11 }}
-            />
-            <ReferenceLine y={0.5} className="stroke-border" strokeDasharray="3 3" />
-            <Bar dataKey="win_rate" radius={[3, 3, 0, 0]}>
-              {data.map((d, i) => (
-                <Cell key={i} fill={d.win_rate >= 0.5 ? "hsl(var(--profit))" : "hsl(var(--loss))"} />
-              ))}
-            </Bar>
+        <div className="h-[180px]">
+          <BarChart data={data} config={WIN_RATE_CONFIG}>
+            <Grid />
+            <XAxis dataKey="key" />
+            <YAxis tickFormatter={(v) => `${Math.round(v * 100)}%`} />
+            <ReferenceLine y={0.5} label="50%" />
+            <Bar dataKey="win_rate" />
+            <DitherTooltip valueFormatter={(v) => `${(v * 100).toFixed(0)}%`} />
           </BarChart>
-        </ResponsiveContainer>
+        </div>
       )}
     </div>
   );
