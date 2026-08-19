@@ -110,15 +110,16 @@ You (Chairman, Opus)
   ├── Sentiment Analyst (Sonnet)   → MCP: get_reddit/stocktwits, get_insider_*, get_congress_trades
   └── News/Macro Analyst (Sonnet)  → WebSearch + get_market_regime
   
-  Domain analyst is selected via get_asset_info(ticker):
-    stock/tech       → analyst-sector-tech (R&D, margins, AI exposure)
-    stock/financials → analyst-sector-financials (NIM, credit, ROE)
-    stock/healthcare → analyst-sector-healthcare (pipeline, patents)
-    stock/consumer   → analyst-sector-consumer (brand, pricing power)
-    stock/cyclical   → analyst-sector-cyclical (capex, commodity exposure)
-    etf_bond         → analyst-bonds (yield curve, duration, credit spreads)
-    etf_commodity    → analyst-commodities (supply/demand, DXY, geopolitics)
-    unknown sector   → analyst-fundamental (generic valuation)
+  Domain analyst prompt is selected via get_asset_info(ticker), reading
+  quorum/council/prompts/<name>.md directly (no named skill invocation):
+    stock/tech       → sector_tech.md (R&D, margins, AI exposure)
+    stock/financials → sector_financials.md (NIM, credit, ROE)
+    stock/healthcare → sector_healthcare.md (pipeline, patents)
+    stock/consumer   → sector_consumer.md (brand, pricing power)
+    stock/cyclical   → sector_cyclical.md (capex, commodity exposure)
+    etf_bond         → bonds.md (yield curve, duration, credit spreads)
+    etf_commodity    → commodities.md (supply/demand, DXY, geopolitics)
+    unknown sector   → fundamental.md (generic valuation)
   
   All 4 run in PARALLEL → return structured reports with 1-5 scores
   
@@ -167,8 +168,7 @@ quorum/
 | `.claude/skills/trading-council/` | Legacy monolithic council (superseded by planner+executor) |
 | `.claude/skills/trading-day/` | Full-day scheduling skill |
 | `.claude/skills/market-monitor/` | Background monitoring skill for /loop |
-| `.claude/skills/analyst-*/` | 11 analyst skills (4 universal + 7 domain) with model:sonnet + allowed-tools |
-| `.claude/skills/debate-*/` | 8 debate skills (bull, bear, research-manager, trader, 3 risk, portfolio-manager) |
+| `quorum/council/prompts/` | Analyst/debate prompt text (4 universal + 7 domain analysts, bull/bear/research-manager/trader, 3 risk + PM) — read directly by trading-planner/trading-council, which spawn generic Agent subagents with this content rather than invoking named skills |
 | `quorum/execution/plan.py` | Plan file read/write/validate/metrics for Planner/Executor architecture |
 | `quorum/execution/reflection.py` | Self-reflection engine: generates lessons from past trade outcomes |
 | `quorum/execution/contracts.py` | Futures contract spec registry (22 contracts: multiplier, margin, expiry) |
