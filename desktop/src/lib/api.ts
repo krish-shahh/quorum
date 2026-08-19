@@ -543,14 +543,6 @@ export function fetchDailyRecap(date: string): Promise<DailyRecap> {
 
 // ── Cycles / trace ──
 
-export interface CycleSummary {
-  cycle_id: string;
-  started_at: string;
-  n_trace_events: number;
-  run_ids: string[];
-  status: "running" | "ok" | "error" | "unknown";
-}
-
 export interface TraceEvent {
   event_id: string;
   ts: string;
@@ -576,10 +568,6 @@ export interface CycleDetail {
   started_at: string;
   runs: CycleRun[];
   trace_events: TraceEvent[];
-}
-
-export function fetchCycles(limit = 50): Promise<{ cycles: CycleSummary[] }> {
-  return fetchJson(`/api/v1/cycles?limit=${limit}`);
 }
 
 export function fetchCycleDetail(cycleId: string): Promise<CycleDetail> {

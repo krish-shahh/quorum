@@ -14,23 +14,38 @@ export function anchorElementId(anchorType: AnchorType, anchor: Record<string, u
   return `anno-${anchorType}-${sorted}`.replace(/[^a-zA-Z0-9_:|-]/g, "_");
 }
 
-const VIEW_LABELS: Record<string, string> = {
-  overview: "Overview",
+const VIEW_LABELS: Record<View, string> = {
+  portfolio: "Portfolio",
   performance: "Performance",
-  runs: "Runs",
-  today: "Today",
-  logs: "Logs",
-  positions: "Positions & Trades",
-  scans: "Scans & Reports",
+  activity: "Activity",
+  research: "Research",
 };
 
-/** Which top-level view a thread's anchor lives on. `run` anchors have no
- * `view` field (they're only ever created from RunsView), everything else
- * carries one explicitly. */
+// Anchors created before the 7-tab -> 4-tab consolidation carry the old tab
+// names ("overview", "positions", "runs", "today", "logs", "scans") in their
+// `view` field. Those anchor_key values are stable identifiers in the DB
+// (including on real historical threads) so they're never rewritten —
+// this map just translates them to where that content now lives for
+// navigation/display purposes.
+const LEGACY_VIEW_TO_TAB: Record<string, View> = {
+  overview: "portfolio",
+  positions: "portfolio",
+  runs: "activity",
+  today: "activity",
+  logs: "activity",
+  performance: "performance",
+  scans: "research",
+};
+
+/** Which top-level tab a thread's anchor lives on. `run` anchors have no
+ * `view` field (they're only ever created from the run blotter), everything
+ * else carries one explicitly (current or legacy). */
 export function anchorView(anchorType: AnchorType, anchor: Record<string, unknown>): View {
-  if (typeof anchor.view === "string" && anchor.view in VIEW_LABELS) return anchor.view as View;
-  if (anchorType === "run") return "runs";
-  return "overview";
+  if (typeof anchor.view === "string" && anchor.view in LEGACY_VIEW_TO_TAB) {
+    return LEGACY_VIEW_TO_TAB[anchor.view];
+  }
+  if (anchorType === "run") return "activity";
+  return "portfolio";
 }
 
 export function describeAnchor(anchorType: AnchorType, anchor: Record<string, unknown>): string {
