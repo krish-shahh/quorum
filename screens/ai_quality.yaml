@@ -1,0 +1,34 @@
+# Golden example screen — same role for quorum/screen/ that
+# strategies/regime_gate.yaml plays for quorum/strategy/: a working
+# reference both Claude's codegen (grounding) and the schema tests read.
+screen_id: ai_quality
+version: "0.1"
+description: >
+  Rank the semis-design and software-SaaS buckets by a blend of quality
+  (return on equity) and momentum (20-day price change), filtered to
+  liquid, profitable names with a valid PE ratio.
+
+universe:
+  source: tag
+  tags: [semis_design, software_saas]
+
+filters:
+  - metric: avg_dollar_volume_20d
+    op: gt
+    value: 5000000
+  - metric: roe
+    op: gt
+    value: 0.10
+  - metric: pe_ratio
+    op: is_not_null
+
+rank:
+  by:
+    - metric: roe
+      weight: 0.5
+      direction: desc
+    - metric: pct_change_20d
+      weight: 0.5
+      direction: desc
+  within: universe
+  limit: 15

@@ -619,17 +619,18 @@ def api_v1_annotation_resolve(annotation_id):
 
 @api_bp.route("/api/v1/validate-spec", methods=["POST"])
 def api_v1_validate_spec():
-    """Validate a generated strategy YAML against the closed-grammar
-    schema before it reaches a human or a retry loop. A failing *spec* is
-    not a failing *request* — always 200; check the response's "ok" field."""
+    """Validate a generated strategy or screen YAML against its closed-
+    grammar schema before it reaches a human or a retry loop. A failing
+    *spec* is not a failing *request* — always 200; check the response's
+    "ok" field."""
     from quorum.strategy.validate import validate_spec_text
 
     payload = request.get_json(force=True) or {}
     kind = payload.get("kind")
     text = payload.get("text")
     expected_id = payload.get("expected_id")
-    if kind != "strategy" or not text:
-        return jsonify({"error": "kind ('strategy') and text are required"}), 400
+    if kind not in ("strategy", "screen") or not text:
+        return jsonify({"error": "kind ('strategy' or 'screen') and text are required"}), 400
     return jsonify(validate_spec_text(kind, text, expected_id))
 
 

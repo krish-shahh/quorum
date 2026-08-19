@@ -13,7 +13,9 @@ pytest.importorskip("flask")
 
 pytestmark = pytest.mark.unit
 
-_GOLDEN_TEXT = (Path(__file__).resolve().parents[1] / "strategies" / "regime_gate.yaml").read_text()
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+_GOLDEN_TEXT = (_REPO_ROOT / "strategies" / "regime_gate.yaml").read_text()
+_GOLDEN_SCREEN_TEXT = (_REPO_ROOT / "screens" / "ai_quality.yaml").read_text()
 
 
 @pytest.fixture
@@ -58,3 +60,14 @@ def test_expected_id_mismatch_returns_ok_false(client):
     body = r.get_json()
     assert body["ok"] is False
     assert "different_id" in body["errors"][0]
+
+
+def test_valid_screen_kind_returns_ok_true(client):
+    r = client.post("/api/v1/validate-spec", json={"kind": "screen", "text": _GOLDEN_SCREEN_TEXT})
+    assert r.status_code == 200
+    assert r.get_json()["ok"] is True
+
+
+def test_unsupported_kind_is_a_400(client):
+    r = client.post("/api/v1/validate-spec", json={"kind": "bogus", "text": _GOLDEN_TEXT})
+    assert r.status_code == 400

@@ -2,10 +2,7 @@
 (Track 2, Feature A). A generated YAML spec is checked here before a human
 (or a retry loop) ever sees it; Pydantic's own ``ValidationError.errors()``
 already produces LLM-readable messages, so there's no separate error
-formatting layer to keep in sync with the schema.
-
-``kind`` is ``Literal["strategy"]`` for now — widened to include
-``"screen"`` once ``quorum/screen/schema.py`` exists (Feature B).
+formatting layer to keep in sync with either schema.
 """
 
 from __future__ import annotations
@@ -17,6 +14,7 @@ import yaml
 from pydantic import ValidationError
 
 from .schema import load_strategy
+from ..screen.schema import load_screen
 
 _FENCE_RE = re.compile(r"^```(?:yaml)?\n([\s\S]*?)\n```$")
 
@@ -29,8 +27,14 @@ def strip_code_fence(text: str) -> str:
     return match.group(1) if match else text
 
 
+_LOADERS = {
+    "strategy": (load_strategy, "strategy_id"),
+    "screen": (load_screen, "screen_id"),
+}
+
+
 def validate_spec_text(
-    kind: Literal["strategy"],
+    kind: Literal["strategy", "screen"],
     text: str,
     expected_id: Optional[str] = None,
 ) -> Dict[str, Any]:
@@ -55,19 +59,21 @@ def validate_spec_text(
             "errors": ["spec must be a YAML mapping, not a list or scalar"],
         }
 
-    if kind != "strategy":
+    if kind not in _LOADERS:
         raise ValueError(f"unknown spec kind: {kind!r}")
+    loader, id_field = _LOADERS[kind]
 
     try:
-        spec = load_strategy(raw)
+        spec = loader(raw)
     except ValidationError as e:
         errors = [f"{'.'.join(str(p) for p in err['loc'])}: {err['msg']}" for err in e.errors()]
         return {"ok": False, "cleaned_text": cleaned, "errors": errors}
 
-    if expected_id is not None and spec.strategy_id != expected_id:
+    spec_id = getattr(spec, id_field)
+    if expected_id is not None and spec_id != expected_id:
         return {
             "ok": False, "cleaned_text": cleaned,
-            "errors": [f"strategy_id '{spec.strategy_id}' does not match expected id '{expected_id}'"],
+            "errors": [f"{id_field} '{spec_id}' does not match expected id '{expected_id}'"],
         }
 
     return {"ok": True, "cleaned_text": cleaned}

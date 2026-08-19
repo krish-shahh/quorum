@@ -16,8 +16,10 @@ from quorum.strategy.validate import strip_code_fence, validate_spec_text
 
 pytestmark = pytest.mark.unit
 
-_GOLDEN_PATH = Path(__file__).resolve().parents[1] / "strategies" / "regime_gate.yaml"
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+_GOLDEN_PATH = _REPO_ROOT / "strategies" / "regime_gate.yaml"
 _GOLDEN_TEXT = _GOLDEN_PATH.read_text()
+_GOLDEN_SCREEN_TEXT = (_REPO_ROOT / "screens" / "ai_quality.yaml").read_text()
 
 
 class TestStripCodeFence:
@@ -76,3 +78,20 @@ class TestValidateSpecText:
     def test_matching_expected_id_passes(self):
         result = validate_spec_text("strategy", _GOLDEN_TEXT, expected_id="regime_gate")
         assert result["ok"] is True
+
+    def test_valid_screen_passes(self):
+        result = validate_spec_text("screen", _GOLDEN_SCREEN_TEXT)
+        assert result["ok"] is True
+
+    def test_screen_schema_violation_reports_pydantic_errors(self):
+        raw = yaml.safe_load(_GOLDEN_SCREEN_TEXT)
+        raw["rank"]["by"][0]["weight"] = 0.9  # no longer sums to 1.0
+        result = validate_spec_text("screen", yaml.dump(raw))
+        assert result["ok"] is False
+        assert any("sum to 1.0" in e for e in result["errors"])
+
+    def test_screen_id_mismatch_uses_screen_id_field_name(self):
+        result = validate_spec_text("screen", _GOLDEN_SCREEN_TEXT, expected_id="some_other_screen")
+        assert result["ok"] is False
+        assert "screen_id" in result["errors"][0]
+        assert "does not match expected id" in result["errors"][0]
