@@ -91,6 +91,7 @@ def run_bar_loop(
     regime_series: Optional[pd.Series] = None,
     log_config: Optional[Dict[str, Any]] = None,
     mode: str = "backtest",
+    sizing_override: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Run one backtest of `spec` over `symbols` against pre-fetched `ohlcv`.
 
@@ -103,6 +104,12 @@ def run_bar_loop(
     `log_config`, if given, is a quorum config dict (needs at least
     `db_path`) — every fired signal/target/order/fill is written through
     quorum/execution/decision_log.py under one new `run` row of mode=`mode`.
+    `sizing_override='equal_weight'` ignores spec.sizing and allocates
+    1 / N per new position (N = risk.max_positions, or len(symbols) if
+    unset) — used to run a shadow benchmark sleeve (see
+    quorum/strategy/shadow.py) against the SAME entry/exit signals and
+    cost model as the real strategy, isolating whether its sizing method
+    adds value over naive equal-weighting of the same picks.
     """
     all_features = compute_all_features(spec.features, ohlcv)
     entry_group, exit_group = spec.signal.entry, spec.signal.exit
@@ -175,7 +182,14 @@ def run_bar_loop(
 
             atr = all_features[atr_feature_name].iloc[i] if atr_feature_name else None
             price = ohlcv[symbol]["close"].iloc[i]
-            weight = size_weight(spec, symbol, price, atr) * mult
+            if sizing_override == "equal_weight":
+                # No regime multiplier here either — the shadow sleeve isolates
+                # stock selection from the strategy's sizing/risk sophistication,
+                # not just its sizing formula.
+                n = spec.risk.max_positions or len(symbols)
+                weight = 1.0 / max(1, n)
+            else:
+                weight = size_weight(spec, symbol, price, atr) * mult
             weight = min(weight, spec.risk.max_single_ticker_pct)
             if weight <= 0:
                 state.suppressed.append({"ts": str(ts), "symbol": symbol, "reason": "zero_weight"})

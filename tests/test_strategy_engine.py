@@ -266,3 +266,34 @@ def test_log_config_records_suppressed_signal(tmp_path):
         (result["run_id"],),
     ).fetchall()
     assert any(row[0] == "max_positions" for row in suppressed)
+
+
+def test_equal_weight_sizing_override_ignores_spec_sizing_method():
+    spec = load_strategy({
+        "strategy_id": "eq_weight_test",
+        "version": "0.1",
+        "universe": {"source": "static", "tickers": ["A", "B"]},
+        "features": [{"name": "above", "op": "gt", "inputs": ["A.close", "A.threshold"]}],
+        "signal": {"entry": {"all_of": ["above"]}, "exit": {"any_of": ["above"]}},
+        # flat_pct=0.9 would size a single position at 90% if honored —
+        # sizing_override should ignore it entirely.
+        "sizing": {"method": "flat_pct", "flat_pct": 0.9, "max_position_pct": 0.9},
+        "risk": {"max_positions": 2, "max_single_ticker_pct": 0.9},
+    })
+    idx = pd.date_range("2026-01-01", periods=3, freq="D")
+    high_close = pd.Series([200.0] * 3, index=idx)
+    high_threshold = pd.Series([100.0] * 3, index=idx)
+    ohlcv = {
+        s: pd.DataFrame({"open": high_close, "high": high_close, "low": high_close,
+                          "close": high_close, "volume": 1000, "threshold": high_threshold})
+        for s in ("A", "B")
+    }
+
+    result = run_bar_loop(
+        spec, ohlcv, symbols=["A", "B"], starting_cash=100_000.0,
+        sizing_override="equal_weight",
+    )
+
+    # Both A and B enter on bar 0; equal-weight with max_positions=2 -> 50% each,
+    # not 90% (which would have blocked B via cash exhaustion or the ticker cap).
+    assert len(result["open_positions"]) == 2
