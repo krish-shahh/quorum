@@ -10,37 +10,46 @@ The architecture is inspired by [TauricResearch/TradingAgents](https://github.co
 
 ## How It Works
 
+```mermaid
+flowchart TD
+    YAML["strategies/*.yaml<br/><sub>closed-grammar, git-committed</sub>"]:::det
+    GATE["Backtest gate<br/><sub>DSR · PBO · WFE · 3x cost-stress</sub>"]:::det
+    ENGINE["Bar-loop engine<br/><sub>features → entry/exit → vol-target sizing</sub>"]:::det
+
+    YAML -->|must pass| GATE -->|promoted| ENGINE
+
+    CAND["get_pod_candidates<br/><sub>ranked entries</sub>"]:::data
+    EXIT["get_pod_exits<br/><sub>stop-loss · max-hold · rule-exit</sub>"]:::data
+    ENGINE --> CAND
+    ENGINE --> EXIT
+
+    ANALYST["pod-analyst<br/><sub>evidence extraction only — no score</sub>"]:::llm
+    PM["pod-pm<br/><sub>approve / reduce / veto</sub>"]:::llm
+    CAND --> ANALYST --> PM
+
+    RISK["pre-trade hook<br/><sub>central risk desk — outside every pod</sub>"]:::risk
+    PM -->|target_weight| RISK
+    EXIT -->|full unwind| RISK
+
+    BROKER["paper broker fill"]:::data
+    RISK --> BROKER
+
+    LOG[("decision log<br/><sub>run → signal → target → order → fill</sub>")]:::data
+    BROKER --> LOG
+    CAND -.logged.-> LOG
+    EXIT -.logged.-> LOG
+
+    SHADOW["shadow sleeve<br/><sub>same signals, equal-weight, no pod</sub>"]:::det
+    ENGINE -.parallel.-> SHADOW --> LOG
+    SHADOW -.beats pod?.-> PM
+
+    classDef det fill:#E4F0EB,stroke:#1F6F5C,stroke-width:1.4px,color:#14202B
+    classDef llm fill:#F5E8D6,stroke:#A85F17,stroke-width:1.4px,color:#14202B
+    classDef risk fill:#F3E1E1,stroke:#9A3A3A,stroke-width:1.4px,color:#14202B
+    classDef data fill:#E1EAF3,stroke:#2E5C8A,stroke-width:1.4px,color:#14202B
 ```
-strategies/*.yaml (git-committed, closed-grammar schema)
-        │
-        ▼
-strategy engine — one streaming bar loop, shared by backtest/paper/shadow.
-Deterministic: features → entry/exit conditions → vol-targeted sizing →
-regime-scaled weight. No LLM in this layer, and fills only ever happen at
-the NEXT bar's open — lookahead is structurally impossible, not just
-runtime-checked.
-        │
-        ▼
-ranked candidates + mechanical exit checks (stop-loss / max-hold / rule-exit)
-        │
-        ▼
-pod (one per strategy)
-  ├── pod-analyst — evidence extraction only: news, SEC filing deltas,
-  │     earnings proximity → structured, cited facts. No score, no
-  │     buy/sell recommendation.
-  └── pod-pm      — approve at proposed weight / reduce / veto. Never
-        invents a trade the strategy didn't propose. Every decision is
-        logged for audit.
-        │
-        ▼
-paper broker, gated by a deterministic pre-trade hook (the central risk
-desk — sits outside every pod, no pod PM can override it)
-        │
-        ▼
-decision log (SQLite): run → signal → target → order → fill, plus a
-shadow sleeve running the same signals equal-weighted with no pod
-involvement, so the pod's added value is measured, not assumed.
-```
+
+**Deterministic** (green) — pure code, no LLM judgment: strategy YAML, the bar-loop engine, the backtest gate's statistics, the shadow sleeve. **Pod** (amber) — Claude's only two roles: extract evidence, or approve/reduce/veto a candidate the engine already proposed. **Risk desk** (red) — sits outside every pod; hard limits no pod PM can override. **Data/log** (blue) — the decision log and its readers, same schema whether the run is backtest, paper, shadow, or live.
 
 ### Why it's built this way
 
