@@ -114,6 +114,24 @@ def backfill_pnl():
     )
 
 
+@app.command(name="fill-forward-returns")
+def fill_forward_returns():
+    """Batch-fill forward returns on signal_scores rows old enough to score.
+
+    Was previously only run lazily, inside the get_analyst_accuracy MCP
+    tool handler — which nothing calls, so the 1d/5d/20d forward-return
+    columns just sat NULL. This is the real, schedulable entry point;
+    it needs to actually run on a cadence (e.g. appended to
+    scripts/start-trading-day.sh, or a new daily launchd step) for
+    compute_analyst_accuracy() to ever see filled data. Processes up to
+    50 rows per call — safe to run repeatedly.
+    """
+    from quorum.execution.db import fill_forward_returns as _fill
+
+    updated = _fill(DEFAULT_CONFIG)
+    console.print(f"[green]Filled forward returns on {updated} signal_scores row(s).[/green]")
+
+
 @app.command()
 def scan(
     mode: str = typer.Option(

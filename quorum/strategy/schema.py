@@ -164,6 +164,7 @@ class RiskSpec(BaseModel):
     stop_loss_atr_mult: Optional[float] = None
     max_positions: Optional[int] = None
     max_single_ticker_pct: float = 0.20
+    max_holding_days: Optional[int] = None
 
 
 class ExecutionSpec(BaseModel):

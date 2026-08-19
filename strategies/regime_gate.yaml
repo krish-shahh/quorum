@@ -58,6 +58,10 @@ risk:
   stop_loss_atr_mult: 2.0
   max_positions: 15
   max_single_ticker_pct: 0.20
+  # Backstop, not a target hold time — this is a multi-week/month trend
+  # follower that should mostly exit on xlk_below_200dma. One trading year
+  # bounds the worst case where a risk-on regime just never breaks.
+  max_holding_days: 252
 
 execution:
   fill_timing: next_bar_open

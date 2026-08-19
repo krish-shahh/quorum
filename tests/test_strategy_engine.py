@@ -150,6 +150,61 @@ def test_max_positions_suppresses_new_entries_once_at_cap():
     assert any(s["reason"] == "max_positions" for s in result["suppressed"])
 
 
+def test_max_holding_days_forces_exit_even_though_entry_condition_still_holds():
+    """The postmortem rule: a position held past its planned horizon closes,
+    even with no stop-loss hit and no rule-based exit condition firing."""
+    spec = load_strategy({
+        "strategy_id": "max_hold_test",
+        "version": "0.1",
+        "universe": {"source": "static", "tickers": ["TEST"]},
+        "features": [
+            {"name": "above", "op": "gt", "inputs": ["TEST.close", "TEST.threshold"]},
+            {"name": "never", "op": "lt", "inputs": ["TEST.close", "TEST.floor"]},
+        ],
+        "signal": {
+            "direction": "long_only",
+            "entry": {"all_of": ["above"]},
+            "exit": {"any_of": ["never"]},
+        },
+        "sizing": {"method": "flat_pct", "flat_pct": 0.5, "max_position_pct": 0.6},
+        "risk": {"max_single_ticker_pct": 0.6, "max_holding_days": 3},
+        "execution": {"cost_bps": 0.0},
+    })
+    idx = pd.date_range("2026-01-01", periods=10, freq="D")
+    close = pd.Series([110.0] * 10, index=idx)
+    ohlcv = {
+        "TEST": pd.DataFrame({
+            "open": close, "high": close, "low": close, "close": close,
+            "volume": 1000, "threshold": 100.0, "floor": 0.0,
+        })
+    }
+
+    result = run_bar_loop(spec, ohlcv, symbols=["TEST"], starting_cash=100_000.0)
+
+    # Entry decided at bar 0 (close=110 > 100), filled at bar 1's open -> entry_ts = idx[1].
+    # Held-days first reaches 3 at bar 4 (idx[4] - idx[1] == 3 days) -> exit
+    # decided at bar 4, filled at bar 5's open. The entry condition is still
+    # true afterward, so the engine re-enters on the very next bar — only
+    # the first trade is asserted on here.
+    assert len(result["trades"]) >= 1
+    trade = result["trades"][0]
+    assert trade["reason"] == "max_holding_days"
+    assert trade["entry_ts"] == str(idx[1])
+    assert trade["exit_ts"] == str(idx[5])
+
+
+def test_max_holding_days_none_leaves_position_open_indefinitely():
+    spec = _tiny_spec(cost_bps=0.0)
+    ohlcv = _tiny_ohlcv()
+    assert spec.risk.max_holding_days is None
+
+    result = run_bar_loop(spec, ohlcv, symbols=["TEST"], starting_cash=100_000.0)
+
+    # Unaffected: the fixture's usual stop/rule exit still fires at bar 8,
+    # not something new introduced by the (absent) max-holding-days check.
+    assert result["trades"][0]["reason"] == "rule_exit"
+
+
 def _isolated_log_config(tmp_path):
     return {
         "db_path": str(tmp_path / "test.db"),

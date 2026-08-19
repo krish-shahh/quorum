@@ -1111,3 +1111,83 @@ def compute_analyst_accuracy(config: Optional[Dict[str, Any]] = None) -> Dict[st
         }
 
     return result
+
+
+def select_active_analysts(
+    config: Optional[Dict[str, Any]] = None,
+    *,
+    min_ic: float = 0.0,
+    min_sample: int = 20,
+    alpha: float = 0.05,
+) -> List[str]:
+    """Return analyst categories whose IC clears a statistical significance bar.
+
+    Calls compute_analyst_accuracy() and keeps an analyst only if:
+      - it has at least `min_sample` scored rows (the analyst's own `n`,
+        not just the overall signal_scores sample size gating
+        compute_analyst_accuracy's "insufficient_data" status);
+      - its IC's Spearman p-value is below `alpha` — i.e. the rank
+        correlation with forward_return_5d is unlikely to be noise given
+        the sample size, not just sign-positive; a p-value can't be
+        computed (scipy unavailable), a manual t-test on the IC is used
+        as a fallback so the significance check never silently degrades
+        to "IC > 0";
+      - its IC magnitude clears `min_ic` (a materiality floor on top of
+        significance — an IC that's statistically real but tiny isn't
+        worth differentiating on).
+
+    This is the decision function described in the plan ("an analyst
+    whose IC is indistinguishable from zero gets dropped from the slim
+    council rather than kept for symmetry") — it is NOT yet wired into a
+    live council call, since the slim-council selection point (Phase 4)
+    doesn't exist yet. Call sites should treat this as ready-to-wire, not
+    already-active.
+    """
+    result = compute_analyst_accuracy(config)
+    if result.get("status") != "ok":
+        return []
+
+    active: List[str] = []
+    for analyst in ("technical", "fundamental", "sentiment", "news", "council"):
+        stats = result.get(analyst)
+        if not stats or stats.get("ic") is None:
+            continue
+        n = stats.get("n") or 0
+        ic = stats["ic"]
+        if n < min_sample:
+            continue
+        if abs(ic) < min_ic:
+            continue
+
+        p_value = stats.get("p_value")
+        if p_value is None:
+            p_value = _ic_p_value_fallback(ic, n)
+        if p_value is None or p_value >= alpha:
+            continue
+
+        active.append(analyst)
+    return active
+
+
+def _ic_p_value_fallback(ic: float, n: int) -> Optional[float]:
+    """Two-tailed p-value for a Spearman/Pearson-style IC via the t-approximation.
+
+    Used only when scipy's spearmanr wasn't available to compute_analyst_accuracy
+    (so its own p_value came back None) — keeps significance testing from
+    silently degrading to a bare sign check on small deployments without scipy.
+    """
+    if n < 3 or abs(ic) >= 1.0:
+        return 0.0 if abs(ic) >= 1.0 and n >= 3 else None
+    try:
+        from scipy import stats as _stats
+        t_stat = ic * ((n - 2) / (1 - ic ** 2)) ** 0.5
+        return float(2 * (1 - _stats.t.cdf(abs(t_stat), df=n - 2)))
+    except ImportError:
+        # No scipy at all: fall back to the large-sample normal approximation
+        # (t distribution -> normal as df grows) rather than skipping the
+        # significance check entirely.
+        t_stat = ic * ((n - 2) / (1 - ic ** 2)) ** 0.5
+        # Abramowitz & Stegun 26.2.17 normal CDF approximation.
+        z = abs(t_stat)
+        cdf = 1 - 0.5 * (1 + 0.196854 * z + 0.115194 * z ** 2 + 0.000344 * z ** 3 + 0.019527 * z ** 4) ** -4
+        return float(2 * (1 - cdf))

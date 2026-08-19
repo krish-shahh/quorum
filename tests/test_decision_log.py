@@ -42,6 +42,23 @@ def test_finish_run_updates_status_and_metrics(tmp_path):
     assert '"sharpe": 1.2' in row[1]
 
 
+def test_new_sweep_persists_n_trials_cumulative(tmp_path):
+    """Every refit is meant to increment n_trials_cumulative once a sweep
+    runner exists to call new_sweep() repeatedly (no such runner is built
+    yet). This just confirms the column round-trips correctly, which is
+    the precondition for that future incrementing to actually work."""
+    config = _config(tmp_path)
+
+    sweep_id = dl.new_sweep(
+        config, strategy_id="regime_gate", n_trials=5, n_trials_cumulative=37,
+    )
+
+    row = db.get_db(config).execute(
+        "SELECT n_trials, n_trials_cumulative FROM sweep WHERE sweep_id = ?", (sweep_id,)
+    ).fetchone()
+    assert tuple(row) == (5, 37)
+
+
 def test_record_order_rejects_invalid_side(tmp_path):
     config = _config(tmp_path)
     run_id = dl.new_run(config, strategy_id="s", mode="paper")

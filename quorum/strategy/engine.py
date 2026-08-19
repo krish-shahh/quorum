@@ -145,9 +145,11 @@ def run_bar_loop(
                 and pos.entry_atr is not None
                 and price_now <= pos.entry_price - spec.risk.stop_loss_atr_mult * pos.entry_atr
             )
+            held_days = (ts - pos.entry_ts).days if spec.risk.max_holding_days is not None else None
+            max_hold_hit = held_days is not None and held_days >= spec.risk.max_holding_days
             rule_exit = symbol in symbols and _group_true(exit_group, i)
-            if stop_hit or rule_exit:
-                reason = "stop_loss" if stop_hit else "rule_exit"
+            if stop_hit or max_hold_hit or rule_exit:
+                reason = "stop_loss" if stop_hit else ("max_holding_days" if max_hold_hit else "rule_exit")
                 sig_id = None
                 if run_id is not None:
                     sig_id = dl.record_signal(
