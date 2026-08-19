@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { Play, Save, Sparkles } from "lucide-react";
+import { ListPlus, Play, Save, Sparkles } from "lucide-react";
 import { cn, formatPct } from "@/lib/utils";
-import { fetchScreens, runScreen, type ScreenRunResult } from "@/lib/api";
+import { fetchScreens, postWatchlist, runScreen, type ScreenRunResult } from "@/lib/api";
 import { generateValidatedSpec, type SpecAttempt } from "@/lib/codegen";
 
 const AVAILABLE = typeof window !== "undefined" && !!window.electronAPI?.flaskPort;
@@ -41,9 +41,9 @@ rank:
 
 /** Create/run workbench for git-committed screens/*.yaml — a sibling of
  * StrategyLab, not an extension of it: a screen never trades. Research
- * only, no path to execute_paper_trade. Selecting result rows and sending
- * them to the watchlist or Strategy Lab is Feature B6, not built yet. */
-export default function ScreenerPanel() {
+ * only, no path to execute_paper_trade. Result rows can be selected and
+ * sent to the watchlist or seeded into a new Strategy Lab draft. */
+export default function ScreenerPanel({ onSendToStrategyLab }: { onSendToStrategyLab: (tickers: string[]) => void }) {
   const [screens, setScreens] = useState<string[]>([]);
   const [selected, setSelected] = useState(""); // "" = new screen
   const [screenId, setScreenId] = useState("");
@@ -60,6 +60,10 @@ export default function ScreenerPanel() {
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<ScreenRunResult | null>(null);
   const [runError, setRunError] = useState<string | null>(null);
+
+  const [checked, setChecked] = useState<Set<string>>(new Set());
+  const [addingToWatchlist, setAddingToWatchlist] = useState(false);
+  const [watchlistMsg, setWatchlistMsg] = useState<string | null>(null);
 
   useEffect(() => {
     if (AVAILABLE) refreshScreens();
@@ -134,6 +138,8 @@ export default function ScreenerPanel() {
     if (!selected) return;
     setRunning(true);
     setRunError(null);
+    setChecked(new Set());
+    setWatchlistMsg(null);
     try {
       setResult(await runScreen(selected));
     } catch (e) {
@@ -141,6 +147,34 @@ export default function ScreenerPanel() {
     } finally {
       setRunning(false);
     }
+  }
+
+  function toggleChecked(symbol: string) {
+    setChecked((prev) => {
+      const next = new Set(prev);
+      if (next.has(symbol)) next.delete(symbol);
+      else next.add(symbol);
+      return next;
+    });
+  }
+
+  async function addSelectedToWatchlist() {
+    if (checked.size === 0) return;
+    setAddingToWatchlist(true);
+    setWatchlistMsg(null);
+    try {
+      const res = await postWatchlist([...checked]);
+      setWatchlistMsg(`Added to watchlist (${res.tickers.length} total).`);
+    } catch (e) {
+      setWatchlistMsg(e instanceof Error ? e.message : String(e));
+    } finally {
+      setAddingToWatchlist(false);
+    }
+  }
+
+  function sendSelectedToStrategyLab() {
+    if (checked.size === 0) return;
+    onSendToStrategyLab([...checked]);
   }
 
   if (!AVAILABLE) return null;
@@ -289,38 +323,67 @@ export default function ScreenerPanel() {
           {result.rows.length === 0 ? (
             <p className="text-xs text-muted-foreground">No symbols passed the filters.</p>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="border-b bg-muted/50">
-                    <th className="text-left px-3 py-2 font-medium text-muted-foreground">#</th>
-                    <th className="text-left px-3 py-2 font-medium text-muted-foreground">Symbol</th>
-                    <th className="text-right px-3 py-2 font-medium text-muted-foreground">Score</th>
-                    <th className="text-right px-3 py-2 font-medium text-muted-foreground">Coverage</th>
-                    {metricColumns.map((m) => (
-                      <th key={m} className="text-right px-3 py-2 font-medium text-muted-foreground">{m}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {result.rows.map((row, i) => (
-                    <tr key={row.symbol} className="border-b last:border-0 hover:bg-muted/30 transition-colors">
-                      <td className="px-3 py-2 text-muted-foreground">{i + 1}</td>
-                      <td className="px-3 py-2 font-mono font-medium">{row.symbol}</td>
-                      <td className="px-3 py-2 text-right font-mono">
-                        {row.rank_score != null ? row.rank_score.toFixed(3) : "—"}
-                      </td>
-                      <td className="px-3 py-2 text-right font-mono">{formatPct(row.coverage)}</td>
+            <>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={addSelectedToWatchlist}
+                  disabled={checked.size === 0 || addingToWatchlist}
+                  className="inline-flex items-center gap-1 text-[11px] font-medium px-2.5 py-1 rounded bg-accent text-accent-foreground disabled:opacity-50"
+                >
+                  <ListPlus className="w-3 h-3" /> Add {checked.size > 0 ? checked.size : ""} to watchlist
+                </button>
+                <button
+                  onClick={sendSelectedToStrategyLab}
+                  disabled={checked.size === 0}
+                  title="Seed a new strategy's universe with the selected tickers"
+                  className="inline-flex items-center gap-1 text-[11px] font-medium px-2.5 py-1 rounded border disabled:opacity-50"
+                >
+                  <Sparkles className="w-3 h-3" /> Send {checked.size > 0 ? checked.size : ""} to Strategy Lab
+                </button>
+                {watchlistMsg && <span className="text-[11px] text-muted-foreground">{watchlistMsg}</span>}
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b bg-muted/50">
+                      <th className="px-3 py-2 w-8"></th>
+                      <th className="text-left px-3 py-2 font-medium text-muted-foreground">#</th>
+                      <th className="text-left px-3 py-2 font-medium text-muted-foreground">Symbol</th>
+                      <th className="text-right px-3 py-2 font-medium text-muted-foreground">Score</th>
+                      <th className="text-right px-3 py-2 font-medium text-muted-foreground">Coverage</th>
                       {metricColumns.map((m) => (
-                        <td key={m} className="px-3 py-2 text-right font-mono text-muted-foreground">
-                          {row.metrics[m] != null ? row.metrics[m]!.toFixed(2) : "—"}
-                        </td>
+                        <th key={m} className="text-right px-3 py-2 font-medium text-muted-foreground">{m}</th>
                       ))}
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {result.rows.map((row, i) => (
+                      <tr key={row.symbol} className="border-b last:border-0 hover:bg-muted/30 transition-colors">
+                        <td className="px-3 py-2">
+                          <input
+                            type="checkbox"
+                            checked={checked.has(row.symbol)}
+                            onChange={() => toggleChecked(row.symbol)}
+                          />
+                        </td>
+                        <td className="px-3 py-2 text-muted-foreground">{i + 1}</td>
+                        <td className="px-3 py-2 font-mono font-medium">{row.symbol}</td>
+                        <td className="px-3 py-2 text-right font-mono">
+                          {row.rank_score != null ? row.rank_score.toFixed(3) : "—"}
+                        </td>
+                        <td className="px-3 py-2 text-right font-mono">{formatPct(row.coverage)}</td>
+                        {metricColumns.map((m) => (
+                          <td key={m} className="px-3 py-2 text-right font-mono text-muted-foreground">
+                            {row.metrics[m] != null ? row.metrics[m]!.toFixed(2) : "—"}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
           )}
         </div>
       )}

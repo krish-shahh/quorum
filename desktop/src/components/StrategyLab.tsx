@@ -63,6 +63,18 @@ execution:
   cost_bps: 10
 `;
 
+/** TEMPLATE with its "tag" universe block swapped for a static one built
+ * from `tickers` — used to seed a new strategy from the screener's "Send
+ * to Strategy Lab" action (Feature B6). Deliberately not regex-rewriting
+ * an EXISTING strategy's YAML text — too easy to corrupt a committed
+ * file — this only ever seeds a fresh draft. */
+function templateWithStaticUniverse(tickers: string[]): string {
+  const header = TEMPLATE.split("\nuniverse:")[0];
+  const rest = TEMPLATE.split("\n\nfeatures:")[1];
+  const universeBlock = `universe:\n  source: static\n  tickers: [${tickers.join(", ")}]\n`;
+  return `${header}\n${universeBlock}\nfeatures:${rest}`;
+}
+
 interface BacktestResult {
   run_id: string | null;
   strategy_id: string;
@@ -88,7 +100,17 @@ interface ShadowResult {
  * writable files) — schema validation happens for free the moment you
  * backtest, since load_strategy raises with a specific error instead of
  * this needing its own separate validation path to keep in sync. */
-export default function StrategyLab({ onOpenRun }: { onOpenRun: (runId: string) => void }) {
+export default function StrategyLab({
+  onOpenRun, initialUniverse, onConsumedInitialUniverse,
+}: {
+  onOpenRun: (runId: string) => void;
+  /** Ticker list from the screener's "Send to Strategy Lab" action
+   * (Feature B6) — when set, seeds a fresh new-strategy draft and is
+   * immediately consumed via onConsumedInitialUniverse, same pattern as
+   * ActivityView's initialRunId/onConsumedInitialRun. */
+  initialUniverse?: string[] | null;
+  onConsumedInitialUniverse?: () => void;
+}) {
   const [strategies, setStrategies] = useState<string[]>([]);
   const [selected, setSelected] = useState(""); // "" = new strategy
   const [strategyId, setStrategyId] = useState("");
@@ -112,6 +134,16 @@ export default function StrategyLab({ onOpenRun }: { onOpenRun: (runId: string) 
   useEffect(() => {
     if (AVAILABLE) refreshStrategies();
   }, []);
+
+  useEffect(() => {
+    if (initialUniverse && initialUniverse.length > 0) {
+      setSelected("");
+      setStrategyId("");
+      setSaveMsg(null);
+      setYamlText(templateWithStaticUniverse(initialUniverse));
+      onConsumedInitialUniverse?.();
+    }
+  }, [initialUniverse]);
 
   async function refreshStrategies() {
     setStrategies(await window.electronAPI.listStrategies());

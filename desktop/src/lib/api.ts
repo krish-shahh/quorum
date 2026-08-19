@@ -541,3 +541,21 @@ export async function runScreen(screenId: string, asOf?: string): Promise<Screen
   if (!res.ok) throw new Error(`API error: ${res.status} ${res.statusText}`);
   return res.json();
 }
+
+export interface WatchlistResult {
+  tickers: string[];
+  schedule_time: string;
+}
+
+/** Append (default) or replace the saved watchlist. Used by the
+ * screener's "Add to watchlist" result action (Feature B6) — same
+ * dedup/append semantics as the add_to_watchlist MCP tool. */
+export async function postWatchlist(tickers: string[], mode: "append" | "replace" = "append"): Promise<WatchlistResult> {
+  const res = await fetch(`${BASE_URL}/api/v1/watchlist`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ tickers, mode }),
+  });
+  if (!res.ok) throw new Error(`API error: ${res.status} ${res.statusText}`);
+  return res.json();
+}

@@ -17,6 +17,7 @@ export default function App() {
   const [view, setView] = useState<View>("portfolio");
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [pendingRunId, setPendingRunId] = useState<string | null>(null);
+  const [pendingUniverse, setPendingUniverse] = useState<string[] | null>(null);
   const { data, dataUpdatedAt, isLoading, error } = useDashboard(live);
 
   // Comments drawer "jump to" — switch view, then poll for the target
@@ -93,8 +94,10 @@ export default function App() {
                 setPendingRunId(runId);
                 setView("activity");
               }}
+              initialUniverse={pendingUniverse}
+              onConsumedInitialUniverse={() => setPendingUniverse(null)}
             />
-            <ScreenerPanel />
+            <ScreenerPanel onSendToStrategyLab={setPendingUniverse} />
             <ScansPanel />
           </>
         )}

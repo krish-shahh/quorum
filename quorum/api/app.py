@@ -635,6 +635,36 @@ def api_v1_validate_spec():
     return jsonify(validate_spec_text(kind, text, expected_id))
 
 
+@api_bp.route("/api/v1/watchlist", methods=["GET", "POST"])
+def api_v1_watchlist():
+    """GET the saved watchlist; POST to append or replace it. First write
+    route beyond kill-switch/annotations — acceptable since the watchlist
+    isn't capital and is already MCP-writable (add_to_watchlist)."""
+    from quorum.execution.trade_data import load_watchlist, save_watchlist
+
+    config = _cfg()
+
+    if request.method == "GET":
+        return jsonify(load_watchlist(config))
+
+    payload = request.get_json(force=True) or {}
+    new_tickers = [t.strip().upper() for t in payload.get("tickers", []) if t and t.strip()]
+    mode = payload.get("mode", "append")
+
+    wl = load_watchlist(config)
+    if mode == "replace":
+        tickers = sorted(dict.fromkeys(new_tickers))
+    else:
+        tickers = list(wl.get("tickers", []))
+        for t in new_tickers:
+            if t not in tickers:
+                tickers.append(t)
+
+    schedule_time = wl.get("schedule_time", "09:00")
+    save_watchlist(config, tickers, schedule_time)
+    return jsonify({"tickers": tickers, "schedule_time": schedule_time})
+
+
 _SCREEN_ID_RE = re.compile(r"^[a-z][a-z0-9_]{1,63}$")
 
 
