@@ -82,7 +82,7 @@ Or headless, with a full reasoning/tool-call trace captured for the dashboard's 
 quorum cycle          # spawns a traced claude -p "/pod-cycle" — the primary way to run a cycle unattended
 ```
 
-No automation is scheduled by default right now — everything above is invoked manually until a scheduling approach is decided (see `CLAUDE.md`).
+`com.quorum.daily` (a launchd job, `scripts/com.quorum.daily.plist`) runs the cycle above automatically on a 6-slot weekday schedule — one full entry-evaluation pass at 9:30, mechanical exit reconciliation the rest of the day. Everything above still works manually too. See `CLAUDE.md`'s Scheduling section.
 
 ---
 
@@ -93,8 +93,8 @@ No automation is scheduled by default right now — everything above is invoked 
 | Skill | Model | Purpose |
 |-------|-------|---------|
 | `/pod-cycle` | session default | Discovers every pod, dispatches pod-analyst/pod-pm, executes approved trades and mechanical exits |
-| `pod-analyst` | Sonnet | Evidence extraction for one candidate — no score, no recommendation |
-| `pod-pm` | Fable 5 | Approve/reduce/veto a strategy-generated candidate; every decision logged |
+| `pod-analyst` | session default | Evidence extraction for one candidate — no score, no recommendation |
+| `pod-pm` | session default | Approve/reduce/veto a strategy-generated candidate; every decision logged |
 | `/market-monitor` | session default | Background regime/position monitoring (use with /loop) |
 
 ### Hooks
@@ -107,11 +107,12 @@ No automation is scheduled by default right now — everything above is invoked 
 | `SessionStart` | `session_start.py` | Auto-injects portfolio state + regime |
 | `Stop` | `session_end.py` | Auto-saves portfolio state to memory |
 
-### MCP Tools (44)
+### MCP Tools (46)
 
 | Category | Tools |
 |----------|-------|
 | Pod shop | `get_pod_candidates`, `get_pod_exits`, `record_pod_decision`, `save_pod_evidence`, `get_pod_evidence` |
+| Screener (research only) | `list_screens`, `run_screen` |
 | Data | get_stock_data, get_indicators(_bulk), get_fundamentals, get_financial_statements, get_news, get_global_news, get_reddit_sentiment, get_stocktwits_sentiment, get_insider_transactions, get_insider_clusters, get_congress_trades, get_congress_summary, get_market_regime, get_sector_rotation, get_earnings_calendar, get_13f_holdings, get_consensus_estimates, get_sec_filings |
 | Portfolio | get_portfolio, get_trades, get_watchlist, add/remove_from_watchlist |
 | Execution | execute_paper_trade (accepts a pod's `target_weight`; pre-trade hook validates) |
@@ -155,7 +156,7 @@ cd desktop && npm install && npm run dev   # launches the desktop app (spawns th
 
 To run just the API backend on its own (e.g. for debugging), use `quorum` with no subcommand.
 
-Four tabs, grouped by workflow rather than data type: **Portfolio** (equity curve, positions, watchlist), **Performance** (Sharpe/Sortino/drawdown/expectancy, scopeable to the live book or any single run), **Activity** (every backtest/paper/shadow/pod-cycle run with its full candidate → target → order → fill → gate chain, per-day play-by-play from `quorum daily-recap`, and an Opik-style reasoning/tool-call trace — subagent calls nested by `parent_tool_use_id` — for every `quorum cycle` invocation), and **Research** (sector rotation, insider clusters, congressional trades, saved reports, and **Strategy Lab** — a natural-language-to-YAML strategy editor that generates, validates, and backtests `strategies/*.yaml` without leaving the app).
+Four tabs, grouped by workflow rather than data type: **Portfolio** (equity curve, positions, watchlist), **Performance** (Sharpe/Sortino/drawdown/expectancy, scopeable to the live book or any single run), **Activity** (every backtest/paper/shadow/pod-cycle run with its full candidate → target → order → fill → gate chain, per-day play-by-play from `quorum daily-recap`, and an Opik-style reasoning/tool-call trace — subagent calls nested by `parent_tool_use_id` — for every `quorum cycle` invocation), and **Research** (sector rotation, insider clusters, congressional trades, saved reports; **Strategy Lab** — a natural-language-to-YAML strategy editor that generates, validates, and backtests `strategies/*.yaml` without leaving the app; and the **Screener** — the same natural-language generate/validate loop for `screens/*.yaml`, returning a ranked table whose rows can be added to the watchlist or sent to Strategy Lab to seed a new strategy's universe). Both generators show Claude's Read/Glob/Grep calls live as it grounds itself in the schema and a worked example, not just the resulting YAML streaming in.
 
 Every KPI card, run row, chart, and table row can carry a **threaded comment** (Plannotator-style, element-level rather than free-text-range) — click the comment icon, ask a question, and optionally route it to a **live, read-only headless Claude Code session** (`desktop/main/claude.ts`) scoped to the same MCP tools and project context as any other quorum session, restricted to `get_*` tools only so it can explain but never trade or mutate state.
 

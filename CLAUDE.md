@@ -20,14 +20,14 @@
 
 Or just say: "Run my autonomous trading cycle." Headless (traced, for the dashboard's Activity view): `quorum cycle`.
 
-**No automation is currently scheduled.** The old launchd jobs (`com.quorum.daily`, `com.quorum.scalp`) were removed while a new scheduling approach is decided — see [Scheduling](#scheduling) below. Everything above is manual-invoke only for now.
+**`com.quorum.daily` runs automatically via launchd** — the 6-slot cadence below fires on its own on weekdays the Mac is on and awake; see [Scheduling](#scheduling) below. `com.quorum.scalp` stays retired. Everything above still works manually too — `/pod-cycle` or `quorum cycle` any time.
 
 ### Risk profiles: default · moderate · scalp
 
-Three risk profiles share the paper account, switched with **`quorum mode <name>`** (flips the profile; no schedule to swap right now, so it's just the profile knobs) or by hand via `~/.quorum/profile.yaml` / `QUORUM_PROFILE` env var (env wins). Defined in one place: `PROFILES` in `quorum/default_config.py`.
+Three risk profiles share the paper account, switched with **`quorum mode <name>`** (flips the profile — takes effect on the next `pod-cycle`, scheduled or manual) or by hand via `~/.quorum/profile.yaml` / `QUORUM_PROFILE` env var (env wins). Defined in one place: `PROFILES` in `quorum/default_config.py`.
 
 - **`default`** — conservative (7-day min-hold, earnings avoidance, 20% cash).
-- **`moderate`** — same council, higher appetite (1-day min-hold, ~8% positions, 1.5× ATR stops, ~10% cash).
+- **`moderate`** — same pods, higher appetite (1-day min-hold, ~8% positions, 1.5× ATR stops, ~10% cash).
 - **`scalp`** — aggressive day-trading knobs (no min-hold, trades earnings, 5% cash, tight 1.25× ATR stops). Its dedicated skill pair and 30-min launchd schedule have been **retired** — the profile itself still exists in `PROFILES` for whenever a scalp pod (its own `strategies/*.yaml` + `pod-cycle` cadence) gets built.
 
 **Full switching guide: [docs/MODES.md](docs/MODES.md).** Crypto is hard-banned in all profiles via `~/.quorum/rules.json`.
@@ -63,7 +63,7 @@ After the final trading cycle each day (or when asked for a summary), produce:
 
 ## Scheduling
 
-No launchd job is currently deployed — both `com.quorum.daily` and `com.quorum.scalp` were removed pending a different scheduling approach. `scripts/start-trading-day.sh` still reflects the intended cadence if/when scheduling is reinstated:
+`com.quorum.daily` (`scripts/com.quorum.daily.plist`, loaded into `~/Library/LaunchAgents/`) runs `scripts/start-trading-day.sh` on this cadence, weekdays only — the script itself gates on a real NYSE holiday calendar (`is_trading_day`), not a hardcoded date list:
 
 ```
 09:30  pod-cycle (full)   — exits, then entries: the day's one planning pass
@@ -76,7 +76,9 @@ No launchd job is currently deployed — both `com.quorum.daily` and `com.quorum
 
 Only one full entry-evaluation pass a day, by design — daily-bar entry signals can't change intraday, and the whole redesign exists partly to fix a churn problem (685 invocations/280 fills under the old 15-cycle schedule). Intraday cycles exist only to catch stop-loss/max-holding-day/rule-exit conditions, which do need to run repeatedly.
 
-Each cycle in the table above runs via `quorum cycle` (not a raw `claude -p`), so every run it creates gets a shared `cycle_id` and its full reasoning/tool-call trace lands in `trace_event` for the dashboard's Activity view. State persists via MCP (SQLite decision log). Logs would go to `~/.quorum/logs/trading-YYYY-MM-DD.log`.
+Each cycle in the table above runs via `quorum cycle` (not a raw `claude -p`), so every run it creates gets a shared `cycle_id` and its full reasoning/tool-call trace lands in `trace_event` for the dashboard's Activity view. State persists via MCP (SQLite decision log). Logs go to `~/.quorum/logs/trading-YYYY-MM-DD.log` (plus `~/.quorum/logs/launchd-daily-std{out,err}.log` for launchd-level failures, e.g. a bad PATH).
+
+Runs only while the Mac is on, awake, and past login — check status with `launchctl list | grep quorum`; pause it with `launchctl bootout gui/$(id -u)/com.quorum.daily` (reload with `launchctl bootstrap gui/$(id -u) scripts/com.quorum.daily.plist`, after `cp`-ing it into `~/Library/LaunchAgents/` if it isn't there). `com.quorum.scalp` remains retired — no plist for it in this repo.
 
 ### Interactive Mode
 
@@ -174,7 +176,8 @@ screens/           — Screen YAML, git-committed like strategies (e.g. ai_quali
 | `~/.quorum/tickers.txt` | Extra watchlist tickers (one per line), merged into the dashboard's watchlist alongside `add_to_watchlist`-added ones |
 | `~/.quorum/rules.json` | Trading restrictions (blocked tickers, max trade value) |
 | `~/.quorum/quorum.db` | SQLite: decision log, positions, trades, wiki, reports, dashboard annotations |
-| `scripts/start-trading-day.sh` | Scheduled-cycle script (not currently deployed — see Scheduling); calls `quorum cycle` for tracing |
+| `scripts/start-trading-day.sh` | Scheduled-cycle script — see Scheduling; calls `quorum cycle` for tracing |
+| `scripts/com.quorum.daily.plist` | launchd job definition, loaded into `~/Library/LaunchAgents/` — see Scheduling |
 
 ## MCP Tools (46)
 

@@ -1,9 +1,10 @@
 # Trading Modes — Risk Profiles
 
-> **No automation is currently scheduled** — the old launchd jobs (`com.quorum.daily`,
-> `com.quorum.scalp`) were both removed while a different scheduling approach is
-> decided. `quorum mode <name>` still flips the risk profile — there's just no
-> schedule to touch right now.
+> **`com.quorum.daily` runs automatically via launchd** (see `CLAUDE.md`'s
+> Scheduling section) under whichever profile is currently active — switch it
+> with `quorum mode <name>` before the next scheduled cycle, or a running cycle
+> picks up `~/.quorum/profile.yaml` fresh each invocation. `com.quorum.scalp`
+> stays retired — no schedule for it.
 
 Quorum has three **risk profiles**, all sharing the same $5,000 paper account:
 
