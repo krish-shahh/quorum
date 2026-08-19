@@ -451,6 +451,29 @@ CREATE TABLE IF NOT EXISTS run_recap (
     recap_json      TEXT NOT NULL DEFAULT '{}'
 );
 CREATE INDEX IF NOT EXISTS idx_run_recap_strategy ON run_recap(strategy_id, mode);
+
+-- One `quorum cycle` CLI invocation (one `claude -p "/pod-cycle"` spawn) can
+-- span multiple `run_id`s (pod-cycle creates a fresh run per
+-- get_pod_candidates/get_pod_exits call). cycle_id correlates them, set via
+-- the QUORUM_CYCLE_ID env var the CLI wrapper inherits down to every MCP
+-- tool call. trace_event captures the full reasoning/tool-call stream from
+-- that same claude -p invocation's --output-format stream-json output.
+CREATE TABLE IF NOT EXISTS trace_event (
+    event_id            TEXT PRIMARY KEY,
+    cycle_id            TEXT NOT NULL,
+    ts                  TEXT NOT NULL DEFAULT (datetime('now')),
+    session_id          TEXT NOT NULL DEFAULT '',
+    parent_tool_use_id  TEXT,
+    role                TEXT NOT NULL DEFAULT 'assistant'
+                        CHECK(role IN ('assistant','user')),
+    event_type          TEXT NOT NULL DEFAULT 'text'
+                        CHECK(event_type IN ('text','thinking','tool_use','tool_result')),
+    tool_name           TEXT,
+    tool_input_json     TEXT,
+    tool_output_summary TEXT,
+    text                TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_trace_event_cycle_ts ON trace_event(cycle_id, ts);
 """
 
 # ──────────────────────────────────────────────────────────────────────
@@ -501,6 +524,8 @@ def get_db(config: Optional[Dict[str, Any]] = None) -> sqlite3.Connection:
             "ALTER TABLE paper_positions ADD COLUMN multiplier INTEGER NOT NULL DEFAULT 1",
             "ALTER TABLE ticker_state ADD COLUMN debate_triggered INTEGER NOT NULL DEFAULT 0",
             "ALTER TABLE trades ADD COLUMN realized_pnl REAL",
+            "ALTER TABLE run ADD COLUMN cycle_id TEXT",
+            "CREATE INDEX IF NOT EXISTS idx_run_cycle ON run(cycle_id)",
         ]:
             try:
                 conn.execute(migration)

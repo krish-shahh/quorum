@@ -186,6 +186,85 @@ def run_recap(
     )
 
 
+@app.command()
+def cycle(
+    prompt: str = typer.Argument("/pod-cycle", help="Prompt or skill invocation to run headlessly, e.g. '/pod-cycle'"),
+):
+    """Run one traced headless Claude Code cycle.
+
+    Spawns `claude -p <prompt>` with `--output-format stream-json`, tagging
+    every run it creates (pod-cycle makes one run per get_pod_candidates/
+    get_pod_exits call) with a shared cycle_id via the QUORUM_CYCLE_ID env
+    var, and persists its full text/thinking/tool_use/tool_result stream to
+    trace_event for the dashboard's Logs view. This is the primary way to
+    run a pod-cycle going forward — scripts/start-trading-day.sh calls this
+    instead of a raw, untraced `claude -p` invocation. Prints the same
+    "--- NOTIFICATION ---"-fenced summary block that script already
+    extracts, so its notification plumbing keeps working unchanged.
+    """
+    import json as json_module
+    import os
+    import shutil
+    import subprocess
+    import uuid
+
+    from quorum.execution.decision_log import record_trace_event
+    from quorum.execution.trace_parser import parse_stream_json_line
+
+    claude_bin = os.environ.get("CLAUDE_BIN") or shutil.which("claude")
+    if not claude_bin:
+        console.print("[red]claude binary not found (set CLAUDE_BIN or add claude to PATH)[/red]")
+        raise typer.Exit(1)
+
+    cycle_id = uuid.uuid4().hex
+    console.print(f"[bold]Running cycle {cycle_id} ({prompt})...[/bold]")
+
+    env = {**os.environ, "QUORUM_CYCLE_ID": cycle_id}
+    proc = subprocess.Popen(
+        [
+            claude_bin, "-p", prompt,
+            "--output-format", "stream-json",
+            "--include-partial-messages",
+            "--forward-subagent-text",
+            "--dangerously-skip-permissions",
+        ],
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=env,
+    )
+
+    final_text = ""
+    n_events = 0
+    for raw_line in proc.stdout:
+        raw_line = raw_line.strip()
+        if not raw_line:
+            continue
+        try:
+            obj = json_module.loads(raw_line)
+        except ValueError:
+            continue
+        if obj.get("type") == "result":
+            final_text = obj.get("result") or final_text
+            continue
+        for event in parse_stream_json_line(obj):
+            record_trace_event(DEFAULT_CONFIG, cycle_id=cycle_id, **event)
+            n_events += 1
+            if event["event_type"] == "tool_use":
+                console.print(f"[dim]  tool_use: {event.get('tool_name')}[/dim]")
+            elif event.get("text"):
+                preview = event["text"].strip().replace("\n", " ")[:100]
+                console.print(f"[dim]  {event['event_type']}: {preview}[/dim]")
+
+    exit_code = proc.wait()
+    color = "green" if exit_code == 0 else "red"
+    console.print(f"[{color}]Cycle {cycle_id} finished (exit {exit_code}, {n_events} trace event(s))[/{color}]")
+
+    if final_text:
+        print("--- NOTIFICATION ---")
+        print(final_text)
+        print("--- NOTIFICATION ---")
+
+    raise typer.Exit(exit_code)
+
+
 @app.command(name="shadow-sleeve")
 def shadow_sleeve(
     strategy_id: str = typer.Argument(..., help="Filename stem under strategies/, e.g. 'regime_gate'"),

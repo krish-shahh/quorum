@@ -448,3 +448,76 @@ class TestGetRunDetail:
         assert len(detail["decisions"]) == 1
         assert detail["gate"]["passed"] is True
         assert detail["gate"]["checks"] == [{"name": "dsr", "passed": True}]
+
+
+class TestCycleCorrelation:
+    def test_new_run_picks_up_cycle_id_from_environment(self, tmp_path, monkeypatch):
+        config = _config(tmp_path)
+        monkeypatch.setenv("QUORUM_CYCLE_ID", "cycle-abc")
+
+        run_id = dl.new_run(config, strategy_id="regime_gate", mode="paper")
+
+        row = db.get_db(config).execute(
+            "SELECT cycle_id FROM run WHERE run_id = ?", (run_id,)
+        ).fetchone()
+        assert row["cycle_id"] == "cycle-abc"
+
+    def test_new_run_without_cycle_id_env_leaves_it_null(self, tmp_path, monkeypatch):
+        config = _config(tmp_path)
+        monkeypatch.delenv("QUORUM_CYCLE_ID", raising=False)
+
+        run_id = dl.new_run(config, strategy_id="regime_gate", mode="paper")
+
+        row = db.get_db(config).execute(
+            "SELECT cycle_id FROM run WHERE run_id = ?", (run_id,)
+        ).fetchone()
+        assert row["cycle_id"] is None
+
+
+class TestTraceEvent:
+    def test_record_and_list_cycles(self, tmp_path):
+        config = _config(tmp_path)
+        dl.record_trace_event(
+            config, cycle_id="cycle-1", event_type="text", role="assistant", text="checking portfolio",
+        )
+        dl.record_trace_event(
+            config, cycle_id="cycle-1", event_type="tool_use", role="assistant",
+            tool_name="get_portfolio", tool_input={"foo": "bar"},
+        )
+
+        cycles = dl.list_cycles(config)
+
+        assert len(cycles) == 1
+        assert cycles[0]["cycle_id"] == "cycle-1"
+        assert cycles[0]["n_trace_events"] == 2
+
+    def test_get_cycle_returns_ordered_events_and_touched_runs(self, tmp_path, monkeypatch):
+        config = _config(tmp_path)
+        monkeypatch.setenv("QUORUM_CYCLE_ID", "cycle-2")
+        run_id = dl.new_run(config, strategy_id="regime_gate", mode="paper")
+        dl.record_trace_event(config, cycle_id="cycle-2", event_type="text", text="first")
+        dl.record_trace_event(config, cycle_id="cycle-2", event_type="tool_use", tool_name="get_portfolio")
+
+        detail = dl.get_cycle(config, "cycle-2")
+
+        assert detail is not None
+        assert [e["event_type"] for e in detail["trace_events"]] == ["text", "tool_use"]
+        assert detail["runs"][0]["run_id"] == run_id
+
+    def test_get_cycle_returns_none_for_unknown_cycle(self, tmp_path):
+        config = _config(tmp_path)
+
+        assert dl.get_cycle(config, "no-such-cycle") is None
+
+    def test_list_cycles_status_reflects_run_status(self, tmp_path, monkeypatch):
+        config = _config(tmp_path)
+        monkeypatch.setenv("QUORUM_CYCLE_ID", "cycle-3")
+        run_id = dl.new_run(config, strategy_id="regime_gate", mode="paper")
+        dl.record_trace_event(config, cycle_id="cycle-3", event_type="text", text="working")
+
+        running_status = dl.list_cycles(config)[0]["status"]
+        dl.finish_run(config, run_id, status="ok")
+        finished_status = dl.list_cycles(config)[0]["status"]
+
+        assert running_status == "running"
+        assert finished_status == "ok"

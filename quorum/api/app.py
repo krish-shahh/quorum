@@ -1043,6 +1043,30 @@ def api_v1_run_performance(run_id):
         return jsonify({"error": str(e)}), 500
 
 
+@api_bp.route("/api/v1/cycles")
+def api_v1_cycles():
+    """Cycle picker listing for the Logs view — one row per `quorum cycle`
+    invocation that has produced trace events."""
+    from quorum.default_config import DEFAULT_CONFIG
+    from quorum.execution.decision_log import list_cycles
+
+    limit = request.args.get("limit", default=50, type=int)
+    return jsonify({"cycles": list_cycles(DEFAULT_CONFIG, limit=limit)})
+
+
+@api_bp.route("/api/v1/cycles/<cycle_id>")
+def api_v1_cycle_detail(cycle_id):
+    """Full ordered trace-event stream for one cycle, plus the run_ids it
+    touched — the Opik-style reasoning/tool-call trace behind a run."""
+    from quorum.default_config import DEFAULT_CONFIG
+    from quorum.execution.decision_log import get_cycle
+
+    detail = get_cycle(DEFAULT_CONFIG, cycle_id)
+    if detail is None:
+        return jsonify({"error": f"no cycle {cycle_id}"}), 404
+    return jsonify(detail)
+
+
 @api_bp.route("/api/v1/portfolio-risk")
 def api_v1_portfolio_risk():
     """Notional exposure + historical VaR. Read-only — unlike live-risk,

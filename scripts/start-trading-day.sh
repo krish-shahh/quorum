@@ -25,7 +25,9 @@ set -euo pipefail
 PROJECT_DIR="${QUORUM_PROJECT_DIR:-$HOME/quorum}"
 LOG_DIR="$HOME/.quorum/logs"
 CLAUDE_BIN="${CLAUDE_BIN:-$(command -v claude || echo "$HOME/.local/bin/claude")}"
+export CLAUDE_BIN  # `quorum cycle` reads this to resolve the claude binary under launchd's restricted PATH
 PYTHON_BIN="${PYTHON_BIN:-$(command -v python3 || echo "$HOME/miniforge3/bin/python3")}"
+QUORUM_BIN="${QUORUM_BIN:-$(command -v quorum || echo "$HOME/miniforge3/bin/quorum")}"
 
 # Load .env (gitignored) so QUORUM_NTFY_TOPIC is available. The ntfy topic is a
 # secret (anyone who knows it can read your alerts) — keep it out of the repo.
@@ -106,11 +108,11 @@ if [ "$MINS_TODAY" -eq "$MARKET_OPEN" ]; then
     "$PYTHON_BIN" -m quorum.dataflows.congress --sync >> "$LOG_DIR/trading-$DATE.log" 2>&1 || true
 fi
 
-# Run claude in non-interactive mode
-OUTPUT=$("$CLAUDE_BIN" -p "$PROMPT" \
-    --dangerously-skip-permissions \
-    --output-format text \
-    2>&1 | tee -a "$LOG_DIR/trading-$DATE.log")
+# Run claude in non-interactive mode via `quorum cycle` — same headless
+# claude -p invocation as before, but correlated (QUORUM_CYCLE_ID) and
+# traced (every reasoning/tool-call event persisted to trace_event for the
+# dashboard's Logs view) instead of a raw, untraced spawn.
+OUTPUT=$("$QUORUM_BIN" cycle "$PROMPT" 2>&1 | tee -a "$LOG_DIR/trading-$DATE.log")
 
 EXIT_CODE=${PIPESTATUS[0]}
 
