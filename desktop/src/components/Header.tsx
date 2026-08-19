@@ -1,4 +1,4 @@
-import { Activity, Moon, Pause, Power, Sun } from "lucide-react";
+import { Activity, Pause, Power } from "lucide-react";
 import { cn, timeAgo } from "@/lib/utils";
 import { toggleKillSwitch, type MarketStatus } from "@/lib/api";
 import { useQueryClient } from "@tanstack/react-query";
@@ -14,13 +14,11 @@ interface HeaderProps {
   lastUpdated: number;
   view: View;
   onChangeView: (v: View) => void;
-  theme: "light" | "dark";
-  onToggleTheme: () => void;
 }
 
 export default function Header({
   market, killSwitch, live, onToggleLive, lastUpdated,
-  view, onChangeView, theme, onToggleTheme,
+  view, onChangeView,
 }: HeaderProps) {
   const queryClient = useQueryClient();
 
@@ -65,20 +63,6 @@ export default function Header({
 
         {/* Right: staleness + controls */}
         <div className="flex items-center gap-2 no-drag">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                onClick={onToggleTheme}
-                className="flex items-center justify-center w-6 h-6 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-              >
-                {theme === "dark" ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
-              </button>
-            </TooltipTrigger>
-            <TooltipContent>
-              <p>Switch to {theme === "dark" ? "light" : "dark"} mode</p>
-            </TooltipContent>
-          </Tooltip>
-
           <span className="text-[11px] text-muted-foreground mr-1">
             {lastUpdated ? timeAgo(new Date(lastUpdated).toISOString()) : "---"}
           </span>

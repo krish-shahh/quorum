@@ -3,7 +3,6 @@ import { createChart, ColorType, CandlestickSeries, AreaSeries, HistogramSeries 
 import { Home } from "lucide-react";
 import { fetchChart, type CandleData, type Position, type BookData } from "@/lib/api";
 import { themeColor } from "@/lib/utils";
-import { useTheme } from "@/hooks/use-theme";
 
 interface Props {
   equity: { time: string; value: number }[];
@@ -61,7 +60,6 @@ export default function EquityCurve({ equity, positions, books }: Props) {
 function PortfolioChart({ equity }: { equity: { time: string; value: number }[] }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<ReturnType<typeof createChart> | null>(null);
-  const { theme } = useTheme();
 
   const points = equity.filter((p) => p.time !== "Start" && p.time.includes("-"));
 
@@ -146,7 +144,7 @@ function PortfolioChart({ equity }: { equity: { time: string; value: number }[] 
       chart.remove();
       chartRef.current = null;
     };
-  }, [points, theme]);
+  }, [points]);
 
   if (points.length < 2) {
     return <p className="text-xs text-muted-foreground text-center py-8">Insufficient equity data</p>;
@@ -161,7 +159,6 @@ function TickerChart({ ticker }: { ticker: string }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<ReturnType<typeof createChart> | null>(null);
   const [loading, setLoading] = useState(true);
-  const { theme } = useTheme();
 
   const handleHome = useCallback(() => chartRef.current?.timeScale().fitContent(), []);
 
@@ -265,7 +262,7 @@ function TickerChart({ ticker }: { ticker: string }) {
         chartRef.current = null;
       }
     };
-  }, [ticker, theme]);
+  }, [ticker]);
 
   return (
     <>

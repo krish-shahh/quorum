@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { useDashboard } from "@/hooks/use-dashboard";
-import { useTheme } from "@/hooks/use-theme";
 import Header from "@/components/Header";
 import PortfolioHero from "@/components/PortfolioHero";
 import StatusStrip from "@/components/StatusStrip";
@@ -22,7 +21,6 @@ export default function App() {
   const [view, setView] = useState<View>("overview");
   const [selectedTicker, setSelectedTicker] = useState<string | null>(null);
   const { data, dataUpdatedAt, isLoading, error } = useDashboard(live);
-  const { theme, toggleTheme } = useTheme();
 
   if (isLoading && !data) {
     return (
@@ -54,8 +52,6 @@ export default function App() {
         lastUpdated={dataUpdatedAt}
         view={view}
         onChangeView={setView}
-        theme={theme}
-        onToggleTheme={toggleTheme}
       />
 
       <main className="px-6 pb-8 pt-4 space-y-4 max-w-[1600px] mx-auto">
