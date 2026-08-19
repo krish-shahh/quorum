@@ -1,10 +1,12 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { MessageCircle, Check } from "lucide-react";
+import { MessageCircle, Check, Sparkles } from "lucide-react";
 import { useAnnotations } from "@/hooks/use-annotations";
 import { createAnnotation, replyToAnnotation, resolveAnnotation, type AnchorType } from "@/lib/api";
 import { cn, timeAgo } from "@/lib/utils";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
+
+const CLAUDE_BRIDGE_AVAILABLE = typeof window !== "undefined" && !!window.electronAPI?.askClaude;
 
 /** Plannotator-style comment affordance, scoped to one dashboard element
  * (a KPI card, a run row, a table row, a chart series) rather than a
@@ -20,6 +22,8 @@ export default function CommentButton({
 }) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState("");
+  const [asking, setAsking] = useState(false);
+  const [streamText, setStreamText] = useState("");
   const queryClient = useQueryClient();
   const { data } = useAnnotations(anchorType, anchor);
 
@@ -31,16 +35,43 @@ export default function CommentButton({
     queryClient.invalidateQueries({ queryKey: ["annotations"] });
   }
 
-  async function submit() {
-    if (!draft.trim()) return;
+  async function ensureThread(question: string): Promise<string> {
     const existing = threads[0];
     if (existing) {
-      await replyToAnnotation(existing.id, draft.trim());
-    } else {
-      await createAnnotation(anchorType, anchor, draft.trim());
+      await replyToAnnotation(existing.id, question);
+      return existing.id;
     }
+    const created = await createAnnotation(anchorType, anchor, question);
+    return created.id;
+  }
+
+  async function submit() {
+    if (!draft.trim()) return;
+    await ensureThread(draft.trim());
     setDraft("");
     invalidate();
+  }
+
+  async function askClaude() {
+    const question = draft.trim();
+    if (!question || !CLAUDE_BRIDGE_AVAILABLE) return;
+    setDraft("");
+    const threadId = await ensureThread(question);
+    invalidate();
+
+    setAsking(true);
+    setStreamText("");
+    const context = `Dashboard annotation context — anchor_type: ${anchorType}, anchor: ${JSON.stringify(anchor)}`;
+    try {
+      const finalText = await window.electronAPI.askClaude(question, context, (chunk) => {
+        setStreamText((prev) => prev + chunk);
+      });
+      await replyToAnnotation(threadId, finalText, "claude");
+      invalidate();
+    } finally {
+      setAsking(false);
+      setStreamText("");
+    }
   }
 
   async function resolve(id: string) {
@@ -97,6 +128,15 @@ export default function CommentButton({
               ))
             )
           )}
+          {asking && (
+            <div className="text-xs">
+              <div className="flex items-center gap-1.5 mb-0.5">
+                <span className="font-medium">Claude</span>
+                <span className="text-[10px] text-muted-foreground">thinking...</span>
+              </div>
+              <p className="text-muted-foreground whitespace-pre-wrap">{streamText || "…"}</p>
+            </div>
+          )}
         </div>
 
         <div className="flex items-center gap-1.5 pt-1 border-t">
@@ -105,11 +145,22 @@ export default function CommentButton({
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && submit()}
             placeholder="Add a comment..."
-            className="flex-1 text-xs rounded border bg-background px-2 py-1 outline-none focus:ring-1 focus:ring-ring"
+            disabled={asking}
+            className="flex-1 text-xs rounded border bg-background px-2 py-1 outline-none focus:ring-1 focus:ring-ring disabled:opacity-50"
           />
+          {CLAUDE_BRIDGE_AVAILABLE && (
+            <button
+              onClick={askClaude}
+              disabled={!draft.trim() || asking}
+              title="Ask Claude (read-only — can't trade or edit)"
+              className="text-muted-foreground hover:text-accent-foreground disabled:opacity-50"
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+            </button>
+          )}
           <button
             onClick={submit}
-            disabled={!draft.trim()}
+            disabled={!draft.trim() || asking}
             className="text-[11px] font-medium text-accent-foreground disabled:text-muted-foreground disabled:opacity-50"
           >
             Send

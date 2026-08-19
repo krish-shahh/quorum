@@ -1,6 +1,7 @@
-import { app, BrowserWindow } from "electron";
+import { app, BrowserWindow, ipcMain } from "electron";
 import * as path from "path";
 import { startFlask, stopFlask, waitForFlask } from "./flask";
+import { askClaude } from "./claude";
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -32,6 +33,12 @@ function createWindow() {
     mainWindow = null;
   });
 }
+
+ipcMain.handle("claude:ask", async (event, requestId: string, question: string, context?: string) => {
+  return askClaude(question, context, (chunk) => {
+    event.sender.send(`claude:chunk:${requestId}`, chunk);
+  });
+});
 
 app.on("ready", async () => {
   startFlask();
