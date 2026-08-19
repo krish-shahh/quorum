@@ -1,0 +1,65 @@
+# Regime gate — highest evidence, lowest implementation cost of the plan's
+# first four strategies. v0.1 gates entries on XLK/SMH trend only; the VXN
+# level, DFII10 20-day change, and QQQ/QQQE breadth terms from the full
+# design are deferred until the engine's DataFeed can pull FRED series
+# (pandas-datareader, already adopted) and options-implied vol — tracked
+# as a follow-up, not silently dropped.
+strategy_id: regime_gate
+version: "0.1"
+description: >
+  Long TMT names only while both XLK (>200dma) and SMH (>50dma) confirm a
+  risk-on trend; exit when XLK loses its 200dma. Position size is
+  volatility-targeted per name, then scaled again by the prevailing
+  regime classification (risk_on/risk_off/volatile/transition) as a
+  portfolio-level exposure throttle.
+
+universe:
+  source: tag
+  tags: [mega_cap_platforms, semis_design]
+
+features:
+  - name: xlk_sma200
+    op: sma
+    inputs: [XLK.close]
+    window: 200
+  - name: xlk_above_200dma
+    op: gt
+    inputs: [XLK.close, xlk_sma200]
+  - name: xlk_below_200dma
+    op: lt
+    inputs: [XLK.close, xlk_sma200]
+  - name: smh_sma50
+    op: sma
+    inputs: [SMH.close]
+    window: 50
+  - name: smh_above_50dma
+    op: gt
+    inputs: [SMH.close, smh_sma50]
+
+signal:
+  direction: long_only
+  entry:
+    all_of: [xlk_above_200dma, smh_above_50dma]
+  exit:
+    any_of: [xlk_below_200dma]
+
+sizing:
+  method: vol_target
+  target_risk_pct: 0.01
+  atr_window: 14
+  max_position_pct: 0.15
+
+risk:
+  regime_gate:
+    risk_on: 1.0
+    risk_off: 0.5
+    volatile: 0.5
+    transition: 0.75
+  stop_loss_atr_mult: 2.0
+  max_positions: 15
+  max_single_ticker_pct: 0.20
+
+execution:
+  fill_timing: next_bar_open
+  order_type: market
+  cost_bps: 10
