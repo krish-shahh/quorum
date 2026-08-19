@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { cn, formatUsd } from "@/lib/utils";
 import type { RecentTrade } from "@/lib/api";
+import CommentButton from "@/components/CommentButton";
 
 interface Props {
   trades: RecentTrade[];
@@ -44,11 +45,12 @@ export default function RecentTrades({ trades }: Props) {
               <th className="text-right px-3 py-2 font-medium text-muted-foreground">Notional</th>
               <th className="text-center px-3 py-2 font-medium text-muted-foreground">Signal</th>
               <th className="text-center px-4 py-2 font-medium text-muted-foreground">Status</th>
+              <th className="w-8 px-1 py-2" />
             </tr>
           </thead>
           <tbody>
             {visible.map((t, i) => (
-              <tr key={`${t.ticker}-${t.time}-${i}`} className="border-b last:border-0 hover:bg-muted/30">
+              <tr key={`${t.ticker}-${t.time}-${i}`} className="group border-b last:border-0 hover:bg-muted/30">
                 <td className="px-4 py-2.5 text-muted-foreground font-mono">{t.time}</td>
                 <td className="px-3 py-2.5 font-mono font-medium">{t.ticker}</td>
                 <td className="text-center px-3 py-2.5">
@@ -76,6 +78,12 @@ export default function RecentTrades({ trades }: Props) {
                   >
                     {t.action}
                   </span>
+                </td>
+                <td className="px-1 py-2.5">
+                  <CommentButton
+                    anchorType="table_row"
+                    anchor={{ view: "positions", table: "recent_trades", ticker: t.ticker, time: t.time }}
+                  />
                 </td>
               </tr>
             ))}

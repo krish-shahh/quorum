@@ -70,8 +70,11 @@ function PerformanceBody({ data }: { data: NonNullable<ReturnType<typeof usePerf
         </div>
       ) : (
         <>
-          <div className="rounded-lg border bg-card p-4">
-            <h3 className="text-sm font-medium mb-3">Rolling Sharpe &amp; Sortino (20-trade window)</h3>
+          <div className="group relative rounded-lg border bg-card p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-medium">Rolling Sharpe &amp; Sortino (20-trade window)</h3>
+              <CommentButton anchorType="chart_series" anchor={{ view: "performance", chart: "rolling_metrics" }} />
+            </div>
             {data.rolling_metrics.length === 0 ? (
               <p className="text-xs text-muted-foreground py-6 text-center">Need at least 20 trades for a rolling window.</p>
             ) : (
@@ -101,11 +104,16 @@ function PerformanceBody({ data }: { data: NonNullable<ReturnType<typeof usePerf
                 .sort((a, b) => b[1].wins + b[1].losses - (a[1].wins + a[1].losses))
                 .slice(0, 12)
                 .map(([ticker, bucket]) => (
-                  <div key={ticker} className="flex items-center justify-between text-[11px] px-2 py-1.5 rounded bg-muted/50">
+                  <div key={ticker} className="group relative flex items-center justify-between text-[11px] px-2 py-1.5 rounded bg-muted/50">
                     <span className="font-mono">{ticker}</span>
                     <span className={cn("font-mono", pnlTextColor(bucket.win_rate - 0.5))}>
                       {formatPct(bucket.win_rate)} ({bucket.wins}W/{bucket.losses}L)
                     </span>
+                    <CommentButton
+                      anchorType="table_row"
+                      anchor={{ view: "performance", table: "win_rate_by_ticker", ticker }}
+                      className="absolute -top-1.5 -right-1.5 bg-card border rounded-full"
+                    />
                   </div>
                 ))}
             </div>

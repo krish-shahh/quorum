@@ -10,6 +10,7 @@ import { XAxis } from "@/components/dither-kit/x-axis";
 import { YAxis } from "@/components/dither-kit/y-axis";
 import { Tooltip as DitherTooltip } from "@/components/dither-kit/tooltip";
 import type { ChartConfig } from "@/components/dither-kit/chart-context";
+import CommentButton from "@/components/CommentButton";
 
 interface Props {
   equity: { time: string; value: number }[];
@@ -25,9 +26,11 @@ export default function EquityCurve({ equity, positions, books }: Props) {
   const bookNames = books.map((b) => b.name);
 
   return (
-    <div className="rounded-lg border bg-card p-4">
+    <div className="group relative rounded-lg border bg-card p-4">
       <div className="flex items-center justify-between mb-3">
         <h3 className="text-sm font-medium">{selected === "portfolio" ? "Portfolio" : selected}</h3>
+        <div className="flex items-center gap-1">
+          <CommentButton anchorType="chart_series" anchor={{ view: "overview", chart: "equity_curve", scope: selected }} />
         <select
           value={selected}
           onChange={(e) => setSelected(e.target.value)}
@@ -49,6 +52,7 @@ export default function EquityCurve({ equity, positions, books }: Props) {
             </optgroup>
           ))}
         </select>
+        </div>
       </div>
 
       {selected === "portfolio" ? (
