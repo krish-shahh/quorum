@@ -33,6 +33,16 @@ FeatureOp = Literal[
 
 SizingMethod = Literal["flat_pct", "vol_target", "kelly_capped"]
 
+# Required input count per op — checked structurally so a malformed feature
+# (e.g. atr given 2 inputs instead of [high, low, close]) fails at strategy
+# load time, not partway through a backtest.
+_OP_ARITY = {
+    "sma": 1, "ema": 1, "rsi": 1, "pct_change": 1, "zscore": 1, "abs": 1, "rank": 1,
+    "atr": 3,
+    "ratio": 2, "gt": 2, "lt": 2, "gte": 2, "lte": 2, "eq": 2,
+    "cross_above": 2, "cross_below": 2,
+}
+
 
 class Feature(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -42,6 +52,18 @@ class Feature(BaseModel):
     inputs: List[str] = Field(min_length=1)
     window: Optional[int] = None
     params: Dict[str, float] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _arity_matches_op(self) -> "Feature":
+        expected = _OP_ARITY[self.op]
+        if len(self.inputs) != expected:
+            raise ValueError(
+                f"feature '{self.name}' op '{self.op}' requires exactly "
+                f"{expected} input(s), got {len(self.inputs)}"
+            )
+        if self.op in ("sma", "ema", "rsi", "atr") and self.window is None:
+            raise ValueError(f"feature '{self.name}' op '{self.op}' requires a window")
+        return self
 
 
 class ConditionGroup(BaseModel):

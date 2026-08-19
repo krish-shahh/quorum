@@ -95,3 +95,22 @@ def test_feature_input_must_be_declared_or_symbol_field():
 
     with pytest.raises(ValidationError, match="neither a declared feature"):
         load_strategy(raw)
+
+
+def test_atr_feature_requires_exactly_three_inputs():
+    raw = _valid_strategy_dict()
+    raw["features"][0] = {
+        "name": "atr14", "op": "atr", "window": 14,
+        "inputs": ["AAPL.high", "AAPL.low"],  # missing close
+    }
+
+    with pytest.raises(ValidationError, match="requires exactly 3 input"):
+        load_strategy(raw)
+
+
+def test_sma_feature_requires_window():
+    raw = _valid_strategy_dict()
+    raw["features"][0] = {"name": "sma200", "op": "sma", "inputs": ["AAPL.close"]}
+
+    with pytest.raises(ValidationError, match="requires a window"):
+        load_strategy(raw)
