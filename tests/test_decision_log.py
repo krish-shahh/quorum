@@ -139,3 +139,40 @@ def test_record_journal_persists_body(tmp_path):
         "SELECT body, kind FROM journal WHERE run_id = ?", (run_id,)
     ).fetchone()
     assert tuple(row) == ("council vetoed size-up", "override")
+
+
+def _seed_legacy_trade(conn, *, ts, ticker, side, qty, fill_price, action_taken="executed"):
+    conn.execute(
+        "INSERT INTO trades (timestamp, ticker, signal, action_taken, side, quantity, "
+        "fill_price, reason) VALUES (?, ?, '', ?, ?, ?, ?, '')",
+        (ts, ticker, action_taken, side, qty, fill_price),
+    )
+
+
+class TestMigrateLegacyTrades:
+    def test_imports_only_executed_buy_sell_rows(self, tmp_path):
+        config = _config(tmp_path)
+        conn = db.get_db(config)
+        with conn:
+            _seed_legacy_trade(conn, ts="2026-08-01", ticker="AAPL", side="buy", qty=10, fill_price=100.0)
+            _seed_legacy_trade(conn, ts="2026-08-02", ticker="AAPL", side="sell", qty=10, fill_price=110.0)
+            _seed_legacy_trade(conn, ts="2026-08-01", ticker="MSFT", side="", qty=0, fill_price=None, action_taken="blocked")
+
+        result = dl.migrate_legacy_trades(config)
+
+        assert result["imported_fills"] == 2
+        assert result["closed_trades"] == 1
+        assert result["total_pnl"] == pytest.approx(100.0)
+
+    def test_rerun_without_force_is_a_noop(self, tmp_path):
+        config = _config(tmp_path)
+        conn = db.get_db(config)
+        with conn:
+            _seed_legacy_trade(conn, ts="2026-08-01", ticker="AAPL", side="buy", qty=5, fill_price=50.0)
+            _seed_legacy_trade(conn, ts="2026-08-02", ticker="AAPL", side="sell", qty=5, fill_price=60.0)
+        dl.migrate_legacy_trades(config)
+
+        second = dl.migrate_legacy_trades(config)
+
+        assert second["skipped"] is True
+        assert second["total_pnl"] == pytest.approx(50.0)

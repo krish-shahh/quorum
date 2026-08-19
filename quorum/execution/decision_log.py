@@ -331,6 +331,96 @@ def record_journal(
 # ── closed_trade (materialized FIFO round-trips) ────────────────────
 
 
+LEGACY_RUN_ID = "legacy-trades-v1"
+
+
+def migrate_legacy_trades(config: Dict[str, Any], *, force: bool = False) -> Dict[str, Any]:
+    """One-time migration of the historical ``trades`` table into the decision log.
+
+    Synthesizes a single run (run_id=LEGACY_RUN_ID, mode='paper') and, for
+    every executed historical trade in chronological order, a thin
+    signal -> target -> order -> fill chain so the pre-v2 trade history is
+    queryable under the new schema. Idempotent: re-running without
+    force=True is a no-op that returns the existing totals.
+    """
+    conn = db.get_db(config)
+
+    existing = conn.execute(
+        "SELECT run_id FROM run WHERE run_id = ?", (LEGACY_RUN_ID,)
+    ).fetchone()
+    if existing and not force:
+        closed = conn.execute(
+            "SELECT COUNT(*), COALESCE(SUM(pnl), 0) FROM closed_trade WHERE run_id = ?",
+            (LEGACY_RUN_ID,),
+        ).fetchone()
+        return {
+            "run_id": LEGACY_RUN_ID, "skipped": True,
+            "closed_trades": closed[0], "total_pnl": closed[1],
+        }
+
+    if existing:
+        with conn:
+            conn.execute(
+                "DELETE FROM fill WHERE order_id IN "
+                "(SELECT order_id FROM order_intent WHERE run_id = ?)",
+                (LEGACY_RUN_ID,),
+            )
+            conn.execute("DELETE FROM order_intent WHERE run_id = ?", (LEGACY_RUN_ID,))
+            conn.execute("DELETE FROM target WHERE run_id = ?", (LEGACY_RUN_ID,))
+            conn.execute("DELETE FROM signal WHERE run_id = ?", (LEGACY_RUN_ID,))
+            conn.execute("DELETE FROM closed_trade WHERE run_id = ?", (LEGACY_RUN_ID,))
+            conn.execute("DELETE FROM run WHERE run_id = ?", (LEGACY_RUN_ID,))
+
+    with conn:
+        conn.execute(
+            "INSERT INTO run (run_id, strategy_id, strategy_version, mode, status, started_at) "
+            "VALUES (?, 'legacy', 'v1-pre-redesign', 'paper', 'ok', datetime('now'))",
+            (LEGACY_RUN_ID,),
+        )
+
+    rows = conn.execute(
+        "SELECT timestamp, ticker, signal, side, quantity, fill_price, reason FROM trades "
+        "WHERE action_taken = 'executed' AND side IN ('buy', 'sell') "
+        "AND fill_price IS NOT NULL AND quantity > 0 "
+        "ORDER BY timestamp ASC, id ASC"
+    ).fetchall()
+
+    imported = 0
+    for ts, ticker, signal_label, side, qty, fill_price, reason in rows:
+        sig_id = record_signal(
+            config, run_id=LEGACY_RUN_ID, ts=ts, symbol=ticker,
+            direction=1 if side == "buy" else -1,
+            rationale=reason or "", conditions={"legacy_signal": signal_label},
+        )
+        tgt_id = record_target(
+            config, run_id=LEGACY_RUN_ID, ts=ts, symbol=ticker, signal_id=sig_id,
+            target_shares=qty, sizing_method="legacy",
+        )
+        order_id = record_order(
+            config, run_id=LEGACY_RUN_ID, ts_submitted=ts, symbol=ticker,
+            side=side, qty=qty, target_id=tgt_id, status="filled",
+            intended_price=fill_price,
+        )
+        record_fill(config, order_id=order_id, ts=ts, qty=qty, price=fill_price)
+        imported += 1
+
+    stats = recompute_closed_trades(config, LEGACY_RUN_ID)
+    total_pnl = conn.execute(
+        "SELECT COALESCE(SUM(pnl), 0) FROM closed_trade WHERE run_id = ?", (LEGACY_RUN_ID,)
+    ).fetchone()[0]
+
+    finish_run(config, LEGACY_RUN_ID, status="ok", metrics={
+        "imported_fills": imported,
+        "closed_trades": stats["closed_trades"],
+        "total_pnl": total_pnl,
+    })
+
+    return {
+        "run_id": LEGACY_RUN_ID, "skipped": False, "imported_fills": imported,
+        "closed_trades": stats["closed_trades"], "total_pnl": total_pnl,
+    }
+
+
 def recompute_closed_trades(config: Dict[str, Any], run_id: str) -> Dict[str, Any]:
     """Rebuild ``closed_trade`` rows for one run via FIFO lot matching over its fills.
 
