@@ -131,6 +131,20 @@ class TestExecutorDecisionLogWiring:
         ).fetchone()
         assert tuple(fill) == (run_id, "AAPL", "buy", 150.0)
 
+    def test_fill_refreshes_the_runs_saved_recap(self, tmp_path):
+        config = _make_config(tmp_path)
+        run_id = dl.new_run(config, strategy_id="regime_gate", mode="paper")
+        dl.finish_run(config, run_id, status="ok")
+        assert len(dl.get_run_recap(config, run_id)["orders"]) == 0
+
+        with _mock_yf(150.0):
+            engine = ExecutionEngine(config)
+            engine.execute("AAPL", "Buy", {"run_id": run_id, "target_weight": 0.05})
+
+        recap = dl.get_run_recap(config, run_id)
+        assert len(recap["orders"]) == 1
+        assert recap["orders"][0]["fill_ts"] is not None
+
     def test_trade_with_no_run_id_logs_under_shared_manual_run(self, tmp_path):
         config = _make_config(tmp_path)
 

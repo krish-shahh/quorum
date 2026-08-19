@@ -995,11 +995,18 @@ def api_v1_runs():
 @api_bp.route("/api/v1/runs/<run_id>")
 def api_v1_run_detail(run_id):
     """One run's full decision chain: candidates, targets, orders/fills,
-    journal decisions, closed trades, and its gate result."""
+    journal decisions, closed trades, and its gate result. Prefers the
+    saved run_recap (fast, kept current by save_run_recap's auto-save
+    hooks) and falls back to a live query + opportunistic save for any
+    run that predates this feature or hasn't finished yet."""
     from quorum.default_config import DEFAULT_CONFIG
-    from quorum.execution.decision_log import get_run_detail
+    from quorum.execution.decision_log import get_run_detail, get_run_recap, save_run_recap
 
-    detail = get_run_detail(DEFAULT_CONFIG, run_id)
+    detail = get_run_recap(DEFAULT_CONFIG, run_id)
+    if detail is None:
+        detail = get_run_detail(DEFAULT_CONFIG, run_id)
+        if detail is not None:
+            save_run_recap(DEFAULT_CONFIG, run_id)
     if detail is None:
         return jsonify({"error": f"no run {run_id}"}), 404
     return jsonify(detail)

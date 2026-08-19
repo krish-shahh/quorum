@@ -84,6 +84,10 @@ def finish_run(
                 _json(metrics), run_id,
             ),
         )
+    # Snapshot a recap the moment a run finishes — candidates/targets are
+    # final at this point even if fills for a pod-cycle run land later
+    # under the same run_id (executor.py re-saves then too).
+    save_run_recap(config, run_id)
 
 
 def new_sweep(
@@ -664,6 +668,87 @@ def get_run_detail(config: Dict[str, Any], run_id: str) -> Optional[Dict[str, An
         "decisions": [{**dict(row), "tags": json.loads(row["tags_json"])} for row in decisions],
         "closed_trades": [dict(row) for row in closed],
     }
+
+
+def save_run_recap(config: Dict[str, Any], run_id: str) -> Optional[Dict[str, Any]]:
+    """Build and upsert a per-run recap — the run_recap analogue of
+    save_daily_recap(), but fine-grained enough to call more than once a
+    day. Upsert-safe: called at finish_run() time (candidates/targets are
+    final) and again after any later fill lands under this run_id (pod-
+    cycle's entry/exit runs get their fills from a separate, later
+    execute_paper_trade call), so the saved snapshot stays current as a
+    run's story completes across multiple calls. Returns None if run_id
+    doesn't exist (nothing to save).
+    """
+    detail = get_run_detail(config, run_id)
+    if detail is None:
+        return None
+
+    conn = db.get_db(config)
+    with conn:
+        conn.execute(
+            "INSERT INTO run_recap "
+            "(run_id, strategy_id, mode, n_candidates, n_decisions, n_orders, "
+            " n_fills, n_closed_trades, realized_pnl, gate_passed, recap_json, computed_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now')) "
+            "ON CONFLICT(run_id) DO UPDATE SET "
+            "strategy_id=excluded.strategy_id, mode=excluded.mode, "
+            "n_candidates=excluded.n_candidates, n_decisions=excluded.n_decisions, "
+            "n_orders=excluded.n_orders, n_fills=excluded.n_fills, "
+            "n_closed_trades=excluded.n_closed_trades, realized_pnl=excluded.realized_pnl, "
+            "gate_passed=excluded.gate_passed, recap_json=excluded.recap_json, "
+            "computed_at=excluded.computed_at",
+            (
+                run_id, detail["strategy_id"], detail["mode"],
+                len(detail["candidates"]), len(detail["decisions"]), len(detail["orders"]),
+                sum(1 for o in detail["orders"] if o["fill_ts"] is not None),
+                len(detail["closed_trades"]),
+                sum(t["pnl"] for t in detail["closed_trades"]) if detail["closed_trades"] else None,
+                detail["gate"]["passed"],
+                json.dumps(detail, default=str),
+            ),
+        )
+    return detail
+
+
+def get_run_recap(config: Dict[str, Any], run_id: str) -> Optional[Dict[str, Any]]:
+    """Read a previously saved run recap, or None if never saved."""
+    conn = db.get_db(config)
+    row = conn.execute(
+        "SELECT recap_json FROM run_recap WHERE run_id = ?", (run_id,)
+    ).fetchone()
+    return json.loads(row["recap_json"]) if row else None
+
+
+def list_run_recaps(
+    config: Dict[str, Any], *, mode: Optional[str] = None,
+    strategy_id: Optional[str] = None, limit: int = 50,
+) -> List[Dict[str, Any]]:
+    """List recent run-recap summaries (no full recap_json) newest-first —
+    the cheap listing path for a Runs browser, avoiding a live multi-table
+    join per row as run volume grows.
+    """
+    conn = db.get_db(config)
+    clauses, params = [], []
+    if mode is not None:
+        clauses.append("mode = ?")
+        params.append(mode)
+    if strategy_id is not None:
+        clauses.append("strategy_id = ?")
+        params.append(strategy_id)
+    where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+    params.append(limit)
+    rows = conn.execute(
+        f"SELECT run_id, computed_at, strategy_id, mode, n_candidates, n_decisions, "
+        f"n_orders, n_fills, n_closed_trades, realized_pnl, gate_passed FROM run_recap "
+        f"{where} ORDER BY computed_at DESC LIMIT ?",
+        params,
+    ).fetchall()
+    return [
+        {**{k: row[k] for k in row.keys() if k != "gate_passed"},
+         "gate_passed": None if row["gate_passed"] is None else bool(row["gate_passed"])}
+        for row in rows
+    ]
 
 
 def _fifo_match(fills: List[tuple]) -> List[tuple]:

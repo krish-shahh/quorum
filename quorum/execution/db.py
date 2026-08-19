@@ -435,6 +435,22 @@ CREATE TABLE IF NOT EXISTS daily_recap (
     realized_pnl REAL,
     recap_json   TEXT NOT NULL DEFAULT '{}'
 );
+
+CREATE TABLE IF NOT EXISTS run_recap (
+    run_id          TEXT PRIMARY KEY,
+    computed_at     TEXT NOT NULL DEFAULT (datetime('now')),
+    strategy_id     TEXT NOT NULL DEFAULT '',
+    mode            TEXT NOT NULL DEFAULT '',
+    n_candidates    INTEGER NOT NULL DEFAULT 0,
+    n_decisions     INTEGER NOT NULL DEFAULT 0,
+    n_orders        INTEGER NOT NULL DEFAULT 0,
+    n_fills         INTEGER NOT NULL DEFAULT 0,
+    n_closed_trades INTEGER NOT NULL DEFAULT 0,
+    realized_pnl    REAL,
+    gate_passed     INTEGER,
+    recap_json      TEXT NOT NULL DEFAULT '{}'
+);
+CREATE INDEX IF NOT EXISTS idx_run_recap_strategy ON run_recap(strategy_id, mode);
 """
 
 # ──────────────────────────────────────────────────────────────────────

@@ -363,6 +363,59 @@ class TestListRuns:
         assert runs[0]["metrics"] == {"n_trades": 5}
 
 
+class TestRunRecap:
+    def test_save_run_recap_returns_none_for_unknown_run(self, tmp_path):
+        config = _config(tmp_path)
+
+        assert dl.save_run_recap(config, "no-such-run") is None
+
+    def test_finish_run_auto_saves_a_recap(self, tmp_path):
+        config = _config(tmp_path)
+        run_id = dl.new_run(config, strategy_id="regime_gate", mode="backtest")
+        dl.record_signal(config, run_id=run_id, ts="2026-08-19", symbol="NVDA", suppressed=False)
+
+        dl.finish_run(config, run_id, status="ok", metrics={"n_trades": 0})
+
+        recap = dl.get_run_recap(config, run_id)
+        assert recap is not None
+        assert len(recap["candidates"]) == 1
+
+    def test_save_run_recap_reflects_a_fill_added_after_first_save(self, tmp_path):
+        config = _config(tmp_path)
+        run_id = dl.new_run(config, strategy_id="regime_gate", mode="paper")
+        dl.finish_run(config, run_id, status="ok")
+
+        first = dl.get_run_recap(config, run_id)
+        assert len(first["orders"]) == 0
+
+        order_id = dl.record_order(config, run_id=run_id, ts_submitted="2026-08-19", symbol="NVDA", side="buy", qty=5)
+        dl.record_fill(config, order_id=order_id, ts="2026-08-19", qty=5, price=100.0)
+        dl.save_run_recap(config, run_id)
+
+        second = dl.get_run_recap(config, run_id)
+        assert len(second["orders"]) == 1
+        assert second["orders"][0]["fill_ts"] is not None
+
+    def test_get_run_recap_returns_none_when_never_saved(self, tmp_path):
+        config = _config(tmp_path)
+        run_id = dl.new_run(config, strategy_id="s", mode="paper")
+
+        assert dl.get_run_recap(config, run_id) is None
+
+    def test_list_run_recaps_filters_and_orders_newest_first(self, tmp_path):
+        config = _config(tmp_path)
+        run_a = dl.new_run(config, strategy_id="regime_gate", mode="paper")
+        dl.finish_run(config, run_a, status="ok")
+        run_b = dl.new_run(config, strategy_id="regime_gate", mode="backtest")
+        dl.finish_run(config, run_b, status="ok")
+        dl.new_run(config, strategy_id="other", mode="paper")  # not finished, no recap
+
+        recaps = dl.list_run_recaps(config, strategy_id="regime_gate")
+
+        assert {r["run_id"] for r in recaps} == {run_a, run_b}
+        assert "recap_json" not in recaps[0]
+
+
 class TestGetRunDetail:
     def test_returns_none_for_unknown_run(self, tmp_path):
         config = _config(tmp_path)

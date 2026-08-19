@@ -210,6 +210,11 @@ class ExecutionEngine:
             dl.recompute_closed_trades_for_strategy(
                 self.config, run_info["strategy_id"], run_info["mode"],
             )
+            # Re-save the run's recap now that this fill (and any resulting
+            # closed trade) is reflected — a pod-cycle run's finish_run()
+            # already fired at candidate-generation time, before this fill
+            # existed, so the snapshot from there alone would be stale.
+            dl.save_run_recap(self.config, run_id)
 
         # 10. Learning engine — record entry for buy, exit for sell
         from .confidence import compute_confidence_score

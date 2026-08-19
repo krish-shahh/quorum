@@ -46,12 +46,14 @@ def _make_config(tmp_path, **overrides):
         "execution_log_path": str(tmp_path / "execution" / "trades.jsonl"),
         "stop_loss_path": str(tmp_path / "stop_losses.json"),
         "stop_loss_enabled": False,
-        # Without these, LearningEngine and WikiWriter fall back to their
-        # ~/.quorum/... defaults and pollute the real, production data with
-        # synthetic test trades (this happened — see the realized_pnl
-        # backfill commit for the cleanup).
+        # Without these, LearningEngine/WikiWriter/decision_log fall back to
+        # their ~/.quorum/... defaults and pollute the real, production data
+        # with synthetic test trades (this happened twice — see the
+        # realized_pnl backfill commit, and the decision-log fill-wiring
+        # commit, for the cleanups).
         "learning_data_path": str(tmp_path / "learning.json"),
         "wiki_enabled": False,
+        "db_path": str(tmp_path / "test.db"),
         "max_position_pct": 0.05,
         "max_single_ticker_pct": 0.25,
         "max_open_positions": 6,

@@ -162,6 +162,30 @@ def daily_recap(
     )
 
 
+@app.command(name="run-recap")
+def run_recap(
+    run_id: str = typer.Argument(..., help="run_id to save/refresh a recap for"),
+):
+    """Manually (re-)save one run's recap.
+
+    Normally unnecessary — save_run_recap() is called automatically when a
+    run finishes and again whenever a fill lands under it — but useful for
+    backfilling recaps on runs that predate this feature, or forcing a
+    refresh on demand.
+    """
+    from quorum.execution.decision_log import save_run_recap
+
+    detail = save_run_recap(DEFAULT_CONFIG, run_id)
+    if detail is None:
+        console.print(f"[red]No such run: {run_id}[/red]")
+        raise typer.Exit(1)
+    console.print(
+        f"[green]Saved recap for {run_id} ({detail['strategy_id']}/{detail['mode']}): "
+        f"{len(detail['candidates'])} candidate(s), {len(detail['orders'])} order(s), "
+        f"{len(detail['closed_trades'])} closed trade(s)[/green]"
+    )
+
+
 @app.command(name="shadow-sleeve")
 def shadow_sleeve(
     strategy_id: str = typer.Argument(..., help="Filename stem under strategies/, e.g. 'regime_gate'"),
