@@ -331,62 +331,22 @@ def _handle_tool(name: str, args: dict) -> str:
         # ── PRE-TRADE VALIDATION GATE ────────────────────────────
         # Deterministic risk checks that run OUTSIDE Claude's reasoning.
         # The model cannot override these. They fire before every trade.
+        # Shared with the PreToolUse hook (.claude/hooks/pre_trade_validate.py)
+        # via quorum.execution.pretrade — see that module's docstring for the
+        # policy behind what is and isn't enforced here (position count and
+        # averaging-down are deliberately not hard-blocked; see CLAUDE.md).
         from quorum.execution.broker.paper_client import PaperBrokerClient
+        from quorum.execution.pretrade import validate_trade
         broker = PaperBrokerClient(config)
         account = broker.get_account_info()
         positions = broker.get_positions()
 
-        rejections = []
-
-        # Rule 1: Max 6 concurrent positions (for new buys only)
-        if signal in ("Buy", "Overweight"):
-            held = [p for p in positions if p.quantity > 0]
-            if len(held) >= int(config.get("max_open_positions", 6)):
-                rejections.append(f"BLOCKED: Already at max positions ({len(held)}/{config.get('max_open_positions', 6)})")
-
-        # Rule 2: Single ticker can't exceed 25% of portfolio
-        if signal in ("Buy", "Overweight"):
-            existing = next((p for p in positions if p.ticker.upper() == ticker), None)
-            current_exposure = existing.market_value if existing else 0
-            max_ticker_value = account.account_value * float(config.get("max_single_ticker_pct", 0.25))
-            if current_exposure >= max_ticker_value:
-                rejections.append(f"BLOCKED: {ticker} already at {current_exposure/account.account_value:.0%} of portfolio (max {config.get('max_single_ticker_pct', 0.25):.0%})")
-
-        # Rule 3: Don't double down on a >10% loser without explicit overweight signal
-        if signal == "Buy":
-            existing = next((p for p in positions if p.ticker.upper() == ticker), None)
-            if existing and existing.quantity > 0 and existing.unrealized_pnl < 0:
-                loss_pct = abs(existing.unrealized_pnl) / (existing.avg_cost * existing.quantity) if existing.avg_cost else 0
-                if loss_pct > 0.10:
-                    rejections.append(f"BLOCKED: {ticker} is down {loss_pct:.0%}. Use 'Overweight' signal to deliberately add to a losing position, not 'Buy'.")
-
-        # Rule 4: Must have >10% cash after trade (reserve)
-        if signal in ("Buy", "Overweight"):
-            new_position_cost = account.account_value * float(config.get("max_position_pct", 0.05))
-            cash_after = account.cash_balance - new_position_cost
-            cash_floor = float(config.get("min_cash_target", 0.10))
-            min_cash = account.account_value * cash_floor
-            if cash_after < min_cash:
-                rejections.append(f"BLOCKED: Trade would leave ${cash_after:,.0f} cash ({cash_after/account.account_value:.0%}), below {cash_floor:.0%} reserve.")
-
-        # Rule 5: Kill switch check (buys only — sells must always be allowed to exit)
-        from quorum.execution.safety import SafetyMonitor
-        safety = SafetyMonitor(config)
-        if signal in ("Buy", "Overweight"):
-            if not safety.check_drawdown(account):
-                rejections.append("BLOCKED: Kill switch is active. Reset with `quorum reset-kill-switch`.")
-
-        # Rule 6: Notional exposure check for futures
-        if signal in ("Buy", "Overweight"):
-            exposure = safety.check_notional_exposure(account, positions)
-            if not exposure["within_limits"]:
-                rejections.append(
-                    f"BLOCKED: Notional exposure ${exposure['total_notional']:,.0f} "
-                    f"({exposure['leverage']:.1f}x leverage) exceeds max {exposure['max_leverage']:.1f}x"
-                )
+        rejections = validate_trade(config, ticker, signal, account, positions)
 
         if rejections:
-            return "ORDER REJECTED (pre-trade validation):\n" + "\n".join(rejections)
+            return "ORDER REJECTED (pre-trade validation):\n" + "\n".join(
+                f"BLOCKED: {r}" for r in rejections
+            )
         # ── END VALIDATION GATE ──────────────────────────────────
 
         from quorum.execution.executor import ExecutionEngine
