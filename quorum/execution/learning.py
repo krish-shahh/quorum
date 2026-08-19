@@ -334,6 +334,54 @@ class LearningEngine:
             "learned_weights": weights,
         }
 
+    # ── One-time repair ──
+
+    def backfill_realized_pnl(self) -> Dict[str, Any]:
+        """Recompute ``pnl`` on every resolved outcome from entry/exit price.
+
+        Historical outcomes were resolved with ``pnl = account_value_after -
+        account_value_before`` at the executor level (~0 on every sell,
+        since a sell just converts position value into cash — see
+        ``executor.py``'s fill handling), so ``is_win`` was wrong for nearly
+        every resolved trade. Each outcome already has ``entry_price``,
+        ``exit_price``, and ``quantity``, so pnl can be recomputed directly
+        without needing the trade log. Weights are then rebuilt from scratch
+        by replaying ``_update_weights`` in entry-date order, since the EMA
+        is order-dependent.
+
+        Returns ``{"outcomes_fixed": N, "total_pnl": F}``. Idempotent to run
+        again (recomputing from price is deterministic), but only meant to
+        run once against the pre-fix data.
+        """
+        fixed = 0
+        for outcome in self._outcomes:
+            if not outcome.is_resolved:
+                continue
+            if outcome.entry_price is None or outcome.exit_price is None or not outcome.quantity:
+                continue
+            recomputed = (outcome.exit_price - outcome.entry_price) * outcome.quantity
+            if recomputed != outcome.pnl:
+                outcome.pnl = recomputed
+                fixed += 1
+
+        # Rebuild EMA weights from scratch, replaying in entry-date order —
+        # the weights are order-dependent and were built on the wrong pnls.
+        self._signal_weights = {}
+        self._ticker_weights = {}
+        resolved = sorted(
+            (o for o in self._outcomes if o.is_resolved),
+            key=lambda o: (o.entry_date or "", o.exit_date or ""),
+        )
+        for outcome in resolved:
+            self._update_weights(outcome)
+
+        self._save()
+        total_pnl = sum(o.pnl for o in resolved if o.pnl is not None)
+        logger.info(
+            "Backfilled realized pnl on %d outcomes; total pnl $%.2f", fixed, total_pnl,
+        )
+        return {"outcomes_fixed": fixed, "total_pnl": round(total_pnl, 2)}
+
     # ── Persistence ──
 
     def _save(self) -> None:

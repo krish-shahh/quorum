@@ -83,6 +83,37 @@ def db_status():
         console.print(f"[red]Database error: {e}[/red]")
 
 
+@app.command(name="backfill-pnl")
+def backfill_pnl():
+    """One-time backfill of realized P&L for historical trades.
+
+    Fixes the pre-fix account-value-delta P&L (~$0 on every sell, since a
+    sell just converts position value into cash) in two places:
+      1. ``trades.realized_pnl`` — FIFO-matched per-fill P&L (feeds
+         analytics, the dashboard, and wiki ticker pages).
+      2. ``~/.quorum/learning.json`` — recomputed from each outcome's
+         entry/exit price, then EMA weights rebuilt in order (feeds
+         get_trade_reflections, the one channel that's actually injected
+         into the Portfolio Manager prompt).
+    Both are idempotent.
+    """
+    from quorum.execution.db import backfill_realized_pnl_fifo
+    from quorum.execution.learning import LearningEngine
+
+    db_result = backfill_realized_pnl_fifo(DEFAULT_CONFIG)
+    console.print(
+        f"[green]trades table: backfilled {db_result['sells_updated']} sells across "
+        f"{db_result['tickers']} tickers. Total realized P&L: ${db_result['total_pnl']:,.2f}[/green]"
+    )
+
+    learner = LearningEngine(DEFAULT_CONFIG)
+    learning_result = learner.backfill_realized_pnl()
+    console.print(
+        f"[green]learning.json: fixed {learning_result['outcomes_fixed']} outcomes. "
+        f"Total pnl: ${learning_result['total_pnl']:,.2f}[/green]"
+    )
+
+
 @app.command()
 def scan(
     mode: str = typer.Option(
