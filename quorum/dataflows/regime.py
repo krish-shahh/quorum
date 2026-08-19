@@ -18,6 +18,7 @@ from typing import Any, Dict, List, Optional
 import numpy as np
 
 from .cache import cached_config
+from .fred import get_fred_series_latest
 
 logger = logging.getLogger(__name__)
 
@@ -103,6 +104,18 @@ class CrossAssetRegimeDetector:
                 pct = 99
             result["vix_percentile"] = pct
 
+        # Supplementary macro series from regime_gate.yaml's design doc
+        # (VXN/DFII10) — best-effort, absent entirely if FRED_API_KEY
+        # isn't set. Not consumed by _classify() yet; see module docstring.
+        vxn = get_fred_series_latest("VXNCLS")
+        if vxn:
+            result["vxn"] = vxn["value"]
+            result["vxn_change_20d"] = vxn.get("change_20d_pct")
+        dfii10 = get_fred_series_latest("DFII10")
+        if dfii10:
+            result["dfii10"] = dfii10["value"]
+            result["dfii10_change_20d"] = dfii10.get("change_20d_pct")
+
         return result if result.get("vix") is not None else None
 
     def _classify(self, data: Dict[str, Any]) -> str:
@@ -149,5 +162,9 @@ def get_market_regime(trade_date: str) -> str:
         lines.append(f"DXY: {result['dxy']:.2f} (5d change: {result.get('dxy_change_5d', 0):+.1f}%)")
     if result.get("yield_10y") is not None:
         lines.append(f"10Y Yield: {result['yield_10y']:.2f}% (5d change: {result.get('yield_10y_change_5d', 0):+.1f}%)")
+    if result.get("vxn") is not None:
+        lines.append(f"VXN (Nasdaq vol): {result['vxn']:.1f} (20d change: {result.get('vxn_change_20d') or 0:+.1f}%)")
+    if result.get("dfii10") is not None:
+        lines.append(f"10Y TIPS (DFII10): {result['dfii10']:.2f}% (20d change: {result.get('dfii10_change_20d') or 0:+.1f}%)")
 
     return "\n".join(lines)

@@ -1,3 +1,4 @@
+import logging
 from typing import Annotated
 
 # Import from vendor-specific modules
@@ -12,9 +13,17 @@ from .y_finance import (
     get_insider_transactions as get_yfinance_insider_transactions,
 )
 from .yfinance_news import get_news_yfinance, get_global_news_yfinance
+from .finnhub_client import (
+    get_stock_data_finnhub,
+    get_fundamentals_finnhub,
+    get_news_finnhub,
+    get_insider_transactions_finnhub,
+)
 
 # Configuration and routing logic
 from .config import get_config
+
+logger = logging.getLogger(__name__)
 
 # Tools organized by category
 TOOLS_CATEGORIES = {
@@ -52,13 +61,18 @@ TOOLS_CATEGORIES = {
 
 VENDOR_LIST = [
     "yfinance",
+    "finnhub",
 ]
 
-# Mapping of methods to their vendor-specific implementations
+# Mapping of methods to their vendor-specific implementations. yfinance
+# stays first/primary everywhere (data_vendors config below); finnhub is
+# registered as a fallback only where it has a real implementation — a
+# method with a single-entry dict just has no fallback, still fine.
 VENDOR_METHODS = {
     # core_stock_apis
     "get_stock_data": {
         "yfinance": get_YFin_data_online,
+        "finnhub": get_stock_data_finnhub,
     },
     # technical_indicators
     "get_indicators": {
@@ -70,6 +84,7 @@ VENDOR_METHODS = {
     # fundamental_data
     "get_fundamentals": {
         "yfinance": get_yfinance_fundamentals,
+        "finnhub": get_fundamentals_finnhub,
     },
     "get_balance_sheet": {
         "yfinance": get_yfinance_balance_sheet,
@@ -83,12 +98,14 @@ VENDOR_METHODS = {
     # news_data
     "get_news": {
         "yfinance": get_news_yfinance,
+        "finnhub": get_news_finnhub,
     },
     "get_global_news": {
         "yfinance": get_global_news_yfinance,
     },
     "get_insider_transactions": {
         "yfinance": get_yfinance_insider_transactions,
+        "finnhub": get_insider_transactions_finnhub,
     },
 }
 
@@ -130,12 +147,25 @@ def route_to_vendor(method: str, *args, **kwargs):
         if vendor not in fallback_vendors:
             fallback_vendors.append(vendor)
 
+    last_exc: Exception | None = None
     for vendor in fallback_vendors:
         if vendor not in VENDOR_METHODS[method]:
             continue
 
         vendor_impl = VENDOR_METHODS[method][vendor]
         impl_func = vendor_impl[0] if isinstance(vendor_impl, list) else vendor_impl
-        return impl_func(*args, **kwargs)
+        try:
+            return impl_func(*args, **kwargs)
+        except Exception as exc:
+            # Previously this just returned the first vendor's result
+            # unconditionally — a "fallback chain" that never actually
+            # fell back on a runtime failure, only on config/registration.
+            # Now a failing vendor is caught and the next one in the
+            # chain is tried instead.
+            logger.warning("Vendor '%s' failed for '%s': %s", vendor, method, exc)
+            last_exc = exc
+            continue
 
+    if last_exc is not None:
+        raise last_exc
     raise RuntimeError(f"No available vendor for '{method}'")

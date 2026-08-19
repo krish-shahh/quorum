@@ -1,9 +1,12 @@
 # Regime gate — highest evidence, lowest implementation cost of the plan's
-# first four strategies. v0.1 gates entries on XLK/SMH trend only; the VXN
+# first four strategies. v0.1 gates entries on XLK/SMH trend only; the
+# VXNCLS (Nasdaq vol, not bare "VXN" — that's not a valid FRED series ID)
 # level, DFII10 20-day change, and QQQ/QQQE breadth terms from the full
-# design are deferred until the engine's DataFeed can pull FRED series
-# (pandas-datareader, already adopted) and options-implied vol — tracked
-# as a follow-up, not silently dropped.
+# design are deferred until the strategy engine's feature layer can
+# consume regime.py's data (VXNCLS/DFII10 are now fetched there via FRED,
+# see quorum/dataflows/fred.py, but not yet exposed as a strategy Feature
+# op) and options-implied vol is added — tracked as a follow-up, not
+# silently dropped.
 strategy_id: regime_gate
 version: "0.1"
 description: >

@@ -34,6 +34,20 @@ _XML_URL = "https://disclosures-clerk.house.gov/public_disc/financial-pdfs/{year
 _PDF_URL = "https://disclosures-clerk.house.gov/public_disc/ptr-pdfs/{year}/{doc_id}.pdf"
 _UA = "quorum/0.2 (+https://github.com/TauricResearch/TradingAgents)"
 
+# Senate coverage supplement — efdsearch.senate.gov (the Senate's own
+# disclosure portal) is unstructured HTML/PDF only, same problem the House
+# Clerk scrape above solves for the House. CongressInvests is an unofficial
+# free/keyless third-party API that covers both chambers; only its Senate
+# rows are used here since House is already covered by the primary,
+# trusted scrape above. Best-effort supplement: any failure degrades
+# silently, it never breaks get_congress_trades. (The same category of
+# unofficial service — House Stock Watcher — has died before; don't treat
+# this as a source of truth the way the House Clerk scrape is.)
+_CI_BASE = "https://congressinfor-production.up.railway.app"
+_SENATE_CACHE_FILE = os.path.join(_QUORUM_HOME, "congress_senate_cache.json")
+_SENATE_CACHE_TTL = 21600  # 6h, matches CongressInvests' own stated refresh cadence
+_AMOUNT_RE = re.compile(r'\$([\d,]+)')
+
 # Regex to extract transactions from PTR PDF text
 _TX_RE = re.compile(
     r'\((?P<ticker>[A-Z]{1,5})\)\s*\[(?:ST|OP|AB|OT|EF)\]\s*'
@@ -71,6 +85,79 @@ def _fetch_url(url: str, timeout: float = 15.0, retries: int = 3) -> bytes:
             logger.debug("Retry %d for %s after %s (wait %ds)", attempt + 1, url, exc, wait)
             time.sleep(wait)
     raise RuntimeError("unreachable")
+
+
+def _parse_amount_range(amount_str: str) -> tuple[int, int]:
+    nums = [int(n.replace(",", "")) for n in _AMOUNT_RE.findall(amount_str)]
+    if not nums:
+        return 0, 0
+    return nums[0], (nums[1] if len(nums) > 1 else nums[0])
+
+
+def _load_senate_cache() -> dict:
+    if os.path.exists(_SENATE_CACHE_FILE):
+        try:
+            with open(_SENATE_CACHE_FILE) as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {}
+
+
+def _save_senate_cache(cache: dict) -> None:
+    try:
+        os.makedirs(os.path.dirname(_SENATE_CACHE_FILE), exist_ok=True)
+        with open(_SENATE_CACHE_FILE, "w") as f:
+            json.dump(cache, f, indent=2)
+    except Exception as e:
+        logger.warning("Senate trade cache save failed: %s", e)
+
+
+def _fetch_senate_trades(ticker: str, days: int) -> list[dict]:
+    """Supplemental Senate trades for one ticker via CongressInvests. See
+    module-level comment above _CI_BASE for the trust/scope rationale."""
+    cache = _load_senate_cache()
+    entry = cache.get(ticker)
+    if entry and (time.time() - entry.get("fetched_at", 0)) < _SENATE_CACHE_TTL:
+        raw_trades = entry["trades"]
+    else:
+        try:
+            body = _fetch_url(f"{_CI_BASE}/trades/{ticker}", timeout=8.0, retries=1)
+            raw_trades = json.loads(body).get("trades", [])
+        except Exception as exc:
+            logger.debug("CongressInvests fetch failed for %s: %s", ticker, exc)
+            return []
+        cache[ticker] = {"fetched_at": time.time(), "trades": raw_trades}
+        _save_senate_cache(cache)
+
+    cutoff = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+    out = []
+    seen = set()  # CongressInvests' own feed has been observed to repeat a row
+    for t in raw_trades:
+        if t.get("chamber") != "Senate":
+            continue  # House already covered by the primary scraper above
+        date_iso = t.get("tx_date", "")
+        if date_iso < cutoff:
+            continue
+        dedup_key = (t.get("member"), t.get("trade_type"), t.get("amount"), date_iso)
+        if dedup_key in seen:
+            continue
+        seen.add(dedup_key)
+        amount_low, amount_high = _parse_amount_range(t.get("amount", ""))
+        out.append({
+            "member": t.get("member", "Unknown"),
+            "state": "",
+            "ticker": ticker,
+            "tx_type": {"buy": "Purchase", "sell": "Sale"}.get(t.get("trade_type", ""), t.get("trade_type", "")),
+            "date": date_iso,
+            "amount_low": amount_low,
+            "amount_high": amount_high,
+            "amount_str": t.get("amount", ""),
+            "doc_id": f"ci_{t.get('member', '')}_{ticker}_{date_iso}",
+            "chamber": "Senate",
+            "source": "congressinvests",
+        })
+    return out
 
 
 def _parse_ptr_pdf(doc_id: str, year: int) -> list[dict]:
@@ -208,15 +295,21 @@ def get_congress_trades(ticker: str, days: int = 90) -> str:
         return f"<congressional trade data unavailable: {type(exc).__name__}>"
 
     cutoff = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
-    trades = [
+    house_trades = [
         t for t in cache.get("trades", [])
         if t["ticker"] == ticker and t["date"] >= cutoff
     ]
+    for t in house_trades:
+        t.setdefault("chamber", "House")
+        t.setdefault("source", "house_clerk")
+
+    senate_trades = _fetch_senate_trades(ticker, days)
+    trades = house_trades + senate_trades
 
     if not trades:
         return (
             f"<no congressional trades found for {ticker} in the past {days} days>\n"
-            f"Source: House Clerk STOCK Act disclosures (disclosures-clerk.house.gov)"
+            f"Sources: House Clerk STOCK Act disclosures (House), CongressInvests (Senate, best-effort)"
         )
 
     trades.sort(key=lambda t: t["date"], reverse=True)
@@ -232,13 +325,18 @@ def get_congress_trades(ticker: str, days: int = 90) -> str:
         "",
     ]
     for t in trades:
+        chamber = t.get("chamber", "House")[:6]
         lines.append(
-            f"  {t['date']}  {t['tx_type']:15} {t['member'][:30]:30} {t['amount_str']}"
+            f"  {t['date']}  {chamber:6} {t['tx_type']:15} {t['member'][:30]:30} {t['amount_str']}"
         )
 
+    n_senate = sum(1 for t in trades if t.get("chamber") == "Senate")
     lines.append("")
     lines.append(f"Summary: {purchases} purchase(s), {sales} sale(s) by {len(members)} member(s)")
-    lines.append("Source: House Clerk STOCK Act disclosures")
+    if n_senate:
+        lines.append(f"Sources: House Clerk STOCK Act disclosures (House, {len(trades) - n_senate}), CongressInvests (Senate, {n_senate}, best-effort)")
+    else:
+        lines.append("Source: House Clerk STOCK Act disclosures")
 
     return "\n".join(lines)
 

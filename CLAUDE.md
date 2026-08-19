@@ -141,7 +141,7 @@ quorum/
   execution/       — decision_log.py (run/signal/target/order/fill), paper broker, safety, pretrade, position sizer, contracts registry
   council/         — Legacy council prompts (quorum/council/prompts/, read by trading-planner)
   wiki/            — Knowledge base (run pages, digests, ticker pages, regimes)
-  dataflows/       — Market data with TTL caching (yfinance, Reddit, StockTwits, regime, sectors, congressional trades)
+  dataflows/       — Market data with TTL caching (yfinance primary / Finnhub fallback, Reddit, StockTwits, regime incl. FRED macro series, sectors, congressional trades incl. Senate via CongressInvests, SEC filings via data.sec.gov)
   quant/           — Deterministic scoring layer feeding the legacy council path (score_council)
   api/             — Flask JSON API backend (/api/v1 endpoints, incl. daily-recap) consumed by the Electron desktop app (desktop/)
 strategies/        — Strategy YAML, one file per pod (git-committed)
