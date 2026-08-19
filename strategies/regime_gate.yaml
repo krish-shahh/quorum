@@ -35,6 +35,25 @@ features:
   - name: smh_above_50dma
     op: gt
     inputs: [SMH.close, smh_sma50]
+  # Universe-wide vol proxy for sizing (find_atr_feature's documented
+  # simplification: one ATR feature shared across every traded symbol,
+  # not per-symbol vol targeting — that's flagged future work in
+  # quorum/strategy/engine.py). SMH chosen over XLK since it's the
+  # tighter proxy for this universe's semis-heavy composition. Without
+  # this feature, vol_target sizing silently computes weight=0 for
+  # every candidate (atr=None), which is exactly what shipped here
+  # until this was caught in a live dry run of get_pod_candidates.
+  # Known side effect of sharing one ATR across every symbol: since
+  # weight = target_risk_pct / (atr/price) and atr is now constant
+  # across symbols, weight ends up scaling with each stock's raw PRICE,
+  # not its own volatility — this is allocation-by-price dressed up as
+  # vol-targeting, not real per-symbol risk parity. max_position_pct
+  # (0.15) and max_single_ticker_pct (0.20) bound the damage; true
+  # per-symbol ATR is the actual fix, tracked as engine.py future work.
+  - name: smh_atr14
+    op: atr
+    inputs: [SMH.high, SMH.low, SMH.close]
+    window: 14
 
 signal:
   direction: long_only
