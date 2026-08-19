@@ -655,14 +655,15 @@ def _load_exec_log(plan_id: str) -> dict:
 def get_trading_status_data():
     """Merged status strip: regime + plan + live risk in one call."""
     acct = get_account_data()
+    live_risk = get_live_risk_data()
     return {
         "regime": get_regime(),
         "plan": get_plan_status_data(),
-        "live_risk": get_live_risk_data(),
+        "live_risk": live_risk,
         "kill_switch": acct.get("kill_switch", False),
         "execution_mode": acct.get("execution_mode", "paper"),
         "exposure": acct.get("exposure"),
-        "risk_level": get_live_risk_data().get("risk_level", "unknown"),
+        "risk_level": live_risk.get("risk_level", "unknown"),
     }
 
 

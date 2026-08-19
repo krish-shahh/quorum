@@ -70,16 +70,19 @@ def check_portfolio_file() -> CheckResult:
 
 
 def check_watchlist() -> CheckResult:
+    """tickers.txt is only consumed by the legacy /trading-planner path —
+    a pod-only setup (strategies/*.yaml define their own universe) has no
+    use for it, so its absence is informational, not a failure."""
     path = _HOME / "tickers.txt"
     if not path.exists():
-        return ("Watchlist (tickers.txt)", False, "file missing")
+        return ("Watchlist (tickers.txt)", True, "not set — pod strategies define their own universe")
     tickers = [
         line.strip()
         for line in path.read_text().splitlines()
         if line.strip() and not line.strip().startswith("#")
     ]
     if not tickers:
-        return ("Watchlist (tickers.txt)", False, "empty — add tickers to trade")
+        return ("Watchlist (tickers.txt)", True, "empty — pod strategies define their own universe")
     return ("Watchlist (tickers.txt)", True, f"{len(tickers)} tickers: {', '.join(tickers[:8])}{'...' if len(tickers) > 8 else ''}")
 
 

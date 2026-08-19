@@ -621,18 +621,36 @@ def health():
 def reset(
     balance: float = typer.Option(5000.0, "--balance", "-b", help="Starting cash balance"),
     confirm: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt"),
+    keep_history: bool = typer.Option(
+        False, "--keep-history/--no-keep-history",
+        help="Keep the v2 decision log (run/signal/target/order/fill/closed_trade/"
+             "journal/recaps/trace_event) instead of wiping it along with the account",
+    ),
 ):
-    """Reset paper trading account — clears all positions, trades, and history."""
+    """Reset paper trading account — clears all positions, trades, and history.
+
+    By default this wipes the decision log too (matching the "ALL trade
+    history" the confirmation prompt promises) — pass --keep-history to
+    reset the paper account/trades but preserve the run/signal/target/
+    order_intent/fill/closed_trade/journal/daily_recap/run_recap/
+    trace_event/portfolio_snapshot/sweep tables, e.g. to keep backtest
+    research history across an account reset.
+    """
     import json
+    import os
     import sqlite3
 
-    home = Path.home() / ".quorum"
+    # QUORUM_HOME override, matching the convention used elsewhere
+    # (plan.py, sec_filings.py, congress.py) — lets tests point this at a
+    # tmp dir instead of the real ~/.quorum.
+    home = Path(os.environ.get("QUORUM_HOME", str(Path.home() / ".quorum")))
 
+    confirm_msg = f"This will reset your paper account to ${balance:,.2f} and delete ALL trade history"
+    if not keep_history:
+        confirm_msg += ", including the full decision log"
+    confirm_msg += ". Continue?"
     if not confirm:
-        typer.confirm(
-            f"This will reset your paper account to ${balance:,.2f} and delete ALL trade history. Continue?",
-            abort=True,
-        )
+        typer.confirm(confirm_msg, abort=True)
 
     # Reset portfolio
     portfolio_path = home / "paper_portfolio.json"
@@ -657,12 +675,24 @@ def reset(
     if learning_path.exists():
         learning_path.write_text(json.dumps({"outcomes": [], "signal_weights": {}, "ticker_weights": {}}))
 
-    # Clear database tables
+    # Clear database tables. Account tables always go; the v2 decision-log
+    # tables go too unless --keep-history was passed. Deleted in FK-safe
+    # order (children before parents) even though sqlite doesn't enforce
+    # foreign keys here — keeps the list honest about the dependency shape.
     db_path = home / "quorum.db"
     if db_path.exists():
         conn = sqlite3.connect(str(db_path))
-        for table in ["trades", "trade_reports", "paper_positions", "paper_account",
-                       "backtest_runs", "backtest_trades"]:
+        account_tables = [
+            "trades", "trade_reports", "paper_positions", "paper_account",
+            "backtest_runs", "backtest_trades",
+        ]
+        decision_log_tables = [
+            "trace_event", "fill", "order_intent", "target", "signal",
+            "closed_trade", "journal", "portfolio_snapshot",
+            "run_recap", "daily_recap", "run", "sweep",
+        ]
+        tables = account_tables + ([] if keep_history else decision_log_tables)
+        for table in tables:
             try:
                 conn.execute(f"DELETE FROM {table}")
             except sqlite3.OperationalError:
@@ -677,7 +707,10 @@ def reset(
         conn.close()
 
     console.print(f"[green]Paper account reset to ${balance:,.2f}[/green]")
-    console.print("[dim]All positions, trades, and history cleared.[/dim]")
+    if keep_history:
+        console.print("[dim]Positions and trades cleared; decision log kept.[/dim]")
+    else:
+        console.print("[dim]All positions, trades, and history cleared.[/dim]")
 
 
 _PROFILES = ("default", "moderate", "scalp")
