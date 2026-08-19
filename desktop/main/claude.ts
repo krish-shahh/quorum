@@ -3,12 +3,12 @@ import * as path from "path";
 
 const PROJECT_ROOT = path.resolve(__dirname, "../../..");
 
-// No headless call site pins a model unless it says so below. Each headless
-// `claude -p` draws from a small separate Agent SDK credit pool (~$20/mo on
-// Pro, distinct from interactive-subscription usage — see project memory
-// "Subscription plan"), not the account's ambient/interactive default,
-// which is both invisible from here and could be an expensive tier. Pin
-// explicitly, per use case, instead of inheriting it silently.
+// Pin a model per use case rather than letting these inherit the account's
+// ambient/interactive default — that default isn't visible from here and
+// could silently be an expensive tier. (Headless usage is billed the same
+// as interactive under the current plan, not a separate credit pool — an
+// earlier belief to the contrary was reverted; this pin is about picking
+// the right cost/quality tier per task, not rationing a scarce budget.)
 const DASHBOARD_QA_MODEL = "haiku"; // cheap — answering questions about already-fetched data
 const STRATEGY_CODEGEN_MODEL = "sonnet"; // needs to get the closed-grammar schema right
 
