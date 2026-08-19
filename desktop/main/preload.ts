@@ -1,7 +1,8 @@
 import { contextBridge, ipcRenderer } from "electron";
+import { FLASK_PORT } from "./flask";
 
 contextBridge.exposeInMainWorld("electronAPI", {
-  flaskPort: 5050,
+  flaskPort: FLASK_PORT,
   platform: process.platform,
 
   /** Ask the live Claude Code bridge one question (read-only MCP tools

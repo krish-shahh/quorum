@@ -1,4 +1,4 @@
-const BASE_URL = "http://localhost:5050";
+const BASE_URL = `http://localhost:${window.electronAPI?.flaskPort ?? 5050}`;
 
 async function fetchJson<T>(path: string): Promise<T> {
   const res = await fetch(`${BASE_URL}${path}`);

@@ -4,7 +4,7 @@ import * as http from "http";
 
 let flaskProcess: ChildProcess | null = null;
 
-const FLASK_PORT = 5050;
+export const FLASK_PORT = 5050;
 const PROJECT_ROOT = path.resolve(__dirname, "../../..");
 
 export function startFlask(): void {
