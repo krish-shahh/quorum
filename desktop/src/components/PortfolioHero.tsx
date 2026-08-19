@@ -9,7 +9,7 @@ interface Props {
 
 export default function PortfolioHero({ account, trades }: Props) {
   const pnlPositive = account.pnl >= 0;
-  const pnlColor = pnlPositive ? "text-green-600" : "text-red-600";
+  const pnlColor = pnlPositive ? "text-profit" : "text-loss";
 
   // Format with enough precision — don't round small P&L to 0
   const fmtPnl = (v: number) => {
@@ -95,7 +95,7 @@ function MetricWithTooltip({ label, value, tooltip, warn }: { label: string; val
       <TooltipTrigger asChild>
         <div className="cursor-default">
           <p className="text-[10px] text-muted-foreground uppercase tracking-wider">{label}</p>
-          <p className={cn("text-xs font-mono font-medium mt-0.5", warn && "text-orange-600")}>{value}</p>
+          <p className={cn("text-xs font-mono font-medium mt-0.5", warn && "text-risk-orange")}>{value}</p>
         </div>
       </TooltipTrigger>
       <TooltipContent>

@@ -54,7 +54,7 @@ export default function StatusStrip({ status }: Props) {
 
       {/* Day P&L */}
       <span className="text-muted-foreground">Day P&L:</span>
-      <span className={cn("font-mono font-medium", live_risk.daily_pnl >= 0 ? "text-green-600" : "text-red-600")}>
+      <span className={cn("font-mono font-medium", live_risk.daily_pnl >= 0 ? "text-profit" : "text-loss")}>
         {formatSignedUsd(live_risk.daily_pnl)} ({formatSignedPct(live_risk.daily_pnl_pct * 100)})
       </span>
 
@@ -64,7 +64,7 @@ export default function StatusStrip({ status }: Props) {
           <div className="h-4 w-px bg-border" />
           <Tooltip>
             <TooltipTrigger asChild>
-              <span className="font-mono text-orange-600 cursor-default">
+              <span className="font-mono text-risk-orange cursor-default">
                 DD: {(live_risk.intraday_drawdown * 100).toFixed(2)}%
               </span>
             </TooltipTrigger>
@@ -80,7 +80,7 @@ export default function StatusStrip({ status }: Props) {
         <>
           <Tooltip>
             <TooltipTrigger asChild>
-              <span className="font-medium text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full cursor-default">
+              <span className="font-medium text-accent-foreground bg-accent px-2 py-0.5 rounded-full cursor-default">
                 Plan Active
               </span>
             </TooltipTrigger>
@@ -108,7 +108,7 @@ export default function StatusStrip({ status }: Props) {
       {live_risk.stops_breached.length > 0 && (
         <>
           <div className="h-4 w-px bg-border" />
-          <span className="text-red-600 font-medium">
+          <span className="text-risk-red font-medium">
             {live_risk.stops_breached.length} stop(s) breached
           </span>
         </>
@@ -120,7 +120,7 @@ export default function StatusStrip({ status }: Props) {
           <div className="h-4 w-px bg-border" />
           <Tooltip>
             <TooltipTrigger asChild>
-              <span className="text-orange-600 font-medium cursor-default">
+              <span className="text-risk-orange font-medium cursor-default">
                 {live_risk.consecutive_losses} consecutive losses
               </span>
             </TooltipTrigger>

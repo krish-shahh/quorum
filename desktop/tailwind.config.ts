@@ -1,7 +1,7 @@
 import type { Config } from "tailwindcss";
 
 const config: Config = {
-  darkMode: ["class", "class"],
+  darkMode: ["class"],
   content: ["./src/**/*.{ts,tsx}"],
   theme: {
   	extend: {
@@ -45,7 +45,52 @@ const config: Config = {
   			card: {
   				DEFAULT: 'hsl(var(--card))',
   				foreground: 'hsl(var(--card-foreground))'
-  			}
+  			},
+  			profit: {
+  				DEFAULT: 'hsl(var(--profit))',
+  				foreground: 'hsl(var(--profit-foreground))'
+  			},
+  			loss: {
+  				DEFAULT: 'hsl(var(--loss))',
+  				foreground: 'hsl(var(--loss-foreground))'
+  			},
+  			'neutral-signal': {
+  				DEFAULT: 'hsl(var(--neutral-signal))',
+  				foreground: 'hsl(var(--neutral-signal-foreground))'
+  			},
+  			'risk-green': {
+  				DEFAULT: 'hsl(var(--risk-green))',
+  				foreground: 'hsl(var(--risk-green-foreground))'
+  			},
+  			'risk-yellow': {
+  				DEFAULT: 'hsl(var(--risk-yellow))',
+  				foreground: 'hsl(var(--risk-yellow-foreground))'
+  			},
+  			'risk-orange': {
+  				DEFAULT: 'hsl(var(--risk-orange))',
+  				foreground: 'hsl(var(--risk-orange-foreground))'
+  			},
+  			'risk-red': {
+  				DEFAULT: 'hsl(var(--risk-red))',
+  				foreground: 'hsl(var(--risk-red-foreground))'
+  			},
+  			'regime-calm': 'hsl(var(--regime-calm))',
+  			'regime-neutral': 'hsl(var(--regime-neutral))',
+  			'regime-risk-off': 'hsl(var(--regime-risk-off))',
+  			'regime-volatile': 'hsl(var(--regime-volatile))',
+  			'gate-pass': 'hsl(var(--gate-pass))',
+  			'gate-fail': 'hsl(var(--gate-fail))',
+  			'gate-skip': 'hsl(var(--gate-skip))'
+  		},
+  		boxShadow: {
+  			sm: 'var(--shadow-sm)',
+  			DEFAULT: 'var(--shadow-md)',
+  			md: 'var(--shadow-md)',
+  			lg: 'var(--shadow-lg)'
+  		},
+  		transitionDuration: {
+  			fast: '120ms',
+  			base: '200ms'
   		},
   		borderRadius: {
   			lg: 'var(--radius)',

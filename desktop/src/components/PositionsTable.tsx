@@ -54,7 +54,7 @@ export default function PositionsTable({ positions, books, onSelectTicker }: Pro
                 <span className="text-muted-foreground">{book.position_count} position{book.position_count !== 1 ? "s" : ""}</span>
                 <div className="ml-auto flex items-center gap-4 font-mono">
                   <span>{formatUsd(book.market_value)}</span>
-                  <span className={cn("font-medium", book.unrealized_pnl >= 0 ? "text-green-600" : "text-red-600")}>
+                  <span className={cn("font-medium", book.unrealized_pnl >= 0 ? "text-profit" : "text-loss")}>
                     {formatSignedUsd(book.unrealized_pnl)}
                   </span>
                   <span className="text-muted-foreground w-12 text-right">{book.allocation_pct}%</span>
@@ -89,7 +89,7 @@ export default function PositionsTable({ positions, books, onSelectTicker }: Pro
                             <div className="flex items-center gap-2">
                               <span className="font-medium font-mono">{p.ticker}</span>
                               {p.asset_class === "etf_bond" && (
-                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-600">BOND</span>
+                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-accent text-accent-foreground">BOND</span>
                               )}
                               {p.asset_class === "etf_commodity" && (
                                 <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-600">CMDTY</span>
@@ -105,10 +105,10 @@ export default function PositionsTable({ positions, books, onSelectTicker }: Pro
                           <td className="text-right px-3 py-2.5 font-mono">{formatUsd(p.avg_cost)}</td>
                           <td className="text-right px-3 py-2.5 font-mono">{formatUsd(p.last_price)}</td>
                           <td className="text-right px-3 py-2.5 font-mono">{formatUsd(p.market_value)}</td>
-                          <td className={cn("text-right px-3 py-2.5 font-mono", p.unrealized_pnl >= 0 ? "text-green-600" : "text-red-600")}>
+                          <td className={cn("text-right px-3 py-2.5 font-mono", p.unrealized_pnl >= 0 ? "text-profit" : "text-loss")}>
                             {formatSignedUsd(p.unrealized_pnl)}
                           </td>
-                          <td className={cn("text-right px-3 py-2.5 font-mono", p.pct_return >= 0 ? "text-green-600" : "text-red-600")}>
+                          <td className={cn("text-right px-3 py-2.5 font-mono", p.pct_return >= 0 ? "text-profit" : "text-loss")}>
                             {formatSignedPct(p.pct_return)}
                           </td>
                           <td className="text-right px-3 py-2.5 font-mono">{p.weight.toFixed(1)}%</td>

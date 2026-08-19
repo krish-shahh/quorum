@@ -61,10 +61,10 @@ function SectorsContent() {
             <tr key={s.name} className="border-b last:border-0">
               <td className="py-1.5">{s.name}</td>
               <td className="py-1.5 font-mono">{s.etf}</td>
-              <td className={cn("text-right py-1.5 font-mono", s.return_1m >= 0 ? "text-green-600" : "text-red-600")}>
+              <td className={cn("text-right py-1.5 font-mono", s.return_1m >= 0 ? "text-profit" : "text-loss")}>
                 {s.return_1m > 0 ? "+" : ""}{s.return_1m}%
               </td>
-              <td className={cn("text-right py-1.5 font-mono", s.relative_1m >= 0 ? "text-green-600" : "text-red-600")}>
+              <td className={cn("text-right py-1.5 font-mono", s.relative_1m >= 0 ? "text-profit" : "text-loss")}>
                 {s.relative_1m > 0 ? "+" : ""}{s.relative_1m}%
               </td>
             </tr>
@@ -101,7 +101,7 @@ function InsidersContent() {
             <td className="py-1.5 font-mono font-medium">{c.ticker}</td>
             <td className="py-1.5">
               <span className={cn("px-1.5 py-0.5 rounded-full text-[10px]",
-                c.direction === "buy" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"
+                c.direction === "buy" ? "bg-profit/10 text-profit" : "bg-loss/10 text-loss"
               )}>
                 {c.direction}
               </span>
@@ -144,7 +144,7 @@ function CongressContent() {
             <td className="py-1.5 font-mono font-medium">{t.ticker}</td>
             <td className="py-1.5">
               <span className={cn("px-1.5 py-0.5 rounded-full text-[10px]",
-                t.type?.toLowerCase() === "purchase" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"
+                t.type?.toLowerCase() === "purchase" ? "bg-profit/10 text-profit" : "bg-loss/10 text-loss"
               )}>
                 {t.type}
               </span>

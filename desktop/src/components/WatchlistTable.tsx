@@ -11,7 +11,7 @@ const SECTOR_COLORS: Record<string, string> = {
   tech: "bg-purple-50 text-purple-700",
   financials: "bg-cyan-50 text-cyan-700",
   healthcare: "bg-emerald-50 text-emerald-700",
-  consumer: "bg-orange-50 text-orange-700",
+  consumer: "bg-risk-orange/10 text-risk-orange",
   cyclical: "bg-stone-100 text-stone-700",
 };
 
@@ -58,12 +58,12 @@ export default function WatchlistTable({ states, onSelectTicker }: Props) {
                   <div className="flex items-center gap-2">
                     <span className="font-medium font-mono">{s.ticker}</span>
                     {s.debate_triggered && (
-                      <span className="text-[10px] px-1 py-0.5 rounded bg-yellow-50 text-yellow-700">Debate</span>
+                      <span className="text-[10px] px-1 py-0.5 rounded bg-risk-yellow/10 text-risk-yellow">Debate</span>
                     )}
                   </div>
                 </td>
                 <td className="px-3 py-2.5">
-                  <span className={cn("text-[10px] px-1.5 py-0.5 rounded", SECTOR_COLORS[s.sector] || "bg-gray-50 text-gray-600")}>
+                  <span className={cn("text-[10px] px-1.5 py-0.5 rounded", SECTOR_COLORS[s.sector] || "bg-muted text-muted-foreground")}>
                     {s.sector || s.asset_class}
                   </span>
                 </td>

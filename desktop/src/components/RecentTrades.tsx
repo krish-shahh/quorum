@@ -55,7 +55,7 @@ export default function RecentTrades({ trades }: Props) {
                   <span
                     className={cn(
                       "px-2 py-0.5 rounded-full text-[10px] font-medium",
-                      t.side === "BUY" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"
+                      t.side === "BUY" ? "bg-profit/10 text-profit" : "bg-loss/10 text-loss"
                     )}
                   >
                     {t.side}
@@ -71,7 +71,7 @@ export default function RecentTrades({ trades }: Props) {
                   <span
                     className={cn(
                       "px-2 py-0.5 rounded-full text-[10px] font-medium",
-                      t.action === "executed" ? "bg-green-50 text-green-600" : "bg-gray-100 text-gray-500"
+                      t.action === "executed" ? "bg-profit/10 text-profit" : "bg-muted text-muted-foreground"
                     )}
                   >
                     {t.action}

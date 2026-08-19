@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { createChart, ColorType, CandlestickSeries, AreaSeries, HistogramSeries } from "lightweight-charts";
 import { Home } from "lucide-react";
-import type { CandleData, Position, BookData } from "@/lib/api";
-
-const BASE_URL = "http://localhost:5050";
+import { fetchChart, type CandleData, type Position, type BookData } from "@/lib/api";
+import { themeColor } from "@/lib/utils";
+import { useTheme } from "@/hooks/use-theme";
 
 interface Props {
   equity: { time: string; value: number }[];
@@ -61,6 +61,7 @@ export default function EquityCurve({ equity, positions, books }: Props) {
 function PortfolioChart({ equity }: { equity: { time: string; value: number }[] }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<ReturnType<typeof createChart> | null>(null);
+  const { theme } = useTheme();
 
   const points = equity.filter((p) => p.time !== "Start" && p.time.includes("-"));
 
@@ -74,19 +75,20 @@ function PortfolioChart({ equity }: { equity: { time: string; value: number }[] 
     }
 
     const positive = points[points.length - 1].value >= points[0].value;
-    const color = positive ? "#16a34a" : "#dc2626";
+    const color = positive ? themeColor("--profit") : themeColor("--loss");
+    const areaTopColor = positive ? themeColor("--profit", 0.08) : themeColor("--loss", 0.08);
 
     const chart = createChart(container, {
       layout: {
         background: { type: ColorType.Solid, color: "transparent" },
-        textColor: "#9ca3af",
+        textColor: themeColor("--muted-foreground"),
         fontSize: 10,
         fontFamily: "JetBrains Mono, monospace",
         attributionLogo: false,
       },
       grid: {
         vertLines: { visible: false },
-        horzLines: { color: "#f3f4f6" },
+        horzLines: { color: themeColor("--border") },
       },
       width: container.clientWidth,
       height: 180,
@@ -107,7 +109,7 @@ function PortfolioChart({ equity }: { equity: { time: string; value: number }[] 
     const areaSeries = chart.addSeries(AreaSeries, {
       lineColor: color,
       lineWidth: 2,
-      topColor: positive ? "rgba(22,163,74,0.08)" : "rgba(220,38,38,0.08)",
+      topColor: areaTopColor,
       bottomColor: "transparent",
       crosshairMarkerVisible: true,
       crosshairMarkerRadius: 3,
@@ -144,7 +146,7 @@ function PortfolioChart({ equity }: { equity: { time: string; value: number }[] 
       chart.remove();
       chartRef.current = null;
     };
-  }, [points]);
+  }, [points, theme]);
 
   if (points.length < 2) {
     return <p className="text-xs text-muted-foreground text-center py-8">Insufficient equity data</p>;
@@ -159,6 +161,7 @@ function TickerChart({ ticker }: { ticker: string }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<ReturnType<typeof createChart> | null>(null);
   const [loading, setLoading] = useState(true);
+  const { theme } = useTheme();
 
   const handleHome = useCallback(() => chartRef.current?.timeScale().fitContent(), []);
 
@@ -169,8 +172,7 @@ function TickerChart({ ticker }: { ticker: string }) {
 
     async function load() {
       try {
-        const res = await fetch(`${BASE_URL}/api/v1/chart/${ticker}?days=90`);
-        const chartRes = await res.json();
+        const chartRes = await fetchChart(ticker, 90);
 
         if (cancelled || !container) return;
 
@@ -182,17 +184,18 @@ function TickerChart({ ticker }: { ticker: string }) {
           chartRef.current = null;
         }
 
+        const gridColor = themeColor("--border");
         const chart = createChart(container, {
           layout: {
             background: { type: ColorType.Solid, color: "transparent" },
-            textColor: "#71717a",
+            textColor: themeColor("--muted-foreground"),
             fontSize: 11,
             fontFamily: "JetBrains Mono, monospace",
             attributionLogo: false,
           },
           grid: {
-            vertLines: { color: "#f4f4f5" },
-            horzLines: { color: "#f4f4f5" },
+            vertLines: { color: gridColor },
+            horzLines: { color: gridColor },
           },
           width: container.clientWidth,
           height: 280,
@@ -216,22 +219,24 @@ function TickerChart({ ticker }: { ticker: string }) {
         volumeSeries.priceScale().applyOptions({
           scaleMargins: { top: 0.85, bottom: 0 },
         });
+        const upColor = themeColor("--profit");
+        const downColor = themeColor("--loss");
         volumeSeries.setData(
           candles.map((c) => ({
             time: c.time,
             value: c.volume,
-            color: c.close >= c.open ? "rgba(22,163,74,0.25)" : "rgba(220,38,38,0.25)",
+            color: c.close >= c.open ? themeColor("--profit", 0.25) : themeColor("--loss", 0.25),
           }))
         );
 
         // Candlestick
         const candleSeries = chart.addSeries(CandlestickSeries, {
-          upColor: "#16a34a",
-          downColor: "#dc2626",
-          borderUpColor: "#15803d",
-          borderDownColor: "#b91c1c",
-          wickUpColor: "#16a34a",
-          wickDownColor: "#dc2626",
+          upColor,
+          downColor,
+          borderUpColor: upColor,
+          borderDownColor: downColor,
+          wickUpColor: upColor,
+          wickDownColor: downColor,
         });
         candleSeries.setData(candles);
 
@@ -260,7 +265,7 @@ function TickerChart({ ticker }: { ticker: string }) {
         chartRef.current = null;
       }
     };
-  }, [ticker]);
+  }, [ticker, theme]);
 
   return (
     <>

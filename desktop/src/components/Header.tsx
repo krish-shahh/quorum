@@ -1,8 +1,10 @@
-import { Activity, Pause, Power } from "lucide-react";
+import { Activity, Moon, Pause, Power, Sun } from "lucide-react";
 import { cn, timeAgo } from "@/lib/utils";
 import { toggleKillSwitch, type MarketStatus } from "@/lib/api";
 import { useQueryClient } from "@tanstack/react-query";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import type { View } from "@/lib/views";
+import { VIEWS } from "@/lib/views";
 
 interface HeaderProps {
   market: MarketStatus;
@@ -10,9 +12,16 @@ interface HeaderProps {
   live: boolean;
   onToggleLive: () => void;
   lastUpdated: number;
+  view: View;
+  onChangeView: (v: View) => void;
+  theme: "light" | "dark";
+  onToggleTheme: () => void;
 }
 
-export default function Header({ market, killSwitch, live, onToggleLive, lastUpdated }: HeaderProps) {
+export default function Header({
+  market, killSwitch, live, onToggleLive, lastUpdated,
+  view, onChangeView, theme, onToggleTheme,
+}: HeaderProps) {
   const queryClient = useQueryClient();
 
   const handleKillSwitch = async () => {
@@ -29,18 +38,47 @@ export default function Header({ market, killSwitch, live, onToggleLive, lastUpd
           <span
             className={cn(
               "text-[11px] font-medium px-2 py-0.5 rounded-full no-drag",
-              market.open ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"
+              market.open ? "bg-profit/10 text-profit" : "bg-muted text-muted-foreground"
             )}
           >
             {market.text}
           </span>
         </div>
 
-        {/* Spacer */}
-        <div className="flex-1" />
+        {/* Center: top-level view nav */}
+        <nav className="flex items-center gap-0.5 mx-auto no-drag">
+          {VIEWS.map((v) => (
+            <button
+              key={v.id}
+              onClick={() => onChangeView(v.id)}
+              className={cn(
+                "text-[12px] font-medium px-3 py-1.5 rounded-md transition-colors duration-fast",
+                view === v.id
+                  ? "bg-accent text-accent-foreground"
+                  : "text-muted-foreground hover:text-foreground hover:bg-accent/50"
+              )}
+            >
+              {v.label}
+            </button>
+          ))}
+        </nav>
 
         {/* Right: staleness + controls */}
         <div className="flex items-center gap-2 no-drag">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                onClick={onToggleTheme}
+                className="flex items-center justify-center w-6 h-6 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+              >
+                {theme === "dark" ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>Switch to {theme === "dark" ? "light" : "dark"} mode</p>
+            </TooltipContent>
+          </Tooltip>
+
           <span className="text-[11px] text-muted-foreground mr-1">
             {lastUpdated ? timeAgo(new Date(lastUpdated).toISOString()) : "---"}
           </span>
@@ -51,7 +89,7 @@ export default function Header({ market, killSwitch, live, onToggleLive, lastUpd
                 onClick={onToggleLive}
                 className={cn(
                   "flex items-center gap-1 text-[11px] font-medium px-2.5 py-1 rounded",
-                  live ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"
+                  live ? "bg-profit/10 text-profit" : "bg-muted text-muted-foreground"
                 )}
               >
                 {live ? <Activity className="w-3 h-3" /> : <Pause className="w-3 h-3" />}
@@ -69,7 +107,7 @@ export default function Header({ market, killSwitch, live, onToggleLive, lastUpd
                 onClick={handleKillSwitch}
                 className={cn(
                   "flex items-center gap-1 text-[11px] font-medium px-2.5 py-1 rounded",
-                  killSwitch ? "bg-red-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-red-50 hover:text-red-600"
+                  killSwitch ? "bg-risk-red text-risk-red-foreground" : "bg-muted text-muted-foreground hover:bg-risk-red/10 hover:text-risk-red"
                 )}
               >
                 <Power className="w-3 h-3" />

@@ -53,7 +53,7 @@ export default function CouncilDetailModal({ ticker, onClose }: Props) {
                   <TooltipContent>Weighted council score (1-5)</TooltipContent>
                 </Tooltip>
                 {(data.detail.detail as any).debate_triggered && (
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-yellow-50 text-yellow-700 font-medium">Debate</span>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-risk-yellow/10 text-risk-yellow font-medium">Debate</span>
                 )}
               </>
             )}
@@ -182,9 +182,9 @@ export default function CouncilDetailModal({ ticker, onClose }: Props) {
                             {report.fundamental_report && <ReportSection title="Fundamental" content={report.fundamental_report} />}
                             {report.sentiment_report && <ReportSection title="Sentiment" content={report.sentiment_report} />}
                             {report.news_report && <ReportSection title="News" content={report.news_report} />}
-                            {report.bull_case && <ReportSection title="Bull Case" content={report.bull_case} color="text-green-700" />}
-                            {report.bear_case && <ReportSection title="Bear Case" content={report.bear_case} color="text-red-700" />}
-                            {report.pm_decision && <ReportSection title="PM Decision" content={report.pm_decision} color="text-blue-700" />}
+                            {report.bull_case && <ReportSection title="Bull Case" content={report.bull_case} color="text-profit" />}
+                            {report.bear_case && <ReportSection title="Bear Case" content={report.bear_case} color="text-loss" />}
+                            {report.pm_decision && <ReportSection title="PM Decision" content={report.pm_decision} color="text-accent-foreground" />}
                           </AccordionContent>
                         </AccordionItem>
                       ))}
@@ -213,7 +213,7 @@ export default function CouncilDetailModal({ ticker, onClose }: Props) {
                             {report.fundamentals && <ReportSection title="Fundamentals" content={report.fundamentals} />}
                             {report.sentiment && <ReportSection title="Sentiment" content={report.sentiment} />}
                             {report.news_catalyst && <ReportSection title="News Catalyst" content={report.news_catalyst} />}
-                            {report.risk_factors && <ReportSection title="Risk Factors" content={report.risk_factors} color="text-orange-700" />}
+                            {report.risk_factors && <ReportSection title="Risk Factors" content={report.risk_factors} color="text-risk-orange" />}
                             {report.reasoning && <ReportSection title="Reasoning" content={report.reasoning} />}
                           </AccordionContent>
                         </AccordionItem>
@@ -277,10 +277,10 @@ function ScoreBars({ detail }: { detail: any }) {
 }
 
 function barColor(score: number): string {
-  if (score >= 4) return "bg-green-500";
-  if (score >= 3) return "bg-yellow-400";
-  if (score >= 2) return "bg-orange-400";
-  return "bg-red-500";
+  if (score >= 4) return "bg-risk-green";
+  if (score >= 3) return "bg-risk-yellow";
+  if (score >= 2) return "bg-risk-orange";
+  return "bg-risk-red";
 }
 
 function ReportSection({ title, content, color }: { title: string; content: string; color?: string }) {

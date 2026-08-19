@@ -62,9 +62,9 @@ export default function PlanMetrics({ status }: Props) {
 
 function StatusBadge({ status }: { status: string }) {
   const styles: Record<string, string> = {
-    FILLED: "bg-green-100 text-green-700",
-    SKIPPED: "bg-gray-100 text-gray-500",
-    PENDING: "bg-yellow-50 text-yellow-700",
+    FILLED: "bg-profit/10 text-profit",
+    SKIPPED: "bg-muted text-muted-foreground",
+    PENDING: "bg-risk-yellow/10 text-risk-yellow",
   };
 
   return (

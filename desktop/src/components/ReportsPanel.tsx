@@ -113,12 +113,12 @@ export default function ReportsPanel() {
                 </span>
                 <div className="flex gap-1 ml-1">
                   {preCount > 0 && (
-                    <span className="px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 text-[10px]">
+                    <span className="px-1.5 py-0.5 rounded bg-muted text-muted-foreground text-[10px]">
                       {preCount} pre
                     </span>
                   )}
                   {postCount > 0 && (
-                    <span className="px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 text-[10px]">
+                    <span className="px-1.5 py-0.5 rounded bg-accent text-accent-foreground text-[10px]">
                       {postCount} post
                     </span>
                   )}
@@ -170,7 +170,7 @@ function ReportRow({ report: r, isExpanded, onToggle }: { report: FullTradeRepor
           <TooltipTrigger asChild>
             <span className={cn(
               "px-1.5 py-0.5 rounded text-[10px] font-medium",
-              r.report_type === "post" ? "bg-blue-50 text-blue-700" : "bg-gray-100 text-gray-600"
+              r.report_type === "post" ? "bg-accent text-accent-foreground" : "bg-muted text-muted-foreground"
             )}>
               {r.report_type === "post" ? "POST" : "PRE"}
             </span>
@@ -183,7 +183,7 @@ function ReportRow({ report: r, isExpanded, onToggle }: { report: FullTradeRepor
         {r.side && (
           <span className={cn(
             "px-1.5 py-0.5 rounded-full text-[10px] font-medium",
-            r.side.toLowerCase() === "buy" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"
+            r.side.toLowerCase() === "buy" ? "bg-profit/10 text-profit" : "bg-loss/10 text-loss"
           )}>
             {r.side.toUpperCase()}
           </span>
@@ -193,7 +193,7 @@ function ReportRow({ report: r, isExpanded, onToggle }: { report: FullTradeRepor
           {r.quantity ? ` x${r.quantity}` : ""}
         </span>
         {r.pnl != null && r.pnl !== 0 && (
-          <span className={cn("font-mono font-medium", r.pnl >= 0 ? "text-green-600" : "text-red-600")}>
+          <span className={cn("font-mono font-medium", r.pnl >= 0 ? "text-profit" : "text-loss")}>
             {r.pnl >= 0 ? "+" : ""}${r.pnl.toFixed(2)}
           </span>
         )}
