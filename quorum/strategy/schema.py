@@ -19,6 +19,8 @@ from typing import Dict, List, Literal, Optional, Union
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from .universe import TMT_UNIVERSE, resolve_tags
+
 # Feature operators that produce a boolean (usable in entry/exit conditions).
 BOOLEAN_OPS = {"gt", "lt", "gte", "lte", "eq", "cross_above", "cross_below"}
 
@@ -108,7 +110,19 @@ class UniverseSpec(BaseModel):
             raise ValueError("universe.source == 'tag' requires a non-empty tags list")
         if self.source == "static" and not self.tickers:
             raise ValueError("universe.source == 'static' requires a non-empty tickers list")
+        if self.source == "tag":
+            unknown = [t for t in self.tags if t not in TMT_UNIVERSE]
+            if unknown:
+                raise ValueError(
+                    f"unknown universe tag(s): {unknown}; known tags: {sorted(TMT_UNIVERSE)}"
+                )
         return self
+
+    def resolve(self) -> List[str]:
+        """Resolve to a concrete, sorted ticker list."""
+        if self.source == "static":
+            return sorted(set(self.tickers))
+        return resolve_tags(self.tags)
 
 
 class SizingSpec(BaseModel):
