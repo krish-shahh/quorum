@@ -252,3 +252,143 @@ def test_run_gate_uses_provided_cost_stress_results():
     gate_result = gate.run_gate(result, cost_stress_results=stressed)
     by_name = {c.name: c for c in gate_result.checks}
     assert by_name["cost_stress_3x"].passed is False
+
+
+# ---------------------------------------------------------------------------
+# Required verification: overfit demonstration, baseline sanity floor,
+# determinism, and null-Sharpe-on-random-walk (see the Phase 3 plan's
+# verification note).
+# ---------------------------------------------------------------------------
+
+def _noise_trials(n_trials=50, n_obs=252, seed=42):
+    """The classic overfitting demo: many parameterizations tried against
+    pure noise, none of them carrying a real edge. Any "best" pick among
+    them is a sampling artifact, not skill.
+    """
+    rng = np.random.default_rng(seed)
+    return [rng.normal(loc=0.0, scale=0.01, size=n_obs) for _ in range(n_trials)]
+
+
+def test_overfit_sweep_on_pure_noise_fails_pbo():
+    trials = _noise_trials()
+
+    pbo = gate.probability_of_backtest_overfitting(trials, n_blocks=16)
+
+    # None of the 50 trials has a real edge, so the in-sample winner is
+    # essentially a coin flip on whether it also wins out-of-sample --
+    # PBO should sit well above the 0.20 gate threshold.
+    assert pbo >= 0.20
+
+
+def test_overfit_sweep_best_in_sample_pick_fails_min_backtest_length():
+    trials = _noise_trials()
+    n_trials, n_obs = len(trials), len(trials[0])
+
+    # Selection bias in action: pick the trial with the best full-sample
+    # Sharpe, exactly as an overfitting researcher would after a sweep.
+    sharpes = [float(np.mean(t) / np.std(t, ddof=1)) for t in trials]
+    best_sr = max(sharpes)
+
+    min_btl = gate.minimum_backtest_length(best_sr, n_trials=n_trials, skew=0.0, kurtosis=3.0)
+
+    # 252 daily observations is nowhere near enough to tell a noise-selected
+    # "winner" apart from luck once 50 trials were tried.
+    assert n_obs < min_btl
+    dsr = gate.deflated_sharpe_ratio(best_sr, n_trials=n_trials, skew=0.0, kurtosis=3.0, n_obs=n_obs)
+    assert dsr < 0.95  # the DSR gate independently agrees this SR doesn't clear the bar
+
+
+def test_buy_and_hold_trending_baseline_passes_basic_economic_checks_but_not_diversification():
+    # Sanity floor: a single-position buy-and-hold on a steadily-trending
+    # synthetic series (realistic ~10%/yr drift, 16%/yr vol -- roughly a
+    # broad equity index) over ~8.7 years. It should look economically
+    # sound (profitable, bounded drawdown, decent Calmar, and -- since it's
+    # a single untried trial with no selection bias -- DSR/MinBTL/PBO/WFE
+    # all clear too). What it correctly fails is the *diversification*
+    # checks: one trade, one symbol, one calendar year of activity is not
+    # a strategy this gate should wave through, no matter how good the
+    # single bet looked. We don't force those checks to pass.
+    rng = np.random.default_rng(12)
+    n_days = 9 * 252
+    idx = pd.bdate_range("2015-01-02", periods=n_days)
+    daily_rets = rng.normal(loc=0.0004, scale=0.010, size=n_days)
+    equity = 100_000.0 * np.cumprod(1 + daily_rets)
+    equity_curve = [{"ts": str(ts), "equity": float(e)} for ts, e in zip(idx, equity)]
+    trades = [{
+        "symbol": "SPY", "entry_ts": str(idx[0]), "exit_ts": str(idx[-1]),
+        "entry_price": 100.0, "exit_price": float(equity[-1] / 1000), "qty": 1000.0,
+        "pnl": float(equity[-1] - 100_000.0), "reason": "hold",
+    }]
+    result = {"run_id": None, "final_equity": float(equity[-1]), "equity_curve": equity_curve,
+              "trades": trades, "suppressed": [], "open_positions": ["SPY"]}
+
+    gate_result = gate.run_gate(result)
+    by_name = {c.name: c for c in gate_result.checks}
+
+    assert by_name["deflated_sharpe_ratio"].passed is True
+    assert by_name["max_drawdown"].passed is True
+    assert by_name["calmar_ratio"].passed is True
+    assert by_name["minimum_backtest_length"].passed is True
+
+    assert by_name["min_trade_count"].passed is False
+    assert by_name["year_concentration"].passed is False
+    assert by_name["symbol_pnl_concentration"].passed is False
+    assert gate_result.passed is False  # not every check passing means the gate as a whole does not
+
+
+def test_determinism_harness_passes_for_the_real_engine():
+    from quorum.strategy.engine import run_bar_loop
+    from quorum.strategy.schema import load_strategy
+
+    spec = load_strategy({
+        "strategy_id": "determinism_test", "version": "0.1",
+        "universe": {"source": "static", "tickers": ["TEST"]},
+        "features": [
+            {"name": "above", "op": "gt", "inputs": ["TEST.close", "TEST.threshold"]},
+            {"name": "below", "op": "lt", "inputs": ["TEST.close", "TEST.threshold"]},
+        ],
+        "signal": {"entry": {"all_of": ["above"]}, "exit": {"any_of": ["below"]}},
+        "sizing": {"method": "flat_pct", "flat_pct": 0.5, "max_position_pct": 0.6},
+        "risk": {"max_single_ticker_pct": 0.6},
+    })
+    closes = [90, 90, 90, 95, 105, 110, 105, 95, 90, 90]
+    idx = pd.date_range("2026-01-01", periods=len(closes), freq="D")
+    close = pd.Series(closes, index=idx, dtype=float)
+    ohlcv = {"TEST": pd.DataFrame({"open": close, "high": close, "low": close, "close": close,
+                                    "volume": 1000, "threshold": 100.0})}
+
+    check = gate.check_determinism(lambda: run_bar_loop(spec, ohlcv, symbols=["TEST"], starting_cash=100_000.0))
+
+    assert check.passed is True
+
+
+def test_null_sharpe_near_zero_on_a_synthetic_random_walk():
+    from quorum.strategy.engine import run_bar_loop
+    from quorum.strategy.schema import load_strategy
+
+    # An always-in-market strategy carries no edge of its own -- any Sharpe
+    # it shows just reflects the underlying random walk's drift, which is
+    # zero by construction here.
+    spec = load_strategy({
+        "strategy_id": "null_sharpe_test", "version": "0.1",
+        "universe": {"source": "static", "tickers": ["TEST"]},
+        "features": [{"name": "always", "op": "gt", "inputs": ["TEST.close", "TEST.floor"]}],
+        "signal": {"entry": {"all_of": ["always"]}, "exit": {"none_of": ["always"]}},
+        "sizing": {"method": "flat_pct", "flat_pct": 0.95, "max_position_pct": 0.95},
+        "risk": {"max_single_ticker_pct": 0.95},
+    })
+    rng = np.random.default_rng(99)
+    n_days = 1500
+    idx = pd.date_range("2020-01-01", periods=n_days, freq="D")
+    log_rets = rng.normal(loc=0.0, scale=0.01, size=n_days)
+    close = pd.Series(100.0 * np.exp(np.cumsum(log_rets)), index=idx)
+    ohlcv = {"TEST": pd.DataFrame({"open": close, "high": close, "low": close, "close": close,
+                                    "volume": 1000, "floor": 0.0})}
+
+    result = run_bar_loop(spec, ohlcv, symbols=["TEST"], starting_cash=100_000.0)
+    returns = gate.daily_returns(result["equity_curve"])
+    sr = float(returns.mean() / returns.std(ddof=1))
+
+    check = gate.check_null_sharpe_near_zero(sr, n_obs=len(returns))
+
+    assert check.passed is True

@@ -42,6 +42,12 @@ class GateCheck:
     threshold: str
     detail: str
 
+    def __post_init__(self) -> None:
+        # Comparisons against numpy/pandas scalars (common throughout this
+        # module) yield numpy.bool_, not bool -- coerce so callers get the
+        # plain bool the type hint promises.
+        self.passed = bool(self.passed)
+
 
 @dataclass
 class GateResult:
@@ -436,3 +442,46 @@ def run_gate(
         checks.append(GateCheck("calmar_ratio", False, None, ">= 0.5", "not enough return observations"))
 
     return GateResult(passed=all(c.passed for c in checks), checks=checks)
+
+
+# ---------------------------------------------------------------------------
+# Sanity checks
+#
+# Unlike checks 1-6, these aren't part of run_gate's per-strategy checklist
+# — run_gate only ever sees an already-computed result dict, and these two
+# need to either re-run the engine or reason about a null distribution.
+# They're harness-style checks meant to be exercised once (against the
+# engine itself, or a synthetic null strategy), not per strategy submission.
+# ---------------------------------------------------------------------------
+
+def check_determinism(run_fn: Callable[[], Dict[str, Any]], n_runs: int = 2) -> GateCheck:
+    """Calling `run_fn` (e.g. a closure over run_bar_loop with fixed
+    inputs) repeatedly must produce identical equity curves and trade
+    lists — no hidden randomness (unseeded RNG, dict/set ordering, wall
+    clock) should make a backtest result irreproducible.
+    """
+    runs = [run_fn() for _ in range(n_runs)]
+    first = runs[0]
+    identical = all(
+        r["equity_curve"] == first["equity_curve"] and r["trades"] == first["trades"]
+        for r in runs[1:]
+    )
+    detail = f"{n_runs} runs compared" if identical else "equity_curve or trades differed across repeated calls with identical inputs"
+    return GateCheck("determinism", identical, float(n_runs), "identical across repeated calls", detail)
+
+
+def check_null_sharpe_near_zero(sr: float, n_obs: int, confidence: float = 0.99) -> GateCheck:
+    """A strategy with no real edge, backtested against a random-walk price
+    series, should show a Sharpe ratio statistically indistinguishable
+    from zero. The bound is the strategy's own Sharpe standard error
+    (Mertens 2002, same formula DSR/PSR use) at `confidence` — a bound
+    that scales with n_obs rather than a hardcoded magic number, so it
+    doesn't need to be re-tuned per sample size and isn't flaky.
+    """
+    std_err = sharpe_ratio_std_error(sr, skew=0.0, kurtosis=3.0, n_obs=n_obs)
+    bound = stats.norm.ppf(confidence) * std_err
+    within_bound = abs(sr) < bound
+    return GateCheck(
+        "null_sharpe_near_zero", within_bound, sr, f"|SR| < {bound:.4f} ({confidence:.0%} CI)",
+        f"observed SR={sr:.4f} over {n_obs} obs",
+    )
