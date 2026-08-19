@@ -1,21 +1,47 @@
+import { useState } from "react";
 import {
   ResponsiveContainer, LineChart, Line, BarChart, Bar, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip as RTooltip, ReferenceLine,
 } from "recharts";
 import { usePerformance } from "@/hooks/use-performance";
+import { useRuns } from "@/hooks/use-runs";
 import { cn, formatPct, formatSignedUsd, pnlTextColor } from "@/lib/utils";
 import type { WinRateBucket } from "@/lib/api";
 
 const DAY_ORDER = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 export default function PerformanceView() {
-  const { data, isLoading } = usePerformance();
+  const [runId, setRunId] = useState<string | null>(null);
+  const { data: runsData } = useRuns({ limit: 50 });
+  const { data, isLoading } = usePerformance(runId);
 
-  if (isLoading) {
-    return <p className="text-sm text-muted-foreground py-12 text-center">Loading performance...</p>;
-  }
-  if (!data) return null;
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-end">
+        <select
+          value={runId ?? ""}
+          onChange={(e) => setRunId(e.target.value || null)}
+          className="text-xs font-mono rounded-md border bg-card px-2 py-1.5 text-foreground"
+        >
+          <option value="">Live book</option>
+          {runsData?.runs.map((r) => (
+            <option key={r.run_id} value={r.run_id}>
+              {r.strategy_id} · {r.mode} · {r.started_at}
+            </option>
+          ))}
+        </select>
+      </div>
 
+      {isLoading || !data ? (
+        <p className="text-sm text-muted-foreground py-12 text-center">Loading performance...</p>
+      ) : (
+        <PerformanceBody data={data} />
+      )}
+    </div>
+  );
+}
+
+function PerformanceBody({ data }: { data: NonNullable<ReturnType<typeof usePerformance>["data"]> }) {
   const noTrades = data.total_trades === 0;
 
   return (

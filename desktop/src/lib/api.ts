@@ -367,6 +367,10 @@ export function fetchPerformance(): Promise<PerformanceSummary> {
   return fetchJson("/api/v1/performance");
 }
 
+export function fetchRunPerformance(runId: string): Promise<PerformanceSummary> {
+  return fetchJson(`/api/v1/runs/${runId}/performance`);
+}
+
 // ── Runs ──
 
 export type RunMode = "backtest" | "walkforward" | "paper" | "shadow" | "live";

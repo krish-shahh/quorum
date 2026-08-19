@@ -1,10 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
-import { fetchPerformance } from "@/lib/api";
+import { fetchPerformance, fetchRunPerformance } from "@/lib/api";
 
-export function usePerformance() {
+export function usePerformance(runId?: string | null) {
   return useQuery({
-    queryKey: ["performance"],
-    queryFn: fetchPerformance,
+    queryKey: runId ? ["performance", "run", runId] : ["performance"],
+    queryFn: () => (runId ? fetchRunPerformance(runId) : fetchPerformance()),
     staleTime: 60_000,
   });
 }
