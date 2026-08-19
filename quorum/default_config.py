@@ -257,7 +257,8 @@ DEFAULT_CONFIG = _apply_profile(_apply_env_overrides({
     # ------------------------------------------------------------------
     # Execution layer
     # ------------------------------------------------------------------
-    # Mode: "paper" (in-memory simulation) or "schwab" (live Schwab API)
+    # quorum is paper-only — see CLAUDE.md's disclaimer. "paper" is the only
+    # supported value; execute_paper_trade also hardcodes it server-side.
     "execution_mode": "paper",
     # Paper-trading starting cash balance
     "paper_starting_balance": 5000.0,
@@ -286,9 +287,6 @@ DEFAULT_CONFIG = _apply_profile(_apply_env_overrides({
     "stop_loss_enabled": True,          # auto-register stop-losses from trader proposals
     # Extended hours (pre-market 4:00-9:30 ET, after-hours 16:00-20:00 ET)
     "extended_hours": False,
-    # Schwab API (credentials read from env vars SCHWAB_API_KEY, SCHWAB_API_SECRET,
-    # SCHWAB_ACCOUNT_HASH — not stored in DEFAULT_CONFIG for security)
-    "schwab_token_path": os.path.join(_QUORUM_HOME, "schwab_token.json"),
     # Scheduler / parallelization
     "parallel_max_workers": 3,          # concurrent tickers (1 = sequential)
     "parallel_stagger_seconds": 60,     # delay between parallel ticker starts (avoids API rate limits)

@@ -258,8 +258,4 @@ class ExecutionEngine:
         mode = config.get("execution_mode", "paper")
         if mode == "paper":
             return PaperBrokerClient(config)
-        if mode == "schwab":
-            # Deferred import — schwab-py is only required when using live execution
-            from .broker.schwab_client import SchwabBrokerClient
-            return SchwabBrokerClient(config)
-        raise ValueError(f"Unknown execution_mode: {mode!r}. Use 'paper' or 'schwab'.")
+        raise ValueError(f"Unknown execution_mode: {mode!r}. Only 'paper' is supported.")
