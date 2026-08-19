@@ -53,11 +53,18 @@ interface SpawnResult {
 }
 
 /** Shared spawn-and-parse core for both headless bridges: streams text
- * chunks to `onChunk` as they arrive, captures the session_id every
- * stream-json line carries (so a caller can `--resume` it for a real
- * follow-up instead of paying full re-init cost on an unrelated fresh
- * session), and resolves with the final answer once the process exits. */
-function runHeadless(args: string[], onChunk: (text: string) => void): Promise<SpawnResult> {
+ * chunks to `onChunk` as they arrive, forwards each tool call (Read/Glob/
+ * Grep) to `onToolUse` as its own event so a caller can render "reading
+ * schema.py" style process steps instead of only the raw text output,
+ * captures the session_id every stream-json line carries (so a caller can
+ * `--resume` it for a real follow-up instead of paying full re-init cost
+ * on an unrelated fresh session), and resolves with the final answer once
+ * the process exits. */
+function runHeadless(
+  args: string[],
+  onChunk: (text: string) => void,
+  onToolUse?: (name: string, input: Record<string, unknown>) => void,
+): Promise<SpawnResult> {
   return new Promise((resolve, reject) => {
     const claudeBin = process.env.CLAUDE_BIN || "claude";
     const proc = spawn(claudeBin, args, {
@@ -88,6 +95,8 @@ function runHeadless(args: string[], onChunk: (text: string) => void): Promise<S
             if (block?.type === "text" && block.text) {
               finalText += block.text;
               onChunk(block.text);
+            } else if (block?.type === "tool_use" && typeof block.name === "string") {
+              onToolUse?.(block.name, block.input ?? {});
             }
           }
         } else if (obj.type === "result" && typeof obj.result === "string") {
@@ -173,7 +182,12 @@ export function generateSpecYaml(
   description: string,
   existingYaml: string | undefined,
   onChunk: (text: string) => void,
-  opts?: { resumeSessionId?: string; retryError?: string; model?: string },
+  opts?: {
+    resumeSessionId?: string;
+    retryError?: string;
+    model?: string;
+    onToolUse?: (name: string, input: Record<string, unknown>) => void;
+  },
 ): Promise<SpawnResult> {
   const g = GROUNDING[kind];
   const model = opts?.model ?? SPEC_CODEGEN_MODEL;
@@ -211,5 +225,5 @@ export function generateSpecYaml(
   if (opts?.resumeSessionId) {
     args.push("--resume", opts.resumeSessionId);
   }
-  return runHeadless(args, onChunk);
+  return runHeadless(args, onChunk, opts?.onToolUse);
 }

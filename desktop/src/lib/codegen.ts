@@ -23,6 +23,11 @@ export interface GenerateValidatedSpecArgs {
    * rather than only revealing a finished attempt, matching the repo's
    * existing bias toward auditable, visible reasoning. */
   onChunk?: (attempt: number, text: string) => void;
+  /** Called for each tool call (Read/Glob/Grep) Claude makes while
+   * grounding itself in the schema/example, tagged with which attempt it
+   * belongs to — drives a live "reading schema.py" process feed so
+   * generation reads as an agent doing work, not just a code dump. */
+  onToolUse?: (attempt: number, name: string, input: Record<string, unknown>) => void;
 }
 
 export interface GenerateValidatedSpecResult {
@@ -44,7 +49,7 @@ const MAX_ATTEMPTS = 3;
  * last draft. Stops the moment a draft validates; never throws for a spec
  * that fails all 3 attempts, since the caller still wants the last draft. */
 export async function generateValidatedSpec({
-  kind, specId, description, existingYaml, onAttempt, onChunk,
+  kind, specId, description, existingYaml, onAttempt, onChunk, onToolUse,
 }: GenerateValidatedSpecArgs): Promise<GenerateValidatedSpecResult> {
   const attempts: SpecAttempt[] = [];
   const errorHistory: string[] = [];
@@ -60,6 +65,7 @@ export async function generateValidatedSpec({
       i === 1 ? existingYaml : lastDraft,
       (chunk) => onChunk?.(i, chunk),
       { model, retryError, resumeSessionId: i === 2 ? resumeSessionId : undefined },
+      (name, input) => onToolUse?.(i, name, input),
     );
     lastDraft = text;
     if (i === 1 && sessionId) resumeSessionId = sessionId;

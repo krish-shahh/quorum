@@ -2,11 +2,10 @@ import { useEffect, useRef, useState } from "react";
 import { Play, Save, Sparkles } from "lucide-react";
 import { cn, formatPct, formatUsd, gateColor } from "@/lib/utils";
 import { generateValidatedSpec, type SpecAttempt } from "@/lib/codegen";
+import GenerationProgress, { type ToolEvent } from "@/components/GenerationProgress";
 
 const AVAILABLE = typeof window !== "undefined" && !!window.electronAPI?.runQuorumCommand;
 const GENERATE_AVAILABLE = typeof window !== "undefined" && !!window.electronAPI?.generateSpecYaml;
-
-const ATTEMPT_GLYPHS = ["①", "②", "③"];
 
 const TEMPLATE = `# strategy_id must match this file's name (strategies/<strategy_id>.yaml).
 # Closed-grammar schema (quorum/strategy/schema.py) — every field below is
@@ -121,6 +120,7 @@ export default function StrategyLab({
   const [description, setDescription] = useState("");
   const [generating, setGenerating] = useState(false);
   const [attempts, setAttempts] = useState<SpecAttempt[]>([]);
+  const [toolEvents, setToolEvents] = useState<ToolEvent[]>([]);
   const [expandedAttempt, setExpandedAttempt] = useState<number | null>(null);
   const streamingAttemptRef = useRef(0);
 
@@ -184,6 +184,7 @@ export default function StrategyLab({
     const existingYaml = selected ? yamlText : undefined;
     setGenerating(true);
     setAttempts([]);
+    setToolEvents([]);
     setExpandedAttempt(null);
     setYamlText("");
     streamingAttemptRef.current = 0;
@@ -204,6 +205,8 @@ export default function StrategyLab({
             setYamlText((prev) => prev + chunk);
           }
         },
+        onToolUse: (attempt, name, input) =>
+          setToolEvents((prev) => [...prev, { attempt, name, input }]),
       });
       setYamlText(result.finalText);
     } finally {
@@ -297,34 +300,13 @@ export default function StrategyLab({
             </div>
           )}
 
-          {attempts.length > 0 && (
-            <div className="space-y-1">
-              <div className="flex items-center gap-1.5 flex-wrap">
-                {attempts.map((a) => (
-                  <button
-                    key={a.attempt}
-                    onClick={() => setExpandedAttempt(expandedAttempt === a.attempt ? null : a.attempt)}
-                    title={a.ok ? "Passed validation" : "Failed validation — click for the errors"}
-                    className={cn(
-                      "text-[10px] font-mono px-1.5 py-0.5 rounded border transition-colors",
-                      a.ok ? "border-profit/40 text-profit" : "border-loss/40 text-loss",
-                      expandedAttempt === a.attempt && "bg-muted"
-                    )}
-                  >
-                    {ATTEMPT_GLYPHS[a.attempt - 1] ?? a.attempt} {a.ok ? "✓" : "✗"} {a.model}
-                  </button>
-                ))}
-                {generating && attempts.length < 3 && (
-                  <span className="text-[10px] text-muted-foreground">retrying...</span>
-                )}
-              </div>
-              {expandedAttempt != null && (
-                <pre className="text-[10px] font-mono bg-muted/40 rounded-md p-2 max-h-32 overflow-y-auto whitespace-pre-wrap break-words">
-                  {attempts.find((a) => a.attempt === expandedAttempt)?.errors.join("\n") || "Passed validation."}
-                </pre>
-              )}
-            </div>
-          )}
+          <GenerationProgress
+            attempts={attempts}
+            toolEvents={toolEvents}
+            generating={generating}
+            expandedAttempt={expandedAttempt}
+            onToggleExpand={(a) => setExpandedAttempt(expandedAttempt === a ? null : a)}
+          />
 
           <textarea
             value={yamlText}

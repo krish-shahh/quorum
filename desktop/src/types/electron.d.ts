@@ -17,7 +17,8 @@ declare global {
         description: string,
         existingYaml: string | undefined,
         onChunk: (text: string) => void,
-        opts?: { resumeSessionId?: string; retryError?: string; model?: string }
+        opts?: { resumeSessionId?: string; retryError?: string; model?: string },
+        onToolUse?: (name: string, input: Record<string, unknown>) => void
       ): Promise<{ text: string; sessionId: string | null }>;
       listStrategies(kind?: "strategy" | "screen"): Promise<string[]>;
       readStrategyFile(specId: string, kind?: "strategy" | "screen"): Promise<string | null>;

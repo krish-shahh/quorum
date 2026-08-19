@@ -22,6 +22,12 @@ function createWindow() {
       preload: path.join(__dirname, "preload.js"),
       nodeIntegration: false,
       contextIsolation: true,
+      // Electron's default sandboxed preload only allows require() of a
+      // small built-in allowlist, so preload.ts's `import { FLASK_PORT }
+      // from "./flask"` (a local relative module) fails silently at
+      // preload-script load time — before contextBridge.exposeInMainWorld
+      // ever runs — leaving window.electronAPI permanently undefined.
+      sandbox: false,
     },
   });
 
@@ -30,6 +36,10 @@ function createWindow() {
   } else {
     mainWindow.loadFile(path.join(__dirname, "../renderer/index.html"));
   }
+
+  mainWindow.webContents.on("preload-error", (_event, preloadPath, error) => {
+    console.error("[preload-error]", preloadPath, error);
+  });
 
   mainWindow.on("closed", () => {
     mainWindow = null;
@@ -67,7 +77,12 @@ ipcMain.handle("claude:generate-spec", async (
   return withQueue("claude", 2, () =>
     generateSpecYaml(kind, specId, description, existingYaml, (chunk) => {
       event.sender.send(`claude:chunk:${requestId}`, chunk);
-    }, opts)
+    }, {
+      ...opts,
+      onToolUse: (name, input) => {
+        event.sender.send(`claude:tool:${requestId}`, { name, input });
+      },
+    })
   );
 });
 

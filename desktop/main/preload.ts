@@ -29,24 +29,35 @@ contextBridge.exposeInMainWorld("electronAPI", {
 
   /** Generate a spec YAML from a natural-language description (sonnet by
    * default, read-only — see main/claude.ts's generateSpecYaml). Streams
-   * raw text to onChunk and resolves with the full text + session_id.
-   * `opts` lets a retry loop (desktop/src/lib/codegen.ts) resume the same
-   * session with just a correction, or step up to a stronger model. */
+   * raw text to onChunk, each tool call (Read/Glob/Grep) to onToolUse as
+   * its own event — so a caller can render "reading schema.py" style
+   * process steps rather than just a wall of streaming YAML — and
+   * resolves with the full text + session_id. `opts` lets a retry loop
+   * (desktop/src/lib/codegen.ts) resume the same session with just a
+   * correction, or step up to a stronger model. */
   generateSpecYaml: (
     kind: "strategy" | "screen",
     specId: string,
     description: string,
     existingYaml: string | undefined,
     onChunk: (text: string) => void,
-    opts?: { resumeSessionId?: string; retryError?: string; model?: string }
+    opts?: { resumeSessionId?: string; retryError?: string; model?: string },
+    onToolUse?: (name: string, input: Record<string, unknown>) => void
   ): Promise<{ text: string; sessionId: string | null }> => {
     const requestId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    const channel = `claude:chunk:${requestId}`;
-    const listener = (_event: unknown, chunk: string) => onChunk(chunk);
-    ipcRenderer.on(channel, listener);
+    const chunkChannel = `claude:chunk:${requestId}`;
+    const toolChannel = `claude:tool:${requestId}`;
+    const chunkListener = (_event: unknown, chunk: string) => onChunk(chunk);
+    const toolListener = (_event: unknown, evt: { name: string; input: Record<string, unknown> }) =>
+      onToolUse?.(evt.name, evt.input);
+    ipcRenderer.on(chunkChannel, chunkListener);
+    ipcRenderer.on(toolChannel, toolListener);
     return ipcRenderer
       .invoke("claude:generate-spec", requestId, kind, specId, description, existingYaml, opts)
-      .finally(() => ipcRenderer.removeListener(channel, listener));
+      .finally(() => {
+        ipcRenderer.removeListener(chunkChannel, chunkListener);
+        ipcRenderer.removeListener(toolChannel, toolListener);
+      });
   },
 
   /** spec_id stems available under strategies/*.yaml (default) or
