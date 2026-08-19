@@ -8,8 +8,15 @@ declare global {
       askClaude(
         question: string,
         context: string | undefined,
+        onChunk: (text: string) => void,
+        resumeSessionId?: string
+      ): Promise<{ text: string; sessionId: string | null }>;
+      generateStrategyYaml(
+        strategyId: string,
+        description: string,
+        existingYaml: string | undefined,
         onChunk: (text: string) => void
-      ): Promise<string>;
+      ): Promise<{ text: string; sessionId: string | null }>;
       listStrategies(): Promise<string[]>;
       readStrategyFile(strategyId: string): Promise<string | null>;
       saveStrategy(strategyId: string, yamlContent: string): Promise<{ ok: boolean; error?: string }>;

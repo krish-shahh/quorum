@@ -1,8 +1,17 @@
 import { useEffect, useState } from "react";
-import { Play, Save } from "lucide-react";
+import { Play, Save, Sparkles } from "lucide-react";
 import { cn, formatPct, formatUsd, gateColor } from "@/lib/utils";
 
 const AVAILABLE = typeof window !== "undefined" && !!window.electronAPI?.runQuorumCommand;
+const GENERATE_AVAILABLE = typeof window !== "undefined" && !!window.electronAPI?.generateStrategyYaml;
+
+/** Strip a ```yaml ... ``` (or bare ``` ... ```) fence if the model wrapped
+ * its output in one despite being told not to — cheap enough to always
+ * run, no-op on already-bare YAML. */
+function stripCodeFence(text: string): string {
+  const match = text.trim().match(/^```(?:yaml)?\n([\s\S]*?)\n```$/);
+  return match ? match[1] : text;
+}
 
 const TEMPLATE = `# strategy_id must match this file's name (strategies/<strategy_id>.yaml).
 # Closed-grammar schema (quorum/strategy/schema.py) — every field below is
@@ -92,6 +101,9 @@ export default function StrategyLab({ onOpenRun }: { onOpenRun: (runId: string) 
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState<{ text: string; ok: boolean } | null>(null);
 
+  const [description, setDescription] = useState("");
+  const [generating, setGenerating] = useState(false);
+
   const [runMode, setRunMode] = useState<"backtest" | "shadow">("backtest");
   const [start, setStart] = useState("2018-01-01");
   const [cash, setCash] = useState("100000");
@@ -134,6 +146,22 @@ export default function StrategyLab({ onOpenRun }: { onOpenRun: (runId: string) 
       }
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function generate() {
+    if (!description.trim() || !/^[a-z][a-z0-9_]{1,63}$/.test(strategyId)) return;
+    const existingYaml = selected ? yamlText : undefined;
+    setGenerating(true);
+    setYamlText("");
+    try {
+      const { text } = await window.electronAPI.generateStrategyYaml(
+        strategyId, description.trim(), existingYaml,
+        (chunk) => setYamlText((prev) => prev + chunk)
+      );
+      setYamlText(stripCodeFence(text));
+    } finally {
+      setGenerating(false);
     }
   }
 
@@ -200,12 +228,39 @@ export default function StrategyLab({ onOpenRun }: { onOpenRun: (runId: string) 
             </button>
           </div>
 
+          {GENERATE_AVAILABLE && (
+            <div className="flex items-center gap-2">
+              <input
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && generate()}
+                placeholder={selected
+                  ? "Describe how to change this strategy..."
+                  : "Describe a strategy idea in plain English, e.g. \"long semis when the sector's above its 50-day average\"..."}
+                disabled={generating}
+                className="flex-1 text-xs rounded-md border bg-background px-2 py-1.5 outline-none focus:ring-1 focus:ring-ring disabled:opacity-50"
+              />
+              <button
+                onClick={generate}
+                disabled={generating || !description.trim() || !/^[a-z][a-z0-9_]{1,63}$/.test(strategyId)}
+                title="Claude reads the schema + an example, writes the YAML below for you to review"
+                className="inline-flex items-center gap-1 text-[11px] font-medium px-2.5 py-1 rounded bg-accent text-accent-foreground disabled:opacity-50 shrink-0"
+              >
+                <Sparkles className="w-3 h-3" /> {generating ? "Writing..." : "Generate"}
+              </button>
+            </div>
+          )}
+
           <textarea
             value={yamlText}
             onChange={(e) => setYamlText(e.target.value)}
             spellCheck={false}
+            placeholder="Or write/paste YAML directly."
             className="w-full h-72 text-[11px] font-mono rounded-md border bg-background p-2 resize-y"
           />
+          <p className="text-[10px] text-muted-foreground">
+            Review before saving — Claude's draft is a starting point, not a guarantee of a valid or good strategy.
+          </p>
 
           {saveMsg && (
             <p className={cn("text-[11px]", saveMsg.ok ? "text-profit" : "text-loss")}>{saveMsg.text}</p>

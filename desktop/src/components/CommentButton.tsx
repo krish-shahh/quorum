@@ -26,6 +26,10 @@ export default function CommentButton({
   const [asking, setAsking] = useState(false);
   const [streamText, setStreamText] = useState("");
   const [error, setError] = useState<string | null>(null);
+  // Kept in memory only (not persisted) — lets a follow-up "Ask Claude" in
+  // this same thread resume the prior session instead of paying for a
+  // fresh one, for as long as this popover stays mounted.
+  const [sessionId, setSessionId] = useState<string | undefined>(undefined);
   const queryClient = useQueryClient();
   const { data } = useAnnotations(anchorType, anchor);
 
@@ -90,9 +94,10 @@ export default function CommentButton({
     setStreamText("");
     const context = `Dashboard annotation context — anchor_type: ${anchorType}, anchor: ${JSON.stringify(anchor)}`;
     try {
-      const finalText = await window.electronAPI.askClaude(question, context, (chunk) => {
-        setStreamText((prev) => prev + chunk);
-      });
+      const { text: finalText, sessionId: newSessionId } = await window.electronAPI.askClaude(
+        question, context, (chunk) => setStreamText((prev) => prev + chunk), sessionId
+      );
+      if (newSessionId) setSessionId(newSessionId);
       await replyToAnnotation(threadId, finalText, "claude");
       invalidate();
     } catch {

@@ -1,7 +1,7 @@
 import { app, BrowserWindow, ipcMain } from "electron";
 import * as path from "path";
 import { startFlask, stopFlask, waitForFlask } from "./flask";
-import { askClaude } from "./claude";
+import { askClaude, generateStrategyYaml } from "./claude";
 import { listStrategies, readStrategyFile, runQuorumCommand, saveStrategy } from "./quorumCli";
 import { withQueue } from "./queue";
 
@@ -42,11 +42,13 @@ function createWindow() {
 // runs (backtest/shadow-sleeve) fetch data and burn CPU, so only one
 // runs at a time — a second request waits for a slot instead of
 // contending with the first.
-ipcMain.handle("claude:ask", async (event, requestId: string, question: string, context?: string) => {
+ipcMain.handle("claude:ask", async (
+  event, requestId: string, question: string, context: string | undefined, resumeSessionId: string | undefined,
+) => {
   return withQueue("claude", 2, () =>
     askClaude(question, context, (chunk) => {
       event.sender.send(`claude:chunk:${requestId}`, chunk);
-    })
+    }, { resumeSessionId })
   );
 });
 
@@ -55,6 +57,16 @@ ipcMain.handle("quorum:read-strategy", async (_event, strategyId: string) => rea
 ipcMain.handle("quorum:save-strategy", async (_event, strategyId: string, yamlContent: string) =>
   saveStrategy(strategyId, yamlContent)
 );
+
+ipcMain.handle("claude:generate-strategy", async (
+  event, requestId: string, strategyId: string, description: string, existingYaml: string | undefined,
+) => {
+  return withQueue("claude", 2, () =>
+    generateStrategyYaml(strategyId, description, existingYaml, (chunk) => {
+      event.sender.send(`claude:chunk:${requestId}`, chunk);
+    })
+  );
+});
 
 ipcMain.handle("quorum:run", async (event, requestId: string, args: string[]) => {
   return withQueue("quorum-cli", 1, () =>
