@@ -75,7 +75,7 @@ def create_server():
         Tool(name="kill_switch", description="EMERGENCY: Activate the kill switch to halt ALL trading immediately. Use when something is wrong. Reset with quorum reset-kill-switch.", inputSchema={"type": "object", "properties": {"reason": {"type": "string", "description": "Why you're killing trading"}}, "required": ["reason"]}),
         Tool(name="get_rules", description="View your trading rules (blocked tickers, max trade value, etc.) from ~/.quorum/rules.json", inputSchema={"type": "object", "properties": {}}),
         # Execution
-        Tool(name="execute_paper_trade", description="Execute a paper trade (BUY or SELL). Paper mode only. Pre-trade hook validates risk rules before execution.", inputSchema={"type": "object", "properties": {"ticker": {"type": "string"}, "signal": {"type": "string", "enum": ["Buy", "Sell", "Overweight", "Underweight", "Hold"]}, "reasoning": {"type": "string", "description": "Brief reasoning for the trade"}, "target_weight": {"type": "number", "description": "For pod-originated Buy candidates only: the strategy engine's final, already-regime-scaled position weight (from get_pod_candidates, after pod-pm's approve/reduce). When given, this overrides the account profile's own ATR/flat-percent/Kelly sizing entirely — only the single-ticker cap and margin check still apply. Omit for the legacy council flow, which sizes from the account profile as before."}}, "required": ["ticker", "signal"]}),
+        Tool(name="execute_paper_trade", description="Execute a paper trade (BUY or SELL). Paper mode only. Pre-trade hook validates risk rules before execution.", inputSchema={"type": "object", "properties": {"ticker": {"type": "string"}, "signal": {"type": "string", "enum": ["Buy", "Sell", "Overweight", "Underweight", "Hold"]}, "reasoning": {"type": "string", "description": "Brief reasoning for the trade"}, "target_weight": {"type": "number", "description": "For pod-originated Buy candidates only: the strategy engine's final, already-regime-scaled position weight (from get_pod_candidates, after pod-pm's approve/reduce). When given, this overrides the account profile's own ATR/flat-percent/Kelly sizing entirely — only the single-ticker cap and margin check still apply. Omit for the legacy council flow, which sizes from the account profile as before."}, "run_id": {"type": "string", "description": "For pod-originated trades: the run_id from get_pod_candidates/get_pod_exits, so this fill's decision-log entry links back to the signal that produced it and FIFO P&L matching stays correct across cycles. Omit for the legacy council flow — a shared manual run is used instead."}, "signal_id": {"type": "string", "description": "For pod-originated trades: the signal_id from get_pod_candidates/get_pod_exits, alongside run_id."}}, "required": ["ticker", "signal"]}),
         # Autonomous cycle (subscription-powered — YOU are the analyst)
         Tool(name="get_full_ticker_data", description="Get ALL data for a ticker in one call: price history (30d), key technicals (RSI, MACD, SMA50, SMA200, Bollinger, ATR), fundamentals, recent news, Reddit sentiment, StockTwits sentiment, insider activity, and earnings calendar. Use this to analyze a ticker yourself instead of calling the multi-agent pipeline.", inputSchema={"type": "object", "properties": {"ticker": {"type": "string", "description": "Stock ticker symbol"}}, "required": ["ticker"]}),
         Tool(name="get_autonomous_tickers", description="Start an autonomous trading cycle. Returns your watchlist tickers, current portfolio (positions + cash), and market regime. Your job is to actively manage the portfolio: BUY tickers with strong setups, SELL positions whose thesis has deteriorated, and HOLD the rest. The watchlist is what you monitor — the portfolio is what you own.", inputSchema={"type": "object", "properties": {}}),
@@ -361,6 +361,8 @@ def _handle_tool(name: str, args: dict) -> str:
             "company_of_interest": ticker,
             "final_trade_decision": f"{signal} — {args.get('reasoning', 'MCP manual trade')}",
             "target_weight": args.get("target_weight"),
+            "run_id": args.get("run_id"),
+            "signal_id": args.get("signal_id"),
         }
         record = engine.execute(ticker, signal, final_state)
         if record is None:
@@ -1582,8 +1584,13 @@ def _handle_tool(name: str, args: dict) -> str:
         for c in candidates:
             lines.append(
                 f"- **{c.symbol}** proposed_weight={c.weight:.4f} atr={c.score} "
-                f"as_of={c.ts} — {c.rationale}"
+                f"as_of={c.ts} — {c.rationale} "
+                f"[run_id={c.run_id} signal_id={c.signal_id}]"
             )
+        lines.append(
+            "\nPass this candidate's run_id/signal_id to execute_paper_trade when "
+            "pod-pm approves it, so the fill links back to this cycle's signal."
+        )
         return "\n".join(lines)
 
     if name == "get_pod_exits":
@@ -1628,14 +1635,21 @@ def _handle_tool(name: str, args: dict) -> str:
         end = datetime.now().date()
         start = end - timedelta(days=30)
         ohlcv = fetch_ohlcv(held_symbols, str(start), str(end))
-        exits = check_exits(spec, ohlcv, held_positions)
+        exits = check_exits(spec, ohlcv, held_positions, log_config=config, mode="paper")
 
         if not exits:
             return f"No exits triggered for '{strategy_id}' ({len(held_symbols)} position(s) checked)."
 
         lines = [f"# {strategy_id} exits ({len(exits)})"]
         for e in exits:
-            lines.append(f"- **{e.symbol}** reason={e.reason} price={e.price} as_of={e.ts} -> execute Sell")
+            lines.append(
+                f"- **{e.symbol}** reason={e.reason} price={e.price} as_of={e.ts} -> execute Sell "
+                f"[run_id={e.run_id} signal_id={e.signal_id}]"
+            )
+        lines.append(
+            "\nPass this exit's run_id/signal_id to execute_paper_trade so the fill "
+            "links back to this cycle's exit signal."
+        )
         return "\n".join(lines)
 
     if name == "record_pod_decision":

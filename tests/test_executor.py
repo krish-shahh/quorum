@@ -4,6 +4,7 @@ import pytest
 from unittest.mock import patch, MagicMock
 from datetime import datetime
 
+from quorum.execution import db, decision_log as dl
 from quorum.execution.executor import ExecutionEngine
 from quorum.execution.schemas import (
     AccountInfo,
@@ -21,12 +22,14 @@ def _make_config(tmp_path):
         "paper_state_path": str(tmp_path / "paper.json"),
         "safety_state_path": str(tmp_path / "safety.json"),
         "execution_log_path": str(tmp_path / "trades.jsonl"),
-        # Without these, LearningEngine and WikiWriter fall back to their
-        # ~/.quorum/... defaults and pollute the real, production data with
-        # synthetic test trades (this happened — see the realized_pnl
-        # backfill commit for the cleanup).
+        # Without these, LearningEngine/WikiWriter/decision_log fall back to
+        # their ~/.quorum/... defaults and pollute the real, production data
+        # with synthetic test trades (this happened twice — see the
+        # realized_pnl backfill commit, and the decision-log fill-wiring
+        # commit, for the cleanups).
         "learning_data_path": str(tmp_path / "learning.json"),
         "wiki_enabled": False,
+        "db_path": str(tmp_path / "test.db"),
         "max_position_pct": 0.05,
         "max_single_ticker_pct": 0.25,
         "max_open_positions": 6,
@@ -107,6 +110,41 @@ class TestExecutorStructuredData:
         assert record is not None
         # 10% of 100k / 150 = 66 shares (from structured proposal)
         assert record.order_request.quantity == 66
+
+
+@pytest.mark.unit
+class TestExecutorDecisionLogWiring:
+    def test_pod_originated_trade_logs_fill_under_its_own_run_id(self, tmp_path):
+        config = _make_config(tmp_path)
+        run_id = dl.new_run(config, strategy_id="regime_gate", mode="paper")
+        state = {"run_id": run_id, "signal_id": None, "target_weight": 0.05}
+
+        with _mock_yf(150.0):
+            engine = ExecutionEngine(config)
+            record = engine.execute("AAPL", "Buy", state)
+
+        assert record is not None
+        fill = db.get_db(config).execute(
+            "SELECT o.run_id, o.symbol, o.side, f.price FROM fill f "
+            "JOIN order_intent o ON f.order_id = o.order_id WHERE o.run_id = ?",
+            (run_id,),
+        ).fetchone()
+        assert tuple(fill) == (run_id, "AAPL", "buy", 150.0)
+
+    def test_trade_with_no_run_id_logs_under_shared_manual_run(self, tmp_path):
+        config = _make_config(tmp_path)
+
+        with _mock_yf(150.0):
+            engine = ExecutionEngine(config)
+            record = engine.execute("AAPL", "Buy", {})
+
+        assert record is not None
+        fill = db.get_db(config).execute(
+            "SELECT o.run_id, o.symbol FROM fill f "
+            "JOIN order_intent o ON f.order_id = o.order_id WHERE o.run_id = ?",
+            (dl.MANUAL_RUN_ID,),
+        ).fetchone()
+        assert tuple(fill) == (dl.MANUAL_RUN_ID, "AAPL")
 
 
 @pytest.mark.unit

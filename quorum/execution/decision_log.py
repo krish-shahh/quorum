@@ -569,25 +569,19 @@ def list_daily_recaps(config: Dict[str, Any], *, limit: int = 30) -> List[Dict[s
     return [dict(row) for row in rows]
 
 
-def recompute_closed_trades(config: Dict[str, Any], run_id: str) -> Dict[str, Any]:
-    """Rebuild ``closed_trade`` rows for one run via FIFO lot matching over its fills.
-
-    Idempotent full rebuild: existing closed_trade rows for this run_id are
-    deleted and replaced. FIFO matching is sequential/stateful, so this is
-    Python-driven rather than a SQL view.
+def _fifo_match(fills: List[tuple]) -> List[tuple]:
+    """FIFO lot-match a chronological (fill_id, ts, qty, price, symbol,
+    side, run_id) sequence into closed_trade rows (run_id, symbol,
+    entry_fill_id, exit_fill_id, entry_ts, exit_ts, qty, entry_price,
+    exit_price, pnl). `run_id` on each closed row is the EXIT fill's
+    run — the cycle that recognized the P&L, not necessarily the one
+    that opened the position (live trading spans many runs/cycles).
+    Sequential/stateful, so this is Python-driven rather than a SQL view.
     """
-    conn = db.get_db(config)
-    fills = conn.execute(
-        "SELECT f.fill_id, f.ts, f.qty, f.price, o.symbol, o.side "
-        "FROM fill f JOIN order_intent o ON f.order_id = o.order_id "
-        "WHERE o.run_id = ? ORDER BY f.ts ASC, f.fill_id ASC",
-        (run_id,),
-    ).fetchall()
-
     open_lots: Dict[str, List[Dict[str, Any]]] = {}
     closed: List[tuple] = []
 
-    for fill_id, ts, qty, price, symbol, side in fills:
+    for fill_id, ts, qty, price, symbol, side, run_id in fills:
         qty = float(qty)
         lots = open_lots.setdefault(symbol, [])
         if side == "buy":
@@ -607,6 +601,29 @@ def recompute_closed_trades(config: Dict[str, Any], run_id: str) -> Dict[str, An
                 if lot["qty"] <= 1e-9:
                     lots.pop(0)
 
+    return closed
+
+
+def recompute_closed_trades(config: Dict[str, Any], run_id: str) -> Dict[str, Any]:
+    """Rebuild ``closed_trade`` rows for one run via FIFO lot matching over its fills.
+
+    Scoped to a single run — correct for a backtest/shadow run, which has
+    one bounded bar-loop lifecycle. Live/paper trading spans many small
+    runs (one per pod-cycle call); use recompute_closed_trades_for_strategy
+    for that case instead, or entry/exit fills in different runs will
+    never match. Idempotent full rebuild: existing closed_trade rows for
+    this run_id are deleted and replaced.
+    """
+    conn = db.get_db(config)
+    fills = conn.execute(
+        "SELECT f.fill_id, f.ts, f.qty, f.price, o.symbol, o.side, o.run_id "
+        "FROM fill f JOIN order_intent o ON f.order_id = o.order_id "
+        "WHERE o.run_id = ? ORDER BY f.ts ASC, f.fill_id ASC",
+        (run_id,),
+    ).fetchall()
+
+    closed = _fifo_match(fills)
+
     with conn:
         conn.execute("DELETE FROM closed_trade WHERE run_id = ?", (run_id,))
         conn.executemany(
@@ -617,3 +634,83 @@ def recompute_closed_trades(config: Dict[str, Any], run_id: str) -> Dict[str, An
         )
 
     return {"run_id": run_id, "closed_trades": len(closed)}
+
+
+def recompute_closed_trades_for_strategy(
+    config: Dict[str, Any], strategy_id: str, mode: str = "paper",
+) -> Dict[str, Any]:
+    """Rebuild ``closed_trade`` rows across EVERY run for one strategy+mode,
+    FIFO-matching fills chronologically regardless of which run each fill
+    belongs to.
+
+    Live/paper trading's natural unit is a strategy's ongoing book, not
+    one pod-cycle call — get_pod_candidates/get_pod_exits create a fresh
+    run every cycle, so a position opened in one cycle and closed weeks
+    later in another would never match under recompute_closed_trades'
+    single-run scope. Idempotent: existing closed_trade rows for any run
+    of this strategy+mode are deleted and replaced.
+    """
+    conn = db.get_db(config)
+    fills = conn.execute(
+        "SELECT f.fill_id, f.ts, f.qty, f.price, o.symbol, o.side, o.run_id "
+        "FROM fill f JOIN order_intent o ON f.order_id = o.order_id "
+        "JOIN run r ON o.run_id = r.run_id "
+        "WHERE r.strategy_id = ? AND r.mode = ? ORDER BY f.ts ASC, f.fill_id ASC",
+        (strategy_id, mode),
+    ).fetchall()
+
+    closed = _fifo_match(fills)
+
+    with conn:
+        conn.execute(
+            "DELETE FROM closed_trade WHERE run_id IN "
+            "(SELECT run_id FROM run WHERE strategy_id = ? AND mode = ?)",
+            (strategy_id, mode),
+        )
+        conn.executemany(
+            "INSERT INTO closed_trade "
+            "(run_id, symbol, entry_fill_id, exit_fill_id, entry_ts, exit_ts, "
+            " qty, entry_price, exit_price, pnl) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            closed,
+        )
+
+    return {"strategy_id": strategy_id, "mode": mode, "closed_trades": len(closed)}
+
+
+def get_run_strategy(config: Dict[str, Any], run_id: str) -> Optional[Dict[str, str]]:
+    """Look up a run's strategy_id + mode — lets a caller holding only a
+    run_id (e.g. execute_paper_trade, passed one from get_pod_candidates)
+    find which strategy/mode it belongs to without having to also thread
+    that through separately.
+    """
+    conn = db.get_db(config)
+    row = conn.execute(
+        "SELECT strategy_id, mode FROM run WHERE run_id = ?", (run_id,)
+    ).fetchone()
+    return {"strategy_id": row["strategy_id"], "mode": row["mode"]} if row else None
+
+
+MANUAL_RUN_ID = "manual-trading-v1"
+
+
+def get_or_create_manual_run(config: Dict[str, Any]) -> str:
+    """A single, persistent run for trades with no natural run boundary —
+    the legacy council path (trading-planner/trading-executor), or any
+    execute_paper_trade call made without a pod-cycle run_id. Same idea
+    as LEGACY_RUN_ID's one-time historical backfill, but ongoing: every
+    such trade accumulates into this one run so FIFO matching still works
+    across them (recompute_closed_trades_for_strategy(config, "manual")).
+    """
+    conn = db.get_db(config)
+    existing = conn.execute(
+        "SELECT run_id FROM run WHERE run_id = ?", (MANUAL_RUN_ID,)
+    ).fetchone()
+    if existing:
+        return MANUAL_RUN_ID
+    with conn:
+        conn.execute(
+            "INSERT INTO run (run_id, strategy_id, mode, status, started_at) "
+            "VALUES (?, 'manual', 'paper', 'running', datetime('now'))",
+            (MANUAL_RUN_ID,),
+        )
+    return MANUAL_RUN_ID

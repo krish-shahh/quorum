@@ -175,6 +175,42 @@ class ExecutionEngine:
         )
         self.log.record_execution(record)
 
+        # 9b. Decision log — every filled trade gets a target/order/fill
+        # chain, not just pod-originated ones, so the log (and downstream
+        # readers: closed_trade, daily-recap, compare_sleeves) is complete
+        # regardless of which path decided the trade. A pod-cycle trade
+        # carries its own run_id (from get_pod_candidates/get_pod_exits);
+        # anything else (legacy council, a manual MCP call) accumulates
+        # into one persistent manual run so FIFO matching still works.
+        if result.filled_price:
+            from . import decision_log as dl
+
+            run_id = final_state.get("run_id")
+            run_info = dl.get_run_strategy(self.config, run_id) if run_id else None
+            if run_info is None:
+                run_id = dl.get_or_create_manual_run(self.config)
+                run_info = {"strategy_id": "manual", "mode": "paper"}
+
+            ts_iso = record.timestamp.isoformat()
+            tgt_id = dl.record_target(
+                self.config, run_id=run_id, ts=ts_iso, symbol=ticker,
+                signal_id=final_state.get("signal_id"), target_weight=target_weight,
+                target_shares=result.filled_quantity,
+                sizing_method="pod" if target_weight is not None else "legacy",
+            )
+            order_id = dl.record_order(
+                self.config, run_id=run_id, ts_submitted=ts_iso, symbol=ticker,
+                side=order.side.value, qty=result.filled_quantity, target_id=tgt_id,
+                status="filled", intended_price=order.limit_price,
+            )
+            dl.record_fill(
+                self.config, order_id=order_id, ts=ts_iso,
+                qty=result.filled_quantity, price=result.filled_price,
+            )
+            dl.recompute_closed_trades_for_strategy(
+                self.config, run_info["strategy_id"], run_info["mode"],
+            )
+
         # 10. Learning engine — record entry for buy, exit for sell
         from .confidence import compute_confidence_score
         if order.side == OrderSide.BUY and result.filled_price:

@@ -131,6 +131,78 @@ def test_recompute_closed_trades_is_idempotent(tmp_path):
     assert count == 1
 
 
+def test_recompute_closed_trades_for_strategy_matches_across_runs(tmp_path):
+    config = _config(tmp_path)
+    entry_run = dl.new_run(config, strategy_id="regime_gate", mode="paper")
+    buy = dl.record_order(
+        config, run_id=entry_run, ts_submitted="2026-08-01", symbol="NVDA", side="buy", qty=10,
+    )
+    dl.record_fill(config, order_id=buy, ts="2026-08-01", qty=10, price=100.0)
+
+    exit_run = dl.new_run(config, strategy_id="regime_gate", mode="paper")
+    sell = dl.record_order(
+        config, run_id=exit_run, ts_submitted="2026-08-15", symbol="NVDA", side="sell", qty=10,
+    )
+    dl.record_fill(config, order_id=sell, ts="2026-08-15", qty=10, price=120.0)
+
+    result = dl.recompute_closed_trades_for_strategy(config, "regime_gate", "paper")
+
+    assert result["closed_trades"] == 1
+    row = db.get_db(config).execute(
+        "SELECT run_id, qty, entry_price, exit_price, pnl FROM closed_trade"
+    ).fetchone()
+    assert tuple(row) == (exit_run, 10.0, 100.0, 120.0, 200.0)
+
+
+def test_recompute_closed_trades_for_strategy_ignores_other_strategies(tmp_path):
+    config = _config(tmp_path)
+    run_a = dl.new_run(config, strategy_id="regime_gate", mode="paper")
+    buy_a = dl.record_order(config, run_id=run_a, ts_submitted="2026-08-01", symbol="NVDA", side="buy", qty=5)
+    dl.record_fill(config, order_id=buy_a, ts="2026-08-01", qty=5, price=100.0)
+    sell_a = dl.record_order(config, run_id=run_a, ts_submitted="2026-08-02", symbol="NVDA", side="sell", qty=5)
+    dl.record_fill(config, order_id=sell_a, ts="2026-08-02", qty=5, price=110.0)
+
+    run_b = dl.new_run(config, strategy_id="other_strategy", mode="paper")
+    buy_b = dl.record_order(config, run_id=run_b, ts_submitted="2026-08-01", symbol="NVDA", side="buy", qty=3)
+    dl.record_fill(config, order_id=buy_b, ts="2026-08-01", qty=3, price=90.0)
+    sell_b = dl.record_order(config, run_id=run_b, ts_submitted="2026-08-02", symbol="NVDA", side="sell", qty=3)
+    dl.record_fill(config, order_id=sell_b, ts="2026-08-02", qty=3, price=95.0)
+
+    result = dl.recompute_closed_trades_for_strategy(config, "regime_gate", "paper")
+
+    assert result["closed_trades"] == 1
+    count = db.get_db(config).execute("SELECT COUNT(*) FROM closed_trade").fetchone()[0]
+    assert count == 1
+
+
+def test_get_or_create_manual_run_is_idempotent(tmp_path):
+    config = _config(tmp_path)
+
+    first = dl.get_or_create_manual_run(config)
+    second = dl.get_or_create_manual_run(config)
+
+    assert first == second == dl.MANUAL_RUN_ID
+    count = db.get_db(config).execute(
+        "SELECT COUNT(*) FROM run WHERE run_id = ?", (dl.MANUAL_RUN_ID,)
+    ).fetchone()[0]
+    assert count == 1
+
+
+def test_get_run_strategy_returns_none_for_unknown_run(tmp_path):
+    config = _config(tmp_path)
+
+    assert dl.get_run_strategy(config, "no-such-run") is None
+
+
+def test_get_run_strategy_returns_strategy_and_mode(tmp_path):
+    config = _config(tmp_path)
+    run_id = dl.new_run(config, strategy_id="regime_gate", mode="shadow")
+
+    info = dl.get_run_strategy(config, run_id)
+
+    assert info == {"strategy_id": "regime_gate", "mode": "shadow"}
+
+
 def test_record_snapshot_upserts_same_day(tmp_path):
     config = _config(tmp_path)
     run_id = dl.new_run(config, strategy_id="s", mode="paper")

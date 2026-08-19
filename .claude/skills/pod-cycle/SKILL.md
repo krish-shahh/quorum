@@ -48,7 +48,7 @@ For **each** `strategy_id` discovered in Step 2:
 
 Call `get_pod_exits(strategy_id)`. These are deterministic risk-desk rules (stop-loss, max holding days, the strategy's own exit condition) — not judgment calls, so they skip `pod-analyst`/`pod-pm` entirely. Addressing this mechanically, every cycle, is the direct fix for the account's original failure mode ("winners get cut, losers get held" — 53.6% win rate but a 0.55 payoff ratio because losers sat for 10-22 days while the risk tool reported GREEN).
 
-For every symbol returned, call `execute_paper_trade(ticker=symbol, signal="Sell", reasoning="pod-cycle exit: {reason}")`.
+For every symbol returned, call `execute_paper_trade(ticker=symbol, signal="Sell", reasoning="pod-cycle exit: {reason}", run_id=<the exit's run_id>, signal_id=<the exit's signal_id>)` — both come from `get_pod_exits`' output (`[run_id=... signal_id=...]` on each line). Passing them lets the fill FIFO-match against the position's original entry fill even when the entry happened in an earlier cycle's run.
 
 ### 3b. Entries (candidate -> pod-analyst -> pod-pm -> execute)
 
@@ -57,10 +57,10 @@ Call `get_pod_candidates(strategy_id)`. If it returns a **STALE DATA WARNING**, 
 For **each** candidate returned, in the order given (already ranked by proposed weight, highest first):
 
 1. Spawn a `pod-analyst` subagent (`model="sonnet"`) with a prompt instructing it to use the Skill tool to invoke `pod-analyst`, then extract evidence for that ticker. Include the candidate's rationale and pod's `strategy_id` for context.
-2. Once evidence returns, spawn a `pod-pm` subagent (`model="fable"`) with a prompt instructing it to use the Skill tool to invoke `pod-pm`, passing: ticker, proposed_weight, the strategy's rationale, run_id (from `get_pod_candidates`' output if present), the `pod-analyst` findings from step 1, and the staleness warning if any. Instruct it to end by calling `record_pod_decision` itself (per its own skill instructions) and to report back its decision (approve/reduce/veto) and final_weight.
+2. Once evidence returns, spawn a `pod-pm` subagent (`model="fable"`) with a prompt instructing it to use the Skill tool to invoke `pod-pm`, passing: ticker, proposed_weight, the strategy's rationale, run_id and signal_id (from `get_pod_candidates`' output — `[run_id=... signal_id=...]` on each candidate line), the `pod-analyst` findings from step 1, and the staleness warning if any. Instruct it to end by calling `record_pod_decision` itself (per its own skill instructions) and to report back its decision (approve/reduce/veto) and final_weight.
 3. Act on the decision:
    - **veto**: no trade. Nothing further to do — the decision is already logged.
-   - **approve** or **reduce**: call `execute_paper_trade(ticker=symbol, signal="Buy", reasoning="pod-cycle entry via {strategy_id}: {pod-pm's reason}", target_weight=final_weight)`. `target_weight` is mandatory here — omitting it would let the account profile's legacy sizing silently override the strategy's (and pod-pm's) computed weight.
+   - **approve** or **reduce**: call `execute_paper_trade(ticker=symbol, signal="Buy", reasoning="pod-cycle entry via {strategy_id}: {pod-pm's reason}", target_weight=final_weight, run_id=<the candidate's run_id>, signal_id=<the candidate's signal_id>)`. `target_weight` is mandatory here — omitting it would let the account profile's legacy sizing silently override the strategy's (and pod-pm's) computed weight. `run_id`/`signal_id` are what let the decision log trace this fill back to the exact signal that produced it, and let FIFO P&L matching find this entry when the position is eventually closed in a later cycle.
 
 Process candidates for one pod fully (both agents, then execution) before moving to the next candidate in the same pod — later candidates' `pod-pm` calls read `get_portfolio` fresh, so cash/concentration used by an already-approved candidate is correctly reflected before the next one is decided.
 
