@@ -1,14 +1,8 @@
 """Candidate generation — the auto-mode coordination artifact (v2 redesign,
-Phase 4). Replaces the plan-file architecture's role: instead of a Chairman
-writing a markdown plan that an Executor mechanically re-parses, the
-strategy engine's own entry logic run against the latest available data
-produces a ranked candidate list, logged to the decision log exactly like
-a backtest run (same schema, run.mode='paper' or 'shadow').
-
-Deliberately NOT wired into the currently-scheduled trading-planner/
-trading-executor skills — this module is new, additive functionality.
-Cutting the live daily flow over to it is a separate decision, not
-something this module does on its own.
+Phase 4). There is no plan file: the strategy engine's own entry logic run
+against the latest available data produces a ranked candidate list, logged
+to the decision log exactly like a backtest run (same schema, run.mode=
+'paper' or 'shadow'), and pod-cycle consumes it directly each cycle.
 """
 
 from __future__ import annotations
@@ -34,6 +28,19 @@ class Candidate:
     rationale: str
     run_id: Optional[str] = None
     signal_id: Optional[str] = None
+
+
+def _group_true_last(group, all_features: Dict[str, pd.Series]) -> bool:
+    """Whether `group`'s all_of/any_of/none_of conditions hold at the last
+    available bar of each referenced feature series."""
+    def _val(name):
+        series = all_features[name]
+        return bool(series.iloc[-1]) if len(series) else False
+
+    all_ok = all(_val(name) for name in group.all_of)
+    any_ok = any(_val(name) for name in group.any_of) if group.any_of else True
+    none_ok = not any(_val(name) for name in group.none_of)
+    return all_ok and any_ok and none_ok
 
 
 def required_symbols(spec: StrategySpec) -> List[str]:
@@ -112,16 +119,6 @@ def check_exits(
             log_config, strategy_id=spec.strategy_id, mode=mode, strategy_version=spec.version,
         )
 
-    def _group_true_last(group) -> bool:
-        def _val(name):
-            series = all_features[name]
-            return bool(series.iloc[-1]) if len(series) else False
-
-        all_ok = all(_val(name) for name in group.all_of)
-        any_ok = any(_val(name) for name in group.any_of) if group.any_of else True
-        none_ok = not any(_val(name) for name in group.none_of)
-        return all_ok and any_ok and none_ok
-
     exits: List[ExitCandidate] = []
     for symbol, pos in held_positions.items():
         if symbol not in ohlcv or ohlcv[symbol].empty:
@@ -144,7 +141,7 @@ def check_exits(
             and (pd.Timestamp(ts) - pd.Timestamp(entry_ts)).days >= spec.risk.max_holding_days
         ):
             reason = "max_holding_days"
-        elif _group_true_last(exit_group):
+        elif _group_true_last(exit_group, all_features):
             reason = "rule_exit"
 
         if reason is not None:
@@ -191,22 +188,12 @@ def generate_candidates(
             log_config, strategy_id=spec.strategy_id, mode=mode, strategy_version=spec.version,
         )
 
-    def _group_true_last(group) -> bool:
-        def _val(name):
-            series = all_features[name]
-            return bool(series.iloc[-1]) if len(series) else False
-
-        all_ok = all(_val(name) for name in group.all_of)
-        any_ok = any(_val(name) for name in group.any_of) if group.any_of else True
-        none_ok = not any(_val(name) for name in group.none_of)
-        return all_ok and any_ok and none_ok
-
     candidates: List[Candidate] = []
     for symbol in symbols:
         if symbol not in ohlcv or ohlcv[symbol].empty:
             continue
         ts = str(ohlcv[symbol].index[-1])
-        fired = _group_true_last(entry_group)
+        fired = _group_true_last(entry_group, all_features)
 
         if not fired:
             continue
