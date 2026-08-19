@@ -1546,20 +1546,25 @@ def _handle_tool(name: str, args: dict) -> str:
         if not ohlcv:
             return f"No OHLCV data returned for '{strategy_id}'s universe — cannot generate candidates."
 
-        # Staleness guard: if the newest bar is more than 4 calendar days
-        # behind today (covers a 3-day weekend), the system likely missed
-        # one or more scheduled cycles (machine asleep, launchd not run,
-        # data vendor gap). The entry condition still only ever evaluates
-        # the last available bar — that's correct, not stale-unsafe — but
-        # trading on it without flagging the gap would hide the fact that
-        # multiple days of price action were skipped, not just today's.
+        # Staleness guard: deterministic, holiday-aware trading-session
+        # count (not raw calendar days — a 3-day weekend or a holiday
+        # next to one shouldn't register as staleness). Normal case: the
+        # latest daily bar is yesterday's close, so exactly 1 session
+        # (today's, not yet closed) separates it from "now" — more than
+        # that means one or more scheduled cycles were actually missed
+        # (machine asleep, launchd not run, data vendor gap). The entry
+        # condition still only ever evaluates the last available bar —
+        # that's correct, not stale-unsafe — but trading on it without
+        # flagging the gap would hide that multiple days were skipped.
+        from quorum.execution.market_calendar import trading_days_between
         latest_bar = max(df.index[-1] for df in ohlcv.values() if not df.empty)
-        staleness_days = (end - latest_bar.date()).days
+        missed_sessions = trading_days_between(latest_bar.date(), end)
         stale_warning = (
             f"\n\n**STALE DATA WARNING**: latest available bar is {latest_bar.date()} "
-            f"({staleness_days} calendar days behind today, {end}) — likely missed "
-            f"scheduled cycle(s). pod-pm should weigh this before approving any candidate below."
-            if staleness_days > 4 else ""
+            f"({missed_sessions} trading session(s) behind today, {end}, holiday/weekend-adjusted) "
+            f"— likely missed scheduled cycle(s). pod-pm should weigh this before approving any "
+            f"candidate below."
+            if missed_sessions > 1 else ""
         )
 
         regime = CrossAssetRegimeDetector().detect(str(end)).get("regime", "unknown")

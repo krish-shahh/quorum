@@ -206,6 +206,50 @@ def next_trading_day(d: Optional[date] = None, exchange: Optional[str] = None) -
         return d
 
 
+def previous_trading_day(d: Optional[date] = None, exchange: Optional[str] = None) -> date:
+    """Return the most recent trading day on or before the given date."""
+    if d is None:
+        d = date.today()
+
+    if is_trading_day(d, exchange):
+        return d
+
+    cal = _get_cal(exchange)
+    try:
+        import pandas as pd
+        ts = pd.Timestamp(d)
+        prev_session = cal.previous_close(ts)
+        return prev_session.date()
+    except Exception:
+        while d.weekday() >= 5:
+            d -= timedelta(days=1)
+        return d
+
+
+def trading_days_between(start: date, end: date, exchange: Optional[str] = None) -> int:
+    """Count of trading sessions after `start` up to and including `end`
+    (0 if end <= start). Deterministic, holiday-aware alternative to raw
+    calendar-day math for "how many cycles were actually missed" — a
+    3-day weekend or a holiday adjacent to one shouldn't register as
+    staleness the way naive (end - start).days would.
+    """
+    if end <= start:
+        return 0
+    cal = _get_cal(exchange)
+    try:
+        import pandas as pd
+        sessions = cal.sessions_in_range(pd.Timestamp(start), pd.Timestamp(end))
+        return max(0, len(sessions) - 1)
+    except Exception:
+        days = 0
+        d = start
+        while d < end:
+            d += timedelta(days=1)
+            if d.weekday() < 5:
+                days += 1
+        return days
+
+
 def get_exchange_timezone(exchange: Optional[str] = None) -> pytz.BaseTzInfo:
     """Return the timezone for the given exchange."""
     cal = _get_cal(exchange)

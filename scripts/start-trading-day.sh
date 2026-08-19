@@ -50,6 +50,18 @@ if [ "$DOW" -gt 5 ]; then
     exit 0
 fi
 
+# ── Gate: NYSE holiday check (deterministic, via exchange_calendars —
+# not a hardcoded date list, so it doesn't go stale year to year) ──
+cd "$PROJECT_DIR"
+if ! "$PYTHON_BIN" -c "
+from quorum.execution.market_calendar import is_trading_day
+import sys
+sys.exit(0 if is_trading_day() else 1)
+" 2>>"$LOG_DIR/trading-$DATE.log"; then
+    log "NYSE holiday ($DATE) — skipping"
+    exit 0
+fi
+
 # ── Gate: market hours only (9:30 AM - 4:30 PM ET) ──
 MARKET_OPEN=570    # 9:30
 LATEST=990         # 16:30
