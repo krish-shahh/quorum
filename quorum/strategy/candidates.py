@@ -34,6 +34,21 @@ class Candidate:
     rationale: str
 
 
+def required_symbols(spec: StrategySpec) -> List[str]:
+    """Every ticker `spec` needs OHLCV for: the tradeable universe plus any
+    symbol referenced only as a feature input (e.g. XLK/SMH in a regime
+    gate, which feed features but are never themselves traded).
+    """
+    declared_features = {f.name for f in spec.features}
+    feature_symbols = set()
+    for feature in spec.features:
+        for ref in feature.inputs:
+            symbol, sep, _field = ref.partition(".")
+            if sep and symbol not in declared_features:
+                feature_symbols.add(symbol)
+    return sorted(set(spec.universe.resolve()) | feature_symbols)
+
+
 def fetch_ohlcv(symbols: List[str], start: str, end: str) -> Dict[str, pd.DataFrame]:
     """Fetch daily OHLCV for `symbols` and normalize to engine-ready columns.
 

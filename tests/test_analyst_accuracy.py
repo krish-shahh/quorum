@@ -2,7 +2,7 @@
 
 compute_analyst_accuracy() computes per-analyst IC; select_active_analysts()
 is the actual decision function that turns IC into a keep/drop call, ready
-to be wired into the "slim council" once it exists (Phase 4). These tests
+ready to wire into the legacy score_council path if it stays in use. These tests
 cover the three cases the decision function has to get right: a genuinely
 predictive analyst is kept, one whose IC is statistically indistinguishable
 from noise is dropped even with a large sample, and one with too few

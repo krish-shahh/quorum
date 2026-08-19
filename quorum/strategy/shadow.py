@@ -5,11 +5,10 @@ loses to equal-weight in 27/30 tested configurations: instead of assuming
 a council/sizing layer adds value, measure it — run the exact same
 entry/exit signals equal-weighted, no council, and compare.
 
-"If the council sleeve doesn't beat the shadow sleeve over a rolling 6
-months, the council's authority is cut back to evidence-extraction-only."
-`compare_sleeves()` is that decision function, ready to be called once a
-real council-sleeve run exists — the slim council itself is later Phase 4
-work, not built here.
+"If the [pod] sleeve doesn't beat the shadow sleeve over a rolling 6
+months, the [pod PM]'s authority is cut back to evidence-extraction-only."
+`compare_sleeves()` is that decision function — called against a real
+pod-sleeve run once `pod-cycle` has been live long enough to have one.
 """
 
 from __future__ import annotations
@@ -50,10 +49,10 @@ def _returns_from_equity_curve(equity_curve: List[Dict[str, Any]]) -> pd.Series:
 def compare_sleeves(
     strategy_result: Dict[str, Any], shadow_result: Dict[str, Any],
 ) -> Dict[str, Any]:
-    """Compare a real (or candidate council) run's equity curve against the
+    """Compare a real (or candidate pod-PM) run's equity curve against the
     shadow sleeve's. Returns each sleeve's Sharpe and whether the strategy
     sleeve beat the shadow sleeve — the trigger condition for the plan's
-    "cut the council back to evidence-extraction-only" rule.
+    "cut the pod PM back to evidence-extraction-only" rule.
     """
     strategy_returns = _returns_from_equity_curve(strategy_result["equity_curve"])
     shadow_returns = _returns_from_equity_curve(shadow_result["equity_curve"])

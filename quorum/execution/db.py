@@ -1137,11 +1137,13 @@ def select_active_analysts(
         worth differentiating on).
 
     This is the decision function described in the plan ("an analyst
-    whose IC is indistinguishable from zero gets dropped from the slim
-    council rather than kept for symmetry") — it is NOT yet wired into a
-    live council call, since the slim-council selection point (Phase 4)
-    doesn't exist yet. Call sites should treat this as ready-to-wire, not
-    already-active.
+    whose IC is indistinguishable from zero gets dropped rather than
+    kept for symmetry"). It's scored against `signal_scores`, the legacy
+    council's fixed technical/fundamental/sentiment/news/council columns
+    — it applies to `score_council`/the legacy trading-planner path, not
+    to `pod-analyst` (which deliberately produces no numeric score to
+    accuracy-track; see Phase 4's evidence-extraction-only design). Not
+    yet wired into a live call site — ready-to-wire, not already-active.
     """
     result = compute_analyst_accuracy(config)
     if result.get("status") != "ok":

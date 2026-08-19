@@ -110,8 +110,9 @@ def create_server():
         Tool(name="get_live_risk", description="Live intraday risk check. Returns daily P&L, drawdown, ATR stop distances, cash reserve, VIX, and circuit breaker status (GREEN/YELLOW/ORANGE/RED). Call at the start of every trading council cycle.", inputSchema={"type": "object", "properties": {}}),
         # Calendar / datetime (prevents LLM day-of-week hallucination)
         Tool(name="get_trading_calendar", description="Get current date, time, day of week, and whether the market is open. ALWAYS call this instead of guessing the day of week or market status. Returns timezone-aware datetime, trading day status, market open/close times, and next trading day.", inputSchema={"type": "object", "properties": {"exchange": {"type": "string", "description": "Exchange MIC code (default: XNYS/NYSE)", "default": "XNYS"}}}),
-        # Decision log (Phase 4 slim council — records PM overrides on strategy-generated candidates)
-        Tool(name="record_council_decision", description="Record a slim-council Portfolio Manager decision on a strategy-generated candidate: approve at proposed size, reduce size, or veto entirely. Every override MUST be logged here with a reason — this is the audit trail the plan requires ('every override is written to journal with a reason'). Not for use with the legacy full council (trading-planner/trading-council) — those use save_council_reports instead.", inputSchema={"type": "object", "properties": {"ticker": {"type": "string"}, "decision": {"type": "string", "enum": ["approve", "reduce", "veto"]}, "proposed_weight": {"type": "number", "description": "The candidate's proposed position weight from the strategy engine"}, "final_weight": {"type": "number", "description": "The weight after this decision (0 if veto, < proposed_weight if reduce, == proposed_weight if approve)"}, "reason": {"type": "string", "description": "Why — cite the evidence-analyst findings that drove this decision"}, "run_id": {"type": "string", "description": "The decision-log run_id this candidate came from, if known"}}, "required": ["ticker", "decision", "reason"]}),
+        # Pod shop (Phase 4 auto mode — strategy engine proposes, pod PM decides)
+        Tool(name="get_pod_candidates", description="Run one pod's strategy (strategies/<strategy_id>.yaml) against the latest market data and return today's ranked candidates — the Phase 4 auto-mode coordination artifact, replacing the plan file. Every symbol's entry condition is logged to the decision log (fired or suppressed) under a new run row, whether or not it becomes a candidate. Call once per pod per cycle; each candidate then goes to pod-analyst for evidence and pod-pm for the veto/size call.", inputSchema={"type": "object", "properties": {"strategy_id": {"type": "string", "description": "Filename stem under strategies/, e.g. 'regime_gate'"}, "lookback_days": {"type": "integer", "description": "Calendar days of history to fetch for feature computation (default 400 — covers a 252-day window plus buffer)", "default": 400}}, "required": ["strategy_id"]}),
+        Tool(name="record_pod_decision", description="Record a pod PM's decision on a strategy-generated candidate: approve at proposed size, reduce size, or veto entirely. Every override MUST be logged here with a reason — this is the audit trail the plan requires ('every override is written to journal with a reason'). Not for use with the legacy full council (trading-planner/trading-council) — those use save_council_reports instead.", inputSchema={"type": "object", "properties": {"ticker": {"type": "string"}, "decision": {"type": "string", "enum": ["approve", "reduce", "veto"]}, "proposed_weight": {"type": "number", "description": "The candidate's proposed position weight from the strategy engine"}, "final_weight": {"type": "number", "description": "The weight after this decision (0 if veto, < proposed_weight if reduce, == proposed_weight if approve)"}, "reason": {"type": "string", "description": "Why — cite the pod-analyst findings that drove this decision"}, "run_id": {"type": "string", "description": "The decision-log run_id this candidate came from, if known"}}, "required": ["ticker", "decision", "reason"]}),
     ]
 
     @server.list_tools()
@@ -1519,7 +1520,44 @@ def _handle_tool(name: str, args: dict) -> str:
         ]
         return "\n".join(lines)
 
-    if name == "record_council_decision":
+    if name == "get_pod_candidates":
+        from pathlib import Path
+
+        from quorum.dataflows.regime import CrossAssetRegimeDetector
+        from quorum.strategy.candidates import fetch_ohlcv, generate_candidates, required_symbols
+        from quorum.strategy.schema import load_strategy
+
+        strategy_id = args["strategy_id"]
+        lookback_days = int(args.get("lookback_days", 400))
+        strategy_path = Path(_project_root) / "strategies" / f"{strategy_id}.yaml"
+        if not strategy_path.exists():
+            return f"No strategy file at strategies/{strategy_id}.yaml"
+
+        spec = load_strategy(strategy_path)
+        tradeable = spec.universe.resolve()
+        all_symbols = required_symbols(spec)
+
+        end = datetime.now().date()
+        start = end - timedelta(days=lookback_days)
+        ohlcv = fetch_ohlcv(all_symbols, str(start), str(end))
+
+        regime = CrossAssetRegimeDetector().detect(str(end)).get("regime", "unknown")
+        candidates = generate_candidates(
+            spec, ohlcv, tradeable, regime=regime, log_config=config, mode="paper",
+        )
+
+        if not candidates:
+            return f"No candidates fired for '{strategy_id}' (regime={regime}) as of the latest bar."
+
+        lines = [f"# {strategy_id} candidates ({len(candidates)}, regime={regime})"]
+        for c in candidates:
+            lines.append(
+                f"- **{c.symbol}** proposed_weight={c.weight:.4f} atr={c.score} "
+                f"as_of={c.ts} — {c.rationale}"
+            )
+        return "\n".join(lines)
+
+    if name == "record_pod_decision":
         from quorum.execution import decision_log as dl
 
         ticker = args["ticker"].upper()
@@ -1535,7 +1573,7 @@ def _handle_tool(name: str, args: dict) -> str:
         )
         dl.record_journal(
             config, body=body, run_id=run_id, kind=f"pm_{decision}",
-            author="slim_council_pm", tags=[ticker, decision],
+            author="pod_pm", tags=[ticker, decision],
         )
         return f"Recorded: {body}"
 
