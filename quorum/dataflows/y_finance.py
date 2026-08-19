@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing import Annotated, NamedTuple
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
 import pandas as pd
@@ -319,6 +319,64 @@ def get_stockstats_indicator(
     return str(indicator_value)
 
 
+class FundamentalField(NamedTuple):
+    metric: str  # closed-vocabulary name; the screener's ScreenFilter (Feature B2) uses this
+    label: str  # human-readable label for get_fundamentals's text output
+    yfinance_key: str  # key into yf.Ticker(...).info
+
+
+# One canonical (metric, label, yfinance_key) list — get_fundamentals formats
+# from it, and Feature B2's screener metric vocabulary is meant to reuse the
+# `metric` names directly rather than re-deriving its own mapping to the
+# yfinance keys.
+FUNDAMENTAL_INFO_FIELDS = [
+    FundamentalField("name", "Name", "longName"),
+    FundamentalField("sector", "Sector", "sector"),
+    FundamentalField("industry", "Industry", "industry"),
+    FundamentalField("market_cap", "Market Cap", "marketCap"),
+    FundamentalField("pe_ratio", "PE Ratio (TTM)", "trailingPE"),
+    FundamentalField("forward_pe", "Forward PE", "forwardPE"),
+    FundamentalField("peg_ratio", "PEG Ratio", "pegRatio"),
+    FundamentalField("price_to_book", "Price to Book", "priceToBook"),
+    FundamentalField("eps_ttm", "EPS (TTM)", "trailingEps"),
+    FundamentalField("forward_eps", "Forward EPS", "forwardEps"),
+    FundamentalField("dividend_yield", "Dividend Yield", "dividendYield"),
+    FundamentalField("beta", "Beta", "beta"),
+    FundamentalField("week52_high", "52 Week High", "fiftyTwoWeekHigh"),
+    FundamentalField("week52_low", "52 Week Low", "fiftyTwoWeekLow"),
+    FundamentalField("sma50", "50 Day Average", "fiftyDayAverage"),
+    FundamentalField("sma200", "200 Day Average", "twoHundredDayAverage"),
+    FundamentalField("revenue_ttm", "Revenue (TTM)", "totalRevenue"),
+    FundamentalField("gross_profit", "Gross Profit", "grossProfits"),
+    FundamentalField("ebitda", "EBITDA", "ebitda"),
+    FundamentalField("net_income", "Net Income", "netIncomeToCommon"),
+    FundamentalField("profit_margin", "Profit Margin", "profitMargins"),
+    FundamentalField("operating_margin", "Operating Margin", "operatingMargins"),
+    FundamentalField("roe", "Return on Equity", "returnOnEquity"),
+    FundamentalField("roa", "Return on Assets", "returnOnAssets"),
+    FundamentalField("debt_to_equity", "Debt to Equity", "debtToEquity"),
+    FundamentalField("current_ratio", "Current Ratio", "currentRatio"),
+    FundamentalField("book_value", "Book Value", "bookValue"),
+    FundamentalField("free_cash_flow", "Free Cash Flow", "freeCashflow"),
+]
+
+
+@cached_config("fundamentals")
+def get_ticker_info(ticker: str) -> dict:
+    """Raw yfinance ``.info`` dict for `ticker`, cached under the
+    "fundamentals" TTL bucket (86400s by default). This is the ONE place
+    that actually calls ``yf.Ticker(...).info`` — every fundamentals
+    consumer (get_fundamentals below, and the screener's fundamental
+    metrics in Feature B) reads through this, so two different callers
+    wanting the same ticker's fundamentals cost one network fetch, not
+    two. Caching a same-fields *different* function wouldn't do this —
+    `cached_config` keys on function name + args, so the cache has to sit
+    on the raw fetch itself.
+    """
+    ticker_obj = yf.Ticker(ticker.upper())
+    return yf_retry(lambda: ticker_obj.info) or {}
+
+
 @cached_config("fundamentals")
 def get_fundamentals(
     ticker: Annotated[str, "ticker symbol of the company"],
@@ -326,47 +384,16 @@ def get_fundamentals(
 ):
     """Get company fundamentals overview from yfinance."""
     try:
-        ticker_obj = yf.Ticker(ticker.upper())
-        info = yf_retry(lambda: ticker_obj.info)
+        info = get_ticker_info(ticker)
 
         if not info:
             return f"No fundamentals data found for symbol '{ticker}'"
 
-        fields = [
-            ("Name", info.get("longName")),
-            ("Sector", info.get("sector")),
-            ("Industry", info.get("industry")),
-            ("Market Cap", info.get("marketCap")),
-            ("PE Ratio (TTM)", info.get("trailingPE")),
-            ("Forward PE", info.get("forwardPE")),
-            ("PEG Ratio", info.get("pegRatio")),
-            ("Price to Book", info.get("priceToBook")),
-            ("EPS (TTM)", info.get("trailingEps")),
-            ("Forward EPS", info.get("forwardEps")),
-            ("Dividend Yield", info.get("dividendYield")),
-            ("Beta", info.get("beta")),
-            ("52 Week High", info.get("fiftyTwoWeekHigh")),
-            ("52 Week Low", info.get("fiftyTwoWeekLow")),
-            ("50 Day Average", info.get("fiftyDayAverage")),
-            ("200 Day Average", info.get("twoHundredDayAverage")),
-            ("Revenue (TTM)", info.get("totalRevenue")),
-            ("Gross Profit", info.get("grossProfits")),
-            ("EBITDA", info.get("ebitda")),
-            ("Net Income", info.get("netIncomeToCommon")),
-            ("Profit Margin", info.get("profitMargins")),
-            ("Operating Margin", info.get("operatingMargins")),
-            ("Return on Equity", info.get("returnOnEquity")),
-            ("Return on Assets", info.get("returnOnAssets")),
-            ("Debt to Equity", info.get("debtToEquity")),
-            ("Current Ratio", info.get("currentRatio")),
-            ("Book Value", info.get("bookValue")),
-            ("Free Cash Flow", info.get("freeCashflow")),
-        ]
-
         lines = []
-        for label, value in fields:
+        for field in FUNDAMENTAL_INFO_FIELDS:
+            value = info.get(field.yfinance_key)
             if value is not None:
-                lines.append(f"{label}: {value}")
+                lines.append(f"{field.label}: {value}")
 
         header = f"# Company Fundamentals for {ticker.upper()}\n"
         header += f"# Data retrieved on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
