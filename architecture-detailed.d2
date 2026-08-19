@@ -1,8 +1,6 @@
-# STALE as of 2026-06-03 — predates the v2 pod-shop redesign (deterministic
-# strategy engine + pod-analyst/pod-pm) and still diagrams the legacy
-# 12-agent council + launchd scheduling. Do not trust this for the current
-# architecture; see CLAUDE.md instead. Scheduled for regeneration once the
-# legacy council removal (see the cleanup plan) lands.
+# quorum — detailed architecture (per-component).
+# High-level summary lives in architecture.d2.
+# Regenerate SVGs after editing: d2 architecture-detailed.d2 architecture-detailed.svg
 
 direction: down
 
@@ -19,11 +17,11 @@ runtime: RUNTIME HARNESS {
     style.fill: "#fff"
     style.stroke: "#d1d5db"
   }
-  claude: Claude Code (Opus 4)\nOrchestrator + Chairman {
+  claude: Claude Code\n(session default model) {
     style.fill: "#eff6ff"
     style.stroke: "#3b82f6"
   }
-  mcp: MCP Server (stdio)\n61 Python tools {
+  mcp: MCP Server (stdio)\n44 Python tools {
     style.fill: "#f0fdf4"
     style.stroke: "#10b981"
   }
@@ -31,7 +29,7 @@ runtime: RUNTIME HARNESS {
     style.fill: "#eff6ff"
     style.stroke: "#3b82f6"
   }
-  launchd: launchd (macOS)\n6 cycles 9:30 - 16:15\nplanner + executor\n(+ quorum pipeline on demand) {
+  cron: quorum cycle\n(traced headless claude -p)\nno schedule deployed right now {
     style.fill: "#fffbeb"
     style.stroke: "#f59e0b"
   }
@@ -40,353 +38,196 @@ runtime: RUNTIME HARNESS {
     style.stroke: "#fca5a5"
   }
 
-  you -> claude: /trading-council
+  you -> claude: /pod-cycle
   claude -> mcp: stdio JSON-RPC
-  mcp -> dashboard: SQLite + wiki
-  launchd -> claude: claude -p (headless)
+  mcp -> dashboard: SQLite
+  cron -> claude: claude -p (headless)
   claude -> hooks: pre/post tool
 }
 
 # ══════════════════════════════════════════════════════════════
-# PRE-ANALYSIS PIPELINE
+# STRATEGY ENGINE (deterministic — no LLM)
 # ══════════════════════════════════════════════════════════════
 
-preanalysis: PRE-ANALYSIS PIPELINE {
+engine_layer: STRATEGY ENGINE (quorum/strategy/) — no LLM {
   style.fill: "#f0fdf4"
   style.stroke: "#10b981"
   style.stroke-dash: 5
   style.border-radius: 10
 
-  risk_check: Step 0: get_live_risk\n\nGREEN / YELLOW / ORANGE / RED\n2x ATR stop breach → auto sell\nProfit targets, time decay\nDaily P&L circuit breakers {
-    style.fill: "#fef2f2"
-    style.stroke: "#ef4444"
+  yaml: strategies/*.yaml\n\nClosed-grammar Pydantic schema\nextra="forbid" at every level\nuniverse · features · signal\nsizing · risk · execution {
+    style.fill: "#fff"
+    style.stroke: "#e5e7eb"
   }
 
-  portfolio: Step 1: get_autonomous_tickers\n\nPositions + P&L\nWatchlist (tickers.txt)\nRegime + VIX + DXY\nCash balance {
-    style.fill: "#f0fdf4"
-    style.stroke: "#10b981"
-  }
-
-  delta: Step 1.5: get_ticker_deltas\n\nCompares vs last analysis:\nPrice move > 1%?\nNews TTL expired?\nRegime shifted?\n\n→ RE-ANALYZE or CARRY FORWARD {
-    style.fill: "#f0fdf4"
-    style.stroke: "#10b981"
-  }
-
-  asset_info: Step 2: get_asset_info\n\nDetects asset_class:\nstock, etf_bond, etf_commodity\n\nDetects sector:\ntech, financials, healthcare\nconsumer, cyclical {
-    style.fill: "#eff6ff"
-    style.stroke: "#3b82f6"
-  }
-
-  earnings: Earnings Gate\n\nget_earnings_calendar\n< 3 days + not held → skip\n< 1 day + held → force eval\n2-3 days + held → proceed {
-    style.fill: "#fffbeb"
-    style.stroke: "#f59e0b"
-  }
-
-  quant: Step 2.5: get_quant_scores\n\nDeterministic Python math:\n• Altman Z-score\n• FCF yield (4Q trailing)\n• RSI regime-conditional\n• Sector-specific scorer\n\n12 hard vetoes\nData quality 0-1 {
+  gate: Backtest acceptance gate\n(quorum/strategy/gate.py)\n\nDeflated Sharpe Ratio\nPBO via CSCV\nWalk-forward efficiency\n3x cost-stress {
     style.fill: "#f5f3ff"
     style.stroke: "#8b5cf6"
   }
 
-  risk_check -> portfolio
-  portfolio -> delta
-  delta -> asset_info
-  asset_info -> earnings
-  earnings -> quant
+  bar_loop: Bar-loop engine\n(engine.py)\n\nSame code path for\nbacktest / paper / shadow\nFills at next bar's open {
+    style.fill: "#f0fdf4"
+    style.stroke: "#10b981"
+  }
+
+  features: Feature computation\n(features.py)\n\nSMA, RSI, ATR, vol-target sizing\nregime-scaled weight {
+    style.fill: "#f0fdf4"
+    style.stroke: "#10b981"
+  }
+
+  candidates: candidates.py\n\ngenerate_candidates() → ranked entries\ncheck_exits() → stop-loss, max-hold,\nrule-exit {
+    style.fill: "#eff6ff"
+    style.stroke: "#3b82f6"
+  }
+
+  yaml -> gate: must pass
+  gate -> bar_loop: promoted
+  bar_loop -> features
+  features -> candidates
 }
 
 # ══════════════════════════════════════════════════════════════
-# LAYER 1 — ANALYST COUNCIL (4 parallel Haiku agents)
+# POD SHOP (one PM + one analyst per strategy)
 # ══════════════════════════════════════════════════════════════
 
-layer1: "LAYER 1 — ANALYST COUNCIL (4 Haiku agents, parallel)" {
-  style.fill: "#eff6ff"
-  style.stroke: "#3b82f6"
+pod_layer: "POD SHOP — one pod per strategies/*.yaml" {
+  style.fill: "#fdf6ec"
+  style.stroke: "#a85f17"
   style.stroke-dash: 5
   style.border-radius: 10
 
-  tech: Technical Analyst\n(model: haiku) {
-    style.fill: "#eff6ff"
-    style.stroke: "#3b82f6"
-    style.border-radius: 6
-  }
-  tech_tools: MCP Tools:\n• get_stock_data (30d OHLCV)\n• get_indicators:\n  RSI, MACD, SMA50/200\n  Bollinger, ATR, VWMA {
-    style.fill: "#f0fdf4"
-    style.stroke: "#86efac"
-  }
-
-  domain_router: Domain Analyst Router\n(get_asset_info → select prompt) {
+  discover: pod-cycle: discover pods\n\nGlob strategies/*.yaml\nProcess alphabetically\nNo cross-pod priority yet {
     style.fill: "#f8fafc"
     style.stroke: "#6b7280"
-    style.border-radius: 6
   }
 
-  domain_specs: 7 Domain Specialist Prompts {
-    style.fill: "#f8fafc"
-    style.stroke: "#d1d5db"
-    style.border-radius: 8
-
-    d_tech: Tech Sector\n\nSaaS metrics\nR&D intensity\nRule of 40\nAI/cloud exposure {
-      style.fill: "#f5f3ff"
-      style.stroke: "#8b5cf6"
-    }
-    d_fin: Financials\n\nNIM, NII\nCredit quality\nCET1 capital\nFee income, ROE {
-      style.fill: "#ecfdf5"
-      style.stroke: "#10b981"
-    }
-    d_hc: Healthcare\n\nDrug pipeline\nPatent cliffs\nFDA catalysts\nPayer mix {
-      style.fill: "#fef2f2"
-      style.stroke: "#ef4444"
-    }
-    d_con: Consumer\n\nBrand moat\nPricing power\nSame-store sales\nMargin trends {
-      style.fill: "#fffbeb"
-      style.stroke: "#f59e0b"
-    }
-    d_cyc: Cyclical\n\nCommodity exp\nCapex cycles\nOrder backlogs\nCapacity util {
-      style.fill: "#f8fafc"
-      style.stroke: "#6b7280"
-    }
-    d_bond: Bonds/FI\n\nYield curve\nDuration risk\nCredit spreads\nFed sensitivity {
-      style.fill: "#eff6ff"
-      style.stroke: "#3b82f6"
-    }
-    d_cmd: Commodities\n\nSupply/demand\nContango/backw\nSeasonal patterns\nGeopolitical risk {
-      style.fill: "#fffbeb"
-      style.stroke: "#f59e0b"
-    }
+  exit_check: get_pod_exits(strategy_id)\n\nMechanical — skips analyst/PM\nStop-loss, max holding days,\nstrategy's own exit condition\n\nFix for original failure mode:\nwinners cut, losers held 10-22d {
+    style.fill: "#fef2f2"
+    style.stroke: "#ef4444"
   }
 
-  sentiment: Sentiment Analyst\n(model: haiku) {
+  entry_candidates: get_pod_candidates(strategy_id)\n\nRanked by proposed weight\nSTALE DATA WARNING passed\nthrough to pod-pm, not dropped {
     style.fill: "#eff6ff"
     style.stroke: "#3b82f6"
+  }
+
+  analyst: pod-analyst (Sonnet)\n\nEvidence extraction ONLY:\n  news / SEC filing deltas\n  earnings proximity\nNo score, no buy/sell call —\nliterature doesn't support LLM\njudgment on price/indicators {
+    style.fill: "#fdf6ec"
+    style.stroke: "#a85f17"
     style.border-radius: 6
   }
-  sent_tools: MCP Tools:\n• get_reddit_sentiment\n• get_stocktwits_sentiment\n• get_insider_transactions\n• get_insider_clusters {
+  analyst_tools: MCP Tools:\n• get_news / get_global_news\n• get_sec_filings\n• get_earnings_calendar\n• get_congress_trades {
     style.fill: "#f0fdf4"
     style.stroke: "#86efac"
   }
 
-  news: News/Macro Analyst\n(model: haiku) {
-    style.fill: "#eff6ff"
-    style.stroke: "#3b82f6"
+  pm: pod-pm (Fable 5)\n\napprove / reduce / veto\n\nNever invents a trade the\nstrategy didn't propose\nNever sizes above proposed weight\nEvery decision → record_pod_decision {
+    style.fill: "#fdf6ec"
+    style.stroke: "#a85f17"
     style.border-radius: 6
+    style.bold: true
   }
-  news_tools: Tools:\n• WebSearch (real-time)\n• get_market_regime\n\nSearches: analyst targets\nSEC filings, macro data\nFOMC, CPI, NFP dates {
+  pm_tools: MCP Tools:\n• get_portfolio / get_portfolio_risk\n• get_live_risk\n• get_trade_reflections\n• get_pod_evidence {
     style.fill: "#f0fdf4"
     style.stroke: "#86efac"
   }
 
-  tech -> tech_tools
-  domain_router -> domain_specs: routes by sector
-  sentiment -> sent_tools
-  news -> news_tools
-
-  output: Each Returns:\n\n• Trend/Outlook (1 sentence)\n• Bull Case (2-3 sentences)\n• Bear Case (2-3 sentences)\n• Key Data Points\n• Score: 1-5 {
-    style.fill: "#fff"
-    style.stroke: "#e5e7eb"
-  }
+  discover -> exit_check
+  discover -> entry_candidates
+  entry_candidates -> analyst
+  analyst -> analyst_tools
+  analyst -> pm: evidence
+  pm -> pm_tools
 }
 
 # ══════════════════════════════════════════════════════════════
-# SCORING + DEBATE GATE
+# RISK DESK + EXECUTION
 # ══════════════════════════════════════════════════════════════
 
-scoring: DETERMINISTIC SCORING {
+execution: RISK DESK + EXECUTION {
   style.fill: "#f0fdf4"
   style.stroke: "#10b981"
   style.stroke-dash: 5
   style.border-radius: 10
 
-  score_tool: score_council (MCP tool)\n\nWeighted average:\n  Tech 25% + Domain 25%\n  Sent 20% + News 20% + Risk 10%\n\nQuant blending by data quality:\n  High (>0.7): 70% quant / 30% analyst\n  Medium: 50/50\n  Low (<0.5): 30% quant / 70% analyst\n\nRisk adjustments:\n  risk_off/volatile: -0.3\n  earnings < 3 days: -0.5\n  5+ positions: -0.3 {
-    style.fill: "#f0fdf4"
-    style.stroke: "#10b981"
-  }
-
-  vetoes: Hard Vetoes (non-negotiable)\n\n• Technical ≤1.0 AND News ≤2.0\n• Domain/Fundamental ≤1.0\n• All 4 scores ≤2.0\n• 2-2 split → forced Hold {
+  live_risk: get_live_risk\n\nGREEN / YELLOW / ORANGE / RED\nATR stop distance checks\nDaily P&L circuit breakers\nVIX spike detection\nRED auto-triggers kill switch {
     style.fill: "#fef2f2"
     style.stroke: "#ef4444"
   }
 
-  gate: DEBATE GATE\n\nTRIGGER when ANY:\n  • Score 2.8-4.2 (ambiguous)\n  • Analyst spread > 2.0 points\n  • 2-2 split flagged\n  • New position + score > 3.0\n  • Held + earnings < 3 days\n\nSKIP when ALL:\n  • Score < 2.5 or > 4.2\n  • All analysts within 1.5 pts\n  • No outlier/split flags {
-    style.fill: "#faf5ff"
-    style.stroke: "#a78bfa"
-  }
-
-  score_tool -> vetoes
-  vetoes -> gate
-}
-
-# ══════════════════════════════════════════════════════════════
-# LAYER 2 — INVESTMENT DEBATE (conditional)
-# ══════════════════════════════════════════════════════════════
-
-layer2: "LAYER 2 — INVESTMENT DEBATE (conditional, no tools)" {
-  style.fill: "#faf5ff"
-  style.stroke: "#8b5cf6"
-  style.stroke-dash: 5
-  style.border-radius: 10
-
-  bull: Bull Researcher (haiku)\n\nArgues FOR the investment\nCites analyst data\n3 numbered arguments\nRebuttal to bears\nTarget upside %\nConviction 1-10 {
-    style.fill: "#f0fdf4"
-    style.stroke: "#10b981"
-  }
-
-  bear: Bear Researcher (haiku)\n\nArgues AGAINST\nCites analyst data\n3 numbered risks\nRebuttal to bulls\nDownside risk %\nConviction 1-10 {
-    style.fill: "#fef2f2"
-    style.stroke: "#ef4444"
-  }
-
-  rm: Research Manager (sonnet)\n\nJudges the debate\nFact-checks both sides\nMUST pick winner: Bull or Bear\n\nOutput:\n  Winner + Margin\n  Rating 1-10\n  Strategic Actions\n  Key Risk to Monitor\n\nMargin keywords feed\nconfidence.py scoring {
-    style.fill: "#eff6ff"
-    style.stroke: "#3b82f6"
-  }
-
-  trader_agent: Trader Agent (haiku)\n\nConverts plan → execution:\n  Entry Price (market/limit)\n  Stop Loss (Nx ATR)\n  Position Size (% + shares)\n  Target (R:R ≥ 2:1)\n  Time Horizon\n\nFeeds position_sizer.py {
-    style.fill: "#eff6ff"
-    style.stroke: "#3b82f6"
-  }
-
-  bull -> rm: argues FOR {style.stroke: "#10b981"}
-  bear -> rm: argues AGAINST {style.stroke: "#ef4444"}
-  rm -> trader_agent: plan
-}
-
-# ══════════════════════════════════════════════════════════════
-# LAYER 3 — RISK DEBATE (conditional)
-# ══════════════════════════════════════════════════════════════
-
-layer3: "LAYER 3 — RISK DEBATE + PORTFOLIO MANAGER (conditional, no tools)" {
-  style.fill: "#fef2f2"
-  style.stroke: "#ef4444"
-  style.stroke-dash: 5
-  style.border-radius: 10
-
-  agg: Aggressive Analyst (haiku)\n\nBias: capture upside\nOpportunity cost of not trading\nArgues for larger size\nWider stops\nVerdict: Approve/Increase/Reject {
-    style.fill: "#fffbeb"
-    style.stroke: "#f59e0b"
-  }
-
-  cons: Conservative Analyst (haiku)\n\nBias: preserve capital\nMax dollar loss at stop\nCorrelation with holdings\nCash reserve check (20%)\nVerdict: Approve/Reduce/Reject {
-    style.fill: "#f0fdf4"
-    style.stroke: "#10b981"
-  }
-
-  neut: Neutral Analyst (haiku)\n\nEvidence-based tiebreaker\nExpected value math\nR:R ratio validation\nPortfolio diversification\nVerdict: Approve/Reduce/Reject {
-    style.fill: "#f8fafc"
-    style.stroke: "#6b7280"
-  }
-
-  pm: Portfolio Manager (sonnet)\n\nFINAL DECISION MAKER\n\nSynthesizes:\n  Risk debate (3 verdicts)\n  Research Manager plan\n  Trader proposal\n  score_council output\n  Past trade reflections\n\nOutput:\n  Signal: Buy/Overweight/Hold/\n          Underweight/Sell\n  Conviction level\n  Position size override\n  Override justification\n\nKeywords (unanimous/majority/\ndivided) feed confidence.py\n\nCan override score_council\n(but NOT hard vetoes) {
-    style.fill: "#eff6ff"
-    style.stroke: "#3b82f6"
-  }
-
-  reflection: Self-Reflection Engine\n\nget_trade_reflections MCP tool\n\n• Past outcomes for ticker\n• Sector win rate patterns\n• Confidence bucket accuracy\n• Avg holding periods\n• Lessons (1-line per trade)\n\nInjected into PM prompt {
-    style.fill: "#fff"
-    style.stroke: "#e5e7eb"
-  }
-
-  agg -> pm {style.stroke: "#f59e0b"}
-  cons -> pm {style.stroke: "#10b981"}
-  neut -> pm {style.stroke: "#6b7280"}
-  reflection -> pm: past lessons {style.stroke-dash: 3}
-}
-
-# ══════════════════════════════════════════════════════════════
-# EXECUTION + SAFETY
-# ══════════════════════════════════════════════════════════════
-
-execution: EXECUTION + SAFETY {
-  style.fill: "#f0fdf4"
-  style.stroke: "#10b981"
-  style.stroke-dash: 5
-  style.border-radius: 10
-
-  pre_hook: Pre-Trade Hook (blocking)\n\n• Max 6 positions\n• Single ticker cap 25%\n• Cash reserve 10% min\n• Kill switch check\n• Blocked tickers (rules.json)\n• Notional exposure (futures) {
+  pre_hook: Pre-Trade Hook (blocking)\n(pretrade.py — outside every pod)\n\n• Sector cap\n• Single-ticker cap\n• Cash reserve (regime-conditional)\n• Blocked tickers (rules.json)\n• Kill switch {
     style.fill: "#fef2f2"
     style.stroke: "#fca5a5"
   }
 
-  broker: Paper Broker\n\nSpread/slippage model:\n  Under 10: 1.0% half-spread\n  Under 100: 0.3%\n  Over 100: 0.1%\n+ Market impact (1bp per 1%)\n\nDual persistence:\n  SQLite + JSON backup {
+  broker: Paper Broker\n\nSpread/slippage model\nMarket impact\nDual persistence: SQLite + JSON {
     style.fill: "#f0fdf4"
     style.stroke: "#10b981"
   }
 
-  sizer: Position Sizer\n\n• ATR-based (risk 2% per trade)\n• Fixed % (5% default)\n• Kelly criterion (opt-in)\n• Correlation reduction (>0.7)\n• Earnings avoidance (-50%)\n• Macro event adjustment\n• Trader proposal override {
-    style.fill: "#f0fdf4"
+  live_risk -> pre_hook
+  pre_hook -> broker
+}
+
+# ══════════════════════════════════════════════════════════════
+# DECISION LOG + SHADOW SLEEVE
+# ══════════════════════════════════════════════════════════════
+
+log_layer: DECISION LOG + SHADOW SLEEVE {
+  style.fill: "#f8fafc"
+  style.stroke: "#d1d5db"
+  style.stroke-dash: 5
+  style.border-radius: 10
+
+  db: SQLite Decision Log\n(decision_log.py)\n\nrun → signal → target →\norder_intent → fill → closed_trade\n+ journal (pod decisions)\n+ daily_recap / run_recap / trace_event\n\nSame schema for backtest/paper/\nshadow/live — a loss decomposes\ninto bad alpha, sizing, or execution {
+    style.fill: "#f5f3ff"
+    style.stroke: "#c4b5fd"
+  }
+
+  shadow_sleeve: Shadow Sleeve\n(shadow.py)\n\nSame signals, equal-weighted,\nno pod, runs in parallel\n\nAnswer to PortBench: LLM portfolio\nconstruction loses to equal-weight\nin 27/30 tested configs\n\nIf a pod doesn't beat its shadow\nsleeve over a rolling 6mo, pod-pm's\nauthority is meant to be cut to\nevidence-only {
+    style.fill: "#dcfce7"
     style.stroke: "#10b981"
   }
 
-  report: Post-Execution\n\n• save_trade_report (pre + post)\n• save_analysis_to_wiki\n  (debate sections auto-fill)\n• ntfy.sh status push (phone)\n• LearningEngine.record_entry\n• Confidence scoring\n• Stop-loss registration {
+  wiki: Wiki Knowledge Base\n(quorum/wiki/)\n\nrun pages, digests,\nticker pages, regimes {
     style.fill: "#fff"
     style.stroke: "#e5e7eb"
   }
 
-  pre_hook -> sizer
-  sizer -> broker
-  broker -> report
+  reflection: get_trade_reflections\n\nPast outcome lessons,\ninjected into pod-pm's prompt {
+    style.fill: "#fff"
+    style.stroke: "#e5e7eb"
+  }
+
+  db -> wiki
+  shadow_sleeve -> db
 }
 
 # ══════════════════════════════════════════════════════════════
 # DATA LAYER
 # ══════════════════════════════════════════════════════════════
 
-data: DATA LAYER {
+data: DATA LAYER (quorum/dataflows/) {
   style.fill: "#fffbeb"
   style.stroke: "#f59e0b"
   style.stroke-dash: 5
   style.border-radius: 10
 
-  yfinance: yfinance\n\nOHLCV, fundamentals\nBalance sheet, cashflow\nIncome statement\nInsider transactions\nEarnings calendar {
+  yfinance: yfinance (primary)\nFinnhub (fallback)\n\nOHLCV, fundamentals,\nfinancial statements,\ninsider transactions,\nearnings calendar {
     style.fill: "#fffbeb"
     style.stroke: "#fcd34d"
   }
-  social: Social/Alt Data\n\nReddit (WSB, stocks, investing)\nStockTwits (cashtag stream)\nInsider cluster detection\nSector rotation signals {
+  macro: Macro / Regime\n\nFRED macro series\nSector rotation\nVIX / DXY / yields {
     style.fill: "#fffbeb"
     style.stroke: "#fcd34d"
   }
-  websearch: WebSearch\n\nReal-time news\nAnalyst targets\nSEC filings\nMacro data releases {
+  alt: Alt Data\n\nReddit, StockTwits\nCongressional trades (incl.\nSenate via CongressInvests)\nSEC filings (data.sec.gov) {
     style.fill: "#fffbeb"
     style.stroke: "#fcd34d"
   }
-  cache: TTL Cache Layer\n\nprice: 60s\ntechnicals: 60s\nfundamentals: 86400s\nnews: 3600s\nsentiment: 900s\nregime: 300s {
+  cache: TTL Cache Layer\n\nprice: 60s · technicals: 60s\nfundamentals: 86400s\nnews: 3600s · sentiment: 900s\nregime: 300s {
     style.fill: "#fff"
     style.stroke: "#e5e7eb"
-  }
-}
-
-# ══════════════════════════════════════════════════════════════
-# PERSISTENCE LAYER
-# ══════════════════════════════════════════════════════════════
-
-persistence: PERSISTENCE + KNOWLEDGE {
-  style.fill: "#f8fafc"
-  style.stroke: "#d1d5db"
-  style.stroke-dash: 5
-  style.border-radius: 10
-
-  db: SQLite Database\n\nTables:\n  paper_account, paper_positions\n  trades, trade_reports\n  ticker_state (+ debate_triggered)\n  wiki_pages, quant_scores\n  signal_scores (IC tracking) {
-    style.fill: "#f5f3ff"
-    style.stroke: "#c4b5fd"
-  }
-
-  wiki: Wiki Knowledge Base\n\nPage types:\n  runs/ — per-ticker per-date\n    (Bull/Bear/Risk debate sections)\n  daily/ — digest summaries\n  tickers/ — rolling summaries\n    (+ trade reflections)\n  regimes/ — regime analysis\n  reports/ — monthly/quarterly\n\nTag extraction, narratives\nCross-ticker references {
-    style.fill: "#fff"
-    style.stroke: "#e5e7eb"
-  }
-
-  learning: Learning Engine\n\nTradeOutcome tracking:\n  entry/exit/P&L/holding days\nEMA weight updates:\n  signal_weights, ticker_weights\nReflection generation:\n  lessons per resolved trade\nMonthly/quarterly reports {
-    style.fill: "#fff"
-    style.stroke: "#e5e7eb"
-  }
-
-  memory: Claude Memory Files\n\nportfolio_state.md\nmarket_regime.md\ntrading_decisions.md\nwatchlist_notes.md\nsubscription_plan.md {
-    style.fill: "#fff"
-    style.stroke: "#e5e7eb"
-  }
-
-  quant_math: Quant Math (deterministic)\n\n9 sector scorers\nAltman Z-score\nFCF yield\nRegime-conditional RSI\nVaR, CVaR\nKelly criterion\nIC (information coefficient)\nProfit factor, SQN {
-    style.fill: "#f0fdf4"
-    style.stroke: "#86efac"
   }
 }
 
@@ -394,13 +235,13 @@ persistence: PERSISTENCE + KNOWLEDGE {
 # FLOW CONNECTIONS
 # ══════════════════════════════════════════════════════════════
 
-runtime -> preanalysis: Step 0-2.5 {style.stroke-dash: 3}
-preanalysis -> layer1: spawn 4 agents {style.stroke: "#3b82f6"}
-layer1 -> scoring: 4 scores (1-5) {style.stroke: "#10b981"}
-scoring -> layer2: ambiguous → debate {style.stroke: "#8b5cf6"}
-scoring -> execution: clear → execute {style.stroke: "#10b981"}
-layer2 -> layer3: trader proposal {style.stroke: "#8b5cf6"}
-layer3 -> execution: PM final signal {style.stroke: "#ef4444"}
-data -> layer1: market data {style.stroke-dash: 3}
-execution -> persistence: writes {style.stroke-dash: 3}
-persistence -> layer3.reflection: outcome lessons {style.stroke-dash: 3}
+runtime -> engine_layer: /pod-cycle {style.stroke-dash: 3}
+engine_layer.candidates -> pod_layer.entry_candidates: get_pod_candidates {style.stroke: "#3b82f6"}
+engine_layer.candidates -> pod_layer.exit_check: get_pod_exits {style.stroke: "#ef4444"}
+pod_layer.pm -> execution.pre_hook: target_weight {style.stroke: "#a85f17"}
+pod_layer.exit_check -> execution.pre_hook: full unwind {style.stroke: "#ef4444"}
+execution -> log_layer: writes fills {style.stroke-dash: 3}
+data -> engine_layer: OHLCV / features {style.stroke-dash: 3}
+data -> pod_layer.analyst: news / filings / earnings {style.stroke-dash: 3}
+log_layer.reflection -> pod_layer.pm: past lessons {style.stroke-dash: 3}
+log_layer.db -> runtime.dashboard: reads {style.stroke-dash: 3}

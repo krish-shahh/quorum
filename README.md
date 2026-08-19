@@ -73,13 +73,11 @@ quorum health        # verify everything works
 
 Then in Claude Code:
 ```
-/pod-cycle           # auto mode: strategy proposes → pod reviews → executes (recommended)
-/trading-planner     # legacy full-council analysis for tickers outside any pod's strategy
-/trading-executor     # mechanically executes the planner's plan
+/pod-cycle           # strategy proposes → pod reviews → executes
 /market-monitor      # background regime/position monitoring (use with /loop)
 ```
 
-Or headless, with a full reasoning/tool-call trace captured for the dashboard's Logs view:
+Or headless, with a full reasoning/tool-call trace captured for the dashboard's Activity view:
 ```bash
 quorum cycle          # spawns a traced claude -p "/pod-cycle" — the primary way to run a cycle unattended
 ```
@@ -97,10 +95,7 @@ No automation is scheduled by default right now — everything above is invoked 
 | `/pod-cycle` | session default | Discovers every pod, dispatches pod-analyst/pod-pm, executes approved trades and mechanical exits |
 | `pod-analyst` | Sonnet | Evidence extraction for one candidate — no score, no recommendation |
 | `pod-pm` | Fable 5 | Approve/reduce/veto a strategy-generated candidate; every decision logged |
-| `/trading-planner` | session default | Legacy 12-agent council for tickers outside any pod's strategy |
-| `/trading-executor` | session default | Mechanically executes the planner's plan |
 | `/market-monitor` | session default | Background regime/position monitoring (use with /loop) |
-| `analyst-*` (7 domain, `quorum/council/prompts/`) | Sonnet | Sector-specific analysis for the legacy council path (tech, financials, healthcare, consumer, cyclical, bonds, commodities) |
 
 ### Hooks
 
@@ -112,20 +107,19 @@ No automation is scheduled by default right now — everything above is invoked 
 | `SessionStart` | `session_start.py` | Auto-injects portfolio state + regime |
 | `Stop` | `session_end.py` | Auto-saves portfolio state to memory |
 
-### MCP Tools (55+)
+### MCP Tools (44)
 
 | Category | Tools |
 |----------|-------|
-| Pod shop | `get_pod_candidates`, `get_pod_exits`, `record_pod_decision` |
-| Data | get_stock_data, get_indicators(_bulk), get_fundamentals, get_financial_statements, get_news, get_global_news, get_reddit_sentiment, get_stocktwits_sentiment, get_insider_transactions, get_insider_clusters, get_congress_trades, get_congress_summary, get_market_regime, get_sector_rotation, get_earnings_calendar |
+| Pod shop | `get_pod_candidates`, `get_pod_exits`, `record_pod_decision`, `save_pod_evidence`, `get_pod_evidence` |
+| Data | get_stock_data, get_indicators(_bulk), get_fundamentals, get_financial_statements, get_news, get_global_news, get_reddit_sentiment, get_stocktwits_sentiment, get_insider_transactions, get_insider_clusters, get_congress_trades, get_congress_summary, get_market_regime, get_sector_rotation, get_earnings_calendar, get_13f_holdings, get_consensus_estimates, get_sec_filings |
 | Portfolio | get_portfolio, get_trades, get_watchlist, add/remove_from_watchlist |
 | Execution | execute_paper_trade (accepts a pod's `target_weight`; pre-trade hook validates) |
 | Safety | kill_switch, get_rules, get_live_risk |
-| Legacy council | get_autonomous_tickers, get_full_ticker_data, save/get_council_reports, score_council |
-| State & Cache | get_ticker_state, get_ticker_deltas, get_cache_stats, get_asset_info |
-| Quant & Risk | get_quant_scores, get_portfolio_risk |
-| Reflection & Analytics | get_trade_reflections, get_analyst_accuracy, get_analytics_summary |
-| Maintenance | prune_wiki, search_wiki, get_wiki_page |
+| State & Cache | get_full_ticker_data, get_cache_stats, get_asset_info |
+| Risk | get_portfolio_risk, get_live_risk |
+| Reflection & Analytics | get_trade_reflections, get_analytics_summary |
+| Maintenance | prune_wiki, search_wiki, get_wiki_page, save_analysis_to_wiki |
 
 Full list with descriptions: `CLAUDE.md`.
 
@@ -135,16 +129,14 @@ Full list with descriptions: `CLAUDE.md`.
 
 ```
 quorum/
-  mcp/             — MCP server (55+ tools)
+  mcp/             — MCP server (44 tools)
   strategy/        — v2 core: schema (closed-grammar YAML), engine (bar loop), features,
                       candidates (live entries + exits), shadow sleeve, backtest gate, universe
   execution/       — decision_log.py (run/signal/target/order/fill), paper broker, safety,
-                      pretrade validation, position sizer, contracts registry
-  council/         — Legacy council prompts (quorum/council/prompts/), read by trading-planner
+                      pretrade validation, position sizer, contracts registry, portfolio_analytics.py
   dataflows/       — Market data with TTL caching (yfinance primary / Finnhub fallback, Reddit,
                      StockTwits, regime incl. FRED macro series, sectors, congressional trades
                      incl. Senate via CongressInvests, SEC filings via data.sec.gov)
-  quant/           — Deterministic scoring feeding the legacy council path
   api/             — Flask JSON API backend (/api/v1: performance, runs, cycles/traces,
                       annotations) consumed by the Electron desktop app
   wiki/            — Knowledge base (run pages, digests, ticker summaries)
@@ -173,12 +165,11 @@ Every KPI card, run row, chart, and table row can carry a **threaded comment** (
 
 1. **PreToolUse hook** — the central risk desk, sitting outside every pod — blocks trades violating: max positions, ticker concentration, cash reserve, blocked tickers, kill switch
 2. **`get_pod_exits`** enforces each pod's own stop-loss/max-holding-day/rule-exit on every currently-held position, every cycle
-3. **`score_council` vetoes** (legacy path): fundamental collapse, unanimous bearish, 2-2 split, plus deterministic quant hard vetoes
-4. **Live intraday risk** (`get_live_risk`): circuit breakers with tiered response — YELLOW (no new buys), ORANGE (sell-only), RED (auto kill switch)
-5. **Kill switch** halts all trading — persists across restarts until manually reset
-6. **`rules.json`** blocks specific tickers (e.g. employer stock); crypto is hard-banned
-7. **Audit trail** logs every tool call to `~/.quorum/audit/`
-8. **Backtest acceptance gate** blocks a new strategy from paper trading unless it clears DSR/PBO/WFE/cost-stress thresholds — see `quorum/strategy/gate.py`
+3. **Live intraday risk** (`get_live_risk`): circuit breakers with tiered response — YELLOW (no new buys), ORANGE (sell-only), RED (auto kill switch)
+4. **Kill switch** halts all trading — persists across restarts until manually reset
+5. **`rules.json`** blocks specific tickers (e.g. employer stock); crypto is hard-banned
+6. **Audit trail** logs every tool call to `~/.quorum/audit/`
+7. **Backtest acceptance gate** blocks a new strategy from paper trading unless it clears DSR/PBO/WFE/cost-stress thresholds — see `quorum/strategy/gate.py`
 
 > **Live trading**: the only supported mode is a **simulated paper account**. There is no live-broker integration in this codebase.
 

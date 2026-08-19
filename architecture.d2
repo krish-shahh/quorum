@@ -1,15 +1,10 @@
 # quorum — high-level architecture (overview).
 # Dense per-component detail lives in architecture-detailed.d2.
-#
-# STALE as of 2026-06-03 — predates the v2 pod-shop redesign (deterministic
-# strategy engine + pod-analyst/pod-pm) and still diagrams the legacy
-# 12-agent council + launchd scheduling. Do not trust this for the current
-# architecture; see CLAUDE.md instead. Scheduled for regeneration once the
-# legacy council removal (see the cleanup plan) lands.
+# Regenerate SVGs after editing: d2 architecture.d2 architecture.svg
 
 direction: right
 
-title: quorum — a council of analyst subagents, harnessed by Claude Code {
+title: quorum — a deterministic pod shop, harnessed by Claude Code {
   near: top-center
   shape: text
   style.font-size: 24
@@ -17,92 +12,80 @@ title: quorum — a council of analyst subagents, harnessed by Claude Code {
 }
 
 # ──────────────────────────────────────────────
-# RUNTIME HARNESS
+# STRATEGY -> ENGINE (deterministic, no LLM)
 # ──────────────────────────────────────────────
-harness: Runtime Harness {
+strategy: strategies/*.yaml\nclosed-grammar, git-committed {
+  shape: oval
+  style: {fill: "#ffffff"; stroke: "#9ca3af"}
+}
+gate: Backtest gate\nDSR · PBO · WFE · 3x cost-stress {
+  style: {fill: "#ede9fe"; stroke: "#8b5cf6"}
+}
+engine: Strategy engine\nbar loop · features · sizing {
+  style: {fill: "#dcfce7"; stroke: "#10b981"; bold: true}
+}
+
+strategy -> gate: must pass
+gate -> engine: promoted
+
+# ──────────────────────────────────────────────
+# POD (one PM + one analyst per strategy)
+# ──────────────────────────────────────────────
+pod: Pod Shop {
   style: {fill: "#f9fafb"; stroke: "#9ca3af"; border-radius: 10}
 
-  trigger: You · launchd\nquorum pipeline {
-    shape: oval
-    style: {fill: "#ffffff"; stroke: "#9ca3af"}
+  candidates: get_pod_candidates\nranked entries {
+    style: {fill: "#eff6ff"; stroke: "#3b82f6"}
   }
-  claude: Claude Code\nOpus · Chairman {
-    style: {fill: "#dbeafe"; stroke: "#3b82f6"; bold: true}
-  }
-  mcp: MCP Server\n61 tools {
-    style: {fill: "#dcfce7"; stroke: "#10b981"}
-  }
-  hooks: Pre-trade hook\nblocking risk checks {
+  exits: get_pod_exits\nstop-loss · max-hold · rule-exit {
     style: {fill: "#fee2e2"; stroke: "#ef4444"}
   }
+  analyst: pod-analyst\nevidence only — no score {
+    style: {fill: "#f5e8d6"; stroke: "#a85f17"}
+  }
+  pm: pod-pm\napprove / reduce / veto {
+    style: {fill: "#f5e8d6"; stroke: "#a85f17"; bold: true}
+  }
 
-  trigger -> claude
-  claude <-> mcp
-  claude -> hooks
+  candidates -> analyst
+  analyst -> pm
 }
 
+engine -> pod.candidates
+engine -> pod.exits
+
 # ──────────────────────────────────────────────
-# DECISION PIPELINE (the council)
+# RISK DESK + EXECUTION
 # ──────────────────────────────────────────────
-pipeline: Decision Pipeline {
-  style: {fill: "#ffffff"; stroke: "#cbd5e1"; border-radius: 10}
-
-  pre: 1 · Pre-analysis\nrisk · deltas\nasset class · quant pre-screen {
-    style: {fill: "#ede9fe"; stroke: "#8b5cf6"}
-  }
-
-  council: 2 · Analyst Council\n4 parallel · Sonnet {
-    style: {fill: "#dbeafe"; stroke: "#3b82f6"}
-    grid-columns: 2
-    grid-gap: 12
-
-    a_tech: Technical {style: {fill: "#eff6ff"; stroke: "#60a5fa"}}
-    a_domain: Domain\n7 sectors {style: {fill: "#eff6ff"; stroke: "#60a5fa"}}
-    a_sent: Sentiment {style: {fill: "#eff6ff"; stroke: "#60a5fa"}}
-    a_news: News / Macro {style: {fill: "#eff6ff"; stroke: "#60a5fa"}}
-  }
-
-  score: 3 · Deterministic Scoring\n+ Debate Gate {
-    style: {fill: "#dcfce7"; stroke: "#10b981"}
-  }
-
-  debate: 4 · Debate · conditional\nBull / Bear + Risk\n→ Portfolio Manager {
-    style: {fill: "#f3e8ff"; stroke: "#a855f7"}
-  }
-
-  exec: 5 · Execution + Safety\npaper broker · sizing · limits {
-    style: {fill: "#d1fae5"; stroke: "#10b981"; bold: true}
-  }
-
-  pre -> council -> score
-  score -> exec: clear consensus {style.stroke: "#10b981"}
-  score -> debate: ambiguous {style.stroke: "#8b5cf6"}
-  debate -> exec
+risk: Pre-trade hook\ncentral risk desk — outside every pod {
+  style: {fill: "#fee2e2"; stroke: "#ef4444"}
+}
+broker: Paper broker fill {
+  style: {fill: "#dcfce7"; stroke: "#10b981"}
 }
 
-# ──────────────────────────────────────────────
-# SUPPORTING LAYERS
-# ──────────────────────────────────────────────
-data: Data Layer\nyfinance · Reddit · StockTwits\nWebSearch · TTL cache {
-  style: {fill: "#fef3c7"; stroke: "#f59e0b"; border-radius: 10}
-}
+pod.pm -> risk: target_weight
+pod.exits -> risk: full unwind
+risk -> broker
 
-persist: Persistence + Learning\nSQLite · wiki · memory\nlearning engine {
-  style: {fill: "#f1f5f9"; stroke: "#64748b"; border-radius: 10}
+# ──────────────────────────────────────────────
+# LOG + SHADOW
+# ──────────────────────────────────────────────
+log: Decision log (SQLite)\nrun → signal → target → order → fill {
+  shape: cylinder
+  style: {fill: "#e1eaf3"; stroke: "#2e5c8a"}
 }
-
+shadow_sleeve: Shadow sleeve\nsame signals, equal-weight, no pod {
+  style: {fill: "#dcfce7"; stroke: "#10b981"}
+}
 ui: Electron desktop app\nReact UI ← Flask JSON API {
   style: {fill: "#dbeafe"; stroke: "#3b82f6"; border-radius: 10}
 }
 
-notify: Notifications · ntfy.sh\nstatus push to your phone\nafter every cycle / quorum pipeline {
-  style: {fill: "#fef3c7"; stroke: "#f59e0b"; border-radius: 10}
-}
-
-# ── cross-layer flow ──
-harness.claude -> pipeline.pre: orchestrates
-data -> pipeline.council: market data {style.stroke-dash: 4; style.stroke: "#f59e0b"}
-pipeline.exec -> persist: writes outcomes {style.stroke-dash: 4; style.stroke: "#64748b"}
-persist -> pipeline.debate: past reflections {style.stroke-dash: 4; style.stroke: "#64748b"}
-harness.mcp -> ui: SQLite + API {style.stroke-dash: 4; style.stroke: "#3b82f6"}
-pipeline.exec -> notify: status push {style.stroke-dash: 4; style.stroke: "#f59e0b"}
+broker -> log
+pod.candidates -> log: logged {style.stroke-dash: 4}
+pod.exits -> log: logged {style.stroke-dash: 4}
+engine -> shadow_sleeve: parallel {style.stroke-dash: 4}
+shadow_sleeve -> log
+shadow_sleeve -> pod.pm: beats pod? {style.stroke-dash: 4}
+log -> ui: reads

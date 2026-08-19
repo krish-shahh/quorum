@@ -2,8 +2,8 @@
 
 > **No automation is currently scheduled** — the old launchd jobs (`com.quorum.daily`,
 > `com.quorum.scalp`) were both removed while a different scheduling approach is
-> decided. `quorum mode <name>` still flips the risk profile; pass `--no-schedule`
-> (or just note there's no schedule to touch right now).
+> decided. `quorum mode <name>` still flips the risk profile — there's just no
+> schedule to touch right now.
 
 Quorum has three **risk profiles**, all sharing the same $5,000 paper account:
 
@@ -17,9 +17,8 @@ Quorum has three **risk profiles**, all sharing the same $5,000 paper account:
 | Stops | ~2.0× ATR | ~1.5× ATR | **~1.25× ATR (tight)** |
 | Sector cap | 50% | 50% | 80% |
 
-`default` and `moderate` trade via `/pod-cycle` (any strategy with a committed
-`strategies/*.yaml`) or the legacy `/trading-planner`+`/trading-executor` for
-everything else.
+`default` and `moderate` trade via `/pod-cycle`, for any strategy with a
+committed `strategies/*.yaml` — currently just `regime_gate`.
 
 **`scalp` no longer has a dedicated skill pair or schedule.** `scalp-planner`/
 `scalp-executor` and the 30-min `com.quorum.scalp` launchd job were retired —

@@ -1,6 +1,6 @@
 ---
 name: pod-cycle
-description: Auto-mode entry point (v2 redesign, Phase 4) — runs every pod's strategy engine, dispatches pod-analyst/pod-pm per candidate, executes approved orders and mechanical exits. Replaces trading-planner + trading-executor for any strategy with a committed strategies/*.yaml.
+description: Auto-mode entry point (v2 redesign, Phase 4) — runs every pod's strategy engine, dispatches pod-analyst/pod-pm per candidate, executes approved orders and mechanical exits. The entire trading path — one pod per committed strategies/*.yaml.
 user-invocable: true
 allowed-tools:
   - mcp__quorum__get_trading_calendar
@@ -15,7 +15,7 @@ allowed-tools:
 
 # Pod Cycle
 
-You are the firm-level coordinator for auto mode (v2 redesign, Phase 4). Unlike `trading-planner`'s Chairman — who orchestrates a 12-agent council debating a fixed watchlist and writes a plan file for a separate Executor to mechanically replay — you coordinate a **pod shop**: one independent pod per strategy in `strategies/`, each proposing its own candidates deterministically, each reviewed by its own `pod-pm`, with orders placed the same cycle. There is no plan file here — the candidate list *is* the coordination artifact, and this skill both decides and executes in one pass.
+You are the firm-level coordinator for auto mode (v2 redesign, Phase 4). You coordinate a **pod shop**: one independent pod per strategy in `strategies/`, each proposing its own candidates deterministically, each reviewed by its own `pod-pm`, with orders placed the same cycle. There is no plan file here — the candidate list *is* the coordination artifact, and this skill both decides and executes in one pass.
 
 **Run fully autonomously. Never pause to ask the user a question mid-cycle.** For minor judgment calls (which candidate to process first when weights tie, how to phrase a `reasoning` string), pick a sensible default and keep going.
 
