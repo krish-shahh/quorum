@@ -129,3 +129,38 @@ class TestStructuredProposal:
         order = sizer.calculate("Buy", "AAPL", account, [], quote, None)
         assert order is not None
         assert order.quantity == 33
+
+
+@pytest.mark.unit
+class TestTargetWeight:
+    def test_target_weight_overrides_account_profile_sizing(self, account, quote):
+        # ATR sizing enabled + a low max_position_pct — if target_weight
+        # weren't taking priority, this would size far smaller than 8%.
+        sizer = PositionSizer({
+            "max_position_pct": 0.02, "max_single_ticker_pct": 0.5,
+            "max_open_positions": 6, "atr_sizing_enabled": True,
+        })
+
+        order = sizer.calculate("Buy", "AAPL", account, [], quote, None, 0.08)
+
+        assert order is not None
+        assert order.side == OrderSide.BUY
+        # 8% of 100k = 8000, at $150/share = 53 shares
+        assert order.quantity == 53
+
+    def test_target_weight_still_respects_single_ticker_cap(self, account, quote):
+        sizer = PositionSizer({
+            "max_position_pct": 0.05, "max_single_ticker_pct": 0.10,
+            "max_open_positions": 6,
+        })
+
+        order = sizer.calculate("Buy", "AAPL", account, [], quote, None, 0.50)
+
+        assert order is not None
+        # capped at 10% of 100k = 10000, at $150/share = 66 shares, not 50%
+        assert order.quantity == 66
+
+    def test_zero_target_weight_yields_no_order(self, sizer, account, quote):
+        order = sizer.calculate("Buy", "AAPL", account, [], quote, None, 0.0)
+
+        assert order is None

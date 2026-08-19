@@ -97,10 +97,15 @@ class ExecutionEngine:
 
         # 4. Extract structured proposal if available
         trader_proposal = final_state.get("trader_proposal_structured")
+        # A strategy-computed final weight (Phase 2 sizing, already
+        # regime-scaled) — see PositionSizer.calculate()'s docstring for
+        # why this bypasses the account-profile sizing methodology
+        # instead of layering on top of it.
+        target_weight = final_state.get("target_weight")
 
         # 5. Position sizing
         order = self.position_sizer.calculate(
-            signal, ticker, account, positions, quote, trader_proposal,
+            signal, ticker, account, positions, quote, trader_proposal, target_weight,
         )
         if order is None:
             self.log.record_skipped(ticker, signal, "no_order_needed", value_before)

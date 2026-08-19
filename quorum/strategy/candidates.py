@@ -67,6 +67,75 @@ def fetch_ohlcv(symbols: List[str], start: str, end: str) -> Dict[str, pd.DataFr
     return result
 
 
+@dataclass
+class ExitCandidate:
+    symbol: str
+    ts: str
+    price: float
+    reason: str  # 'stop_loss' | 'max_holding_days' | 'rule_exit'
+
+
+def check_exits(
+    spec: StrategySpec,
+    ohlcv: Dict[str, pd.DataFrame],
+    held_positions: Dict[str, Dict[str, Any]],
+) -> List[ExitCandidate]:
+    """The exit-side counterpart to generate_candidates(): for symbols the
+    pod currently holds, check whether the strategy's stop-loss,
+    max_holding_days, or exit-condition rule would trigger a live exit —
+    same priority order as the backtest loop's per-bar check
+    (quorum/strategy/engine.py's stop_hit -> max_hold_hit -> rule_exit).
+
+    `held_positions` is keyed by symbol with values
+    {"entry_price": float, "entry_atr": Optional[float], "entry_ts": str}
+    — the live broker doesn't know entry ATR or which strategy opened a
+    position, so the caller (get_pod_exits MCP tool) reconstructs this
+    from the decision log's fired entry signal for that symbol.
+    """
+    all_features = compute_all_features(spec.features, ohlcv)
+    exit_group = spec.signal.exit
+
+    def _group_true_last(group) -> bool:
+        def _val(name):
+            series = all_features[name]
+            return bool(series.iloc[-1]) if len(series) else False
+
+        all_ok = all(_val(name) for name in group.all_of)
+        any_ok = any(_val(name) for name in group.any_of) if group.any_of else True
+        none_ok = not any(_val(name) for name in group.none_of)
+        return all_ok and any_ok and none_ok
+
+    exits: List[ExitCandidate] = []
+    for symbol, pos in held_positions.items():
+        if symbol not in ohlcv or ohlcv[symbol].empty:
+            continue
+        price = float(ohlcv[symbol]["close"].iloc[-1])
+        ts = str(ohlcv[symbol].index[-1])
+        entry_price = pos.get("entry_price")
+        entry_atr = pos.get("entry_atr")
+        entry_ts = pos.get("entry_ts")
+        reason = None
+
+        if (
+            spec.risk.stop_loss_atr_mult is not None and entry_price is not None
+            and entry_atr is not None
+            and price <= entry_price - spec.risk.stop_loss_atr_mult * entry_atr
+        ):
+            reason = "stop_loss"
+        elif (
+            spec.risk.max_holding_days is not None and entry_ts
+            and (pd.Timestamp(ts) - pd.Timestamp(entry_ts)).days >= spec.risk.max_holding_days
+        ):
+            reason = "max_holding_days"
+        elif _group_true_last(exit_group):
+            reason = "rule_exit"
+
+        if reason is not None:
+            exits.append(ExitCandidate(symbol=symbol, ts=ts, price=price, reason=reason))
+
+    return exits
+
+
 def generate_candidates(
     spec: StrategySpec,
     ohlcv: Dict[str, pd.DataFrame],

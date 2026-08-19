@@ -75,7 +75,7 @@ def create_server():
         Tool(name="kill_switch", description="EMERGENCY: Activate the kill switch to halt ALL trading immediately. Use when something is wrong. Reset with quorum reset-kill-switch.", inputSchema={"type": "object", "properties": {"reason": {"type": "string", "description": "Why you're killing trading"}}, "required": ["reason"]}),
         Tool(name="get_rules", description="View your trading rules (blocked tickers, max trade value, etc.) from ~/.quorum/rules.json", inputSchema={"type": "object", "properties": {}}),
         # Execution
-        Tool(name="execute_paper_trade", description="Execute a paper trade (BUY or SELL). Paper mode only. Pre-trade hook validates risk rules before execution.", inputSchema={"type": "object", "properties": {"ticker": {"type": "string"}, "signal": {"type": "string", "enum": ["Buy", "Sell", "Overweight", "Underweight", "Hold"]}, "reasoning": {"type": "string", "description": "Brief reasoning for the trade"}}, "required": ["ticker", "signal"]}),
+        Tool(name="execute_paper_trade", description="Execute a paper trade (BUY or SELL). Paper mode only. Pre-trade hook validates risk rules before execution.", inputSchema={"type": "object", "properties": {"ticker": {"type": "string"}, "signal": {"type": "string", "enum": ["Buy", "Sell", "Overweight", "Underweight", "Hold"]}, "reasoning": {"type": "string", "description": "Brief reasoning for the trade"}, "target_weight": {"type": "number", "description": "For pod-originated Buy candidates only: the strategy engine's final, already-regime-scaled position weight (from get_pod_candidates, after pod-pm's approve/reduce). When given, this overrides the account profile's own ATR/flat-percent/Kelly sizing entirely — only the single-ticker cap and margin check still apply. Omit for the legacy council flow, which sizes from the account profile as before."}}, "required": ["ticker", "signal"]}),
         # Autonomous cycle (subscription-powered — YOU are the analyst)
         Tool(name="get_full_ticker_data", description="Get ALL data for a ticker in one call: price history (30d), key technicals (RSI, MACD, SMA50, SMA200, Bollinger, ATR), fundamentals, recent news, Reddit sentiment, StockTwits sentiment, insider activity, and earnings calendar. Use this to analyze a ticker yourself instead of calling the multi-agent pipeline.", inputSchema={"type": "object", "properties": {"ticker": {"type": "string", "description": "Stock ticker symbol"}}, "required": ["ticker"]}),
         Tool(name="get_autonomous_tickers", description="Start an autonomous trading cycle. Returns your watchlist tickers, current portfolio (positions + cash), and market regime. Your job is to actively manage the portfolio: BUY tickers with strong setups, SELL positions whose thesis has deteriorated, and HOLD the rest. The watchlist is what you monitor — the portfolio is what you own.", inputSchema={"type": "object", "properties": {}}),
@@ -112,6 +112,7 @@ def create_server():
         Tool(name="get_trading_calendar", description="Get current date, time, day of week, and whether the market is open. ALWAYS call this instead of guessing the day of week or market status. Returns timezone-aware datetime, trading day status, market open/close times, and next trading day.", inputSchema={"type": "object", "properties": {"exchange": {"type": "string", "description": "Exchange MIC code (default: XNYS/NYSE)", "default": "XNYS"}}}),
         # Pod shop (Phase 4 auto mode — strategy engine proposes, pod PM decides)
         Tool(name="get_pod_candidates", description="Run one pod's strategy (strategies/<strategy_id>.yaml) against the latest market data and return today's ranked candidates — the Phase 4 auto-mode coordination artifact, replacing the plan file. Every symbol's entry condition is logged to the decision log (fired or suppressed) under a new run row, whether or not it becomes a candidate. Call once per pod per cycle; each candidate then goes to pod-analyst for evidence and pod-pm for the veto/size call.", inputSchema={"type": "object", "properties": {"strategy_id": {"type": "string", "description": "Filename stem under strategies/, e.g. 'regime_gate'"}, "lookback_days": {"type": "integer", "description": "Calendar days of history to fetch for feature computation (default 400 — covers a 252-day window plus buffer)", "default": 400}}, "required": ["strategy_id"]}),
+        Tool(name="get_pod_exits", description="Check whether any currently-held position opened by this pod should exit now — stop-loss, max_holding_days, or the strategy's own exit rule (same priority order as the backtest engine). The counterpart to get_pod_candidates for the sell side; call it every cycle alongside get_pod_candidates so open positions aren't left to drift once entered ('winners get cut, losers get held' was the account's original failure mode). Exits found here should be executed as a plain 'Sell' (full unwind) — no pod-pm review needed, these are mechanical risk-desk rules, not judgment calls.", inputSchema={"type": "object", "properties": {"strategy_id": {"type": "string", "description": "Filename stem under strategies/, e.g. 'regime_gate'"}}, "required": ["strategy_id"]}),
         Tool(name="record_pod_decision", description="Record a pod PM's decision on a strategy-generated candidate: approve at proposed size, reduce size, or veto entirely. Every override MUST be logged here with a reason — this is the audit trail the plan requires ('every override is written to journal with a reason'). Not for use with the legacy full council (trading-planner/trading-council) — those use save_council_reports instead.", inputSchema={"type": "object", "properties": {"ticker": {"type": "string"}, "decision": {"type": "string", "enum": ["approve", "reduce", "veto"]}, "proposed_weight": {"type": "number", "description": "The candidate's proposed position weight from the strategy engine"}, "final_weight": {"type": "number", "description": "The weight after this decision (0 if veto, < proposed_weight if reduce, == proposed_weight if approve)"}, "reason": {"type": "string", "description": "Why — cite the pod-analyst findings that drove this decision"}, "run_id": {"type": "string", "description": "The decision-log run_id this candidate came from, if known"}}, "required": ["ticker", "decision", "reason"]}),
     ]
 
@@ -359,6 +360,7 @@ def _handle_tool(name: str, args: dict) -> str:
             "trade_date": today,
             "company_of_interest": ticker,
             "final_trade_decision": f"{signal} — {args.get('reasoning', 'MCP manual trade')}",
+            "target_weight": args.get("target_weight"),
         }
         record = engine.execute(ticker, signal, final_state)
         if record is None:
@@ -1577,6 +1579,58 @@ def _handle_tool(name: str, args: dict) -> str:
                 f"- **{c.symbol}** proposed_weight={c.weight:.4f} atr={c.score} "
                 f"as_of={c.ts} — {c.rationale}"
             )
+        return "\n".join(lines)
+
+    if name == "get_pod_exits":
+        from pathlib import Path
+
+        from quorum.execution import db
+        from quorum.execution.broker.paper_client import PaperBrokerClient
+        from quorum.strategy.candidates import check_exits, fetch_ohlcv
+        from quorum.strategy.schema import load_strategy
+
+        strategy_id = args["strategy_id"]
+        strategy_path = Path(_project_root) / "strategies" / f"{strategy_id}.yaml"
+        if not strategy_path.exists():
+            return f"No strategy file at strategies/{strategy_id}.yaml"
+
+        spec = load_strategy(strategy_path)
+        tradeable = set(spec.universe.resolve())
+
+        broker = PaperBrokerClient(config)
+        positions = broker.get_positions()
+        held_symbols = [p.ticker for p in positions if p.ticker in tradeable and p.quantity > 0]
+        if not held_symbols:
+            return f"No open positions for '{strategy_id}' to check."
+
+        conn = db.get_db(config)
+        held_positions = {}
+        for pos in positions:
+            if pos.ticker not in held_symbols:
+                continue
+            entry_row = conn.execute(
+                "SELECT s.ts, s.score FROM signal s JOIN run r ON s.run_id = r.run_id "
+                "WHERE r.strategy_id = ? AND s.symbol = ? AND s.suppressed = 0 "
+                "ORDER BY s.ts DESC LIMIT 1",
+                (strategy_id, pos.ticker),
+            ).fetchone()
+            held_positions[pos.ticker] = {
+                "entry_price": pos.avg_cost,
+                "entry_atr": entry_row["score"] if entry_row else None,
+                "entry_ts": entry_row["ts"] if entry_row else None,
+            }
+
+        end = datetime.now().date()
+        start = end - timedelta(days=30)
+        ohlcv = fetch_ohlcv(held_symbols, str(start), str(end))
+        exits = check_exits(spec, ohlcv, held_positions)
+
+        if not exits:
+            return f"No exits triggered for '{strategy_id}' ({len(held_symbols)} position(s) checked)."
+
+        lines = [f"# {strategy_id} exits ({len(exits)})"]
+        for e in exits:
+            lines.append(f"- **{e.symbol}** reason={e.reason} price={e.price} as_of={e.ts} -> execute Sell")
         return "\n".join(lines)
 
     if name == "record_pod_decision":

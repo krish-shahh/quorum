@@ -52,8 +52,21 @@ class PositionSizer:
         positions: List[Position],
         quote: Quote,
         trader_proposal: Optional[Dict] = None,
+        target_weight: Optional[float] = None,
     ) -> Optional[OrderRequest]:
-        """Return an OrderRequest or None if no action should be taken."""
+        """Return an OrderRequest or None if no action should be taken.
+
+        `target_weight`, if given, is a strategy-computed final position
+        weight (Phase 2's vol-targeted/flat_pct/kelly_capped sizing,
+        already regime-scaled — see quorum/strategy/engine.py's
+        size_weight()) that takes priority over this class's own
+        ATR/flat-percent/Kelly/regime sizing on a Buy/Overweight. Re-running
+        those legacy layers on top of an already-final strategy weight
+        would double-apply regime scaling and defeat the entire point of
+        Phase 2's sizing fix — so when target_weight is given, only the
+        universal risk-desk backstops (single-ticker cap, margin check)
+        still apply, not the account-profile sizing methodology.
+        """
 
         signal_lower = signal.strip().lower()
         existing = self._find_position(ticker, positions)
@@ -68,6 +81,10 @@ class PositionSizer:
             return self._handle_underweight(ticker, existing)
 
         if signal_lower in ("buy",):
+            if target_weight is not None:
+                return self._handle_buy_at_target_weight(
+                    ticker, account, quote, existing, target_weight, trader_proposal,
+                )
             return self._handle_buy(
                 ticker, account, positions, quote, existing, trader_proposal,
             )
@@ -79,6 +96,47 @@ class PositionSizer:
 
         logger.warning("Unknown signal '%s' for %s — treating as Hold", signal, ticker)
         return None
+
+    def _handle_buy_at_target_weight(
+        self,
+        ticker: str,
+        account: AccountInfo,
+        quote: Quote,
+        existing: Optional[Position],
+        target_weight: float,
+        trader_proposal: Optional[Dict],
+    ) -> Optional[OrderRequest]:
+        multiplier = self._get_multiplier(ticker)
+        allocation = account.account_value * target_weight
+        allocation = self._cap_by_ticker_limit(allocation, ticker, account, existing)
+
+        unit_cost = quote.last * multiplier
+        shares = math.floor(allocation / unit_cost) if unit_cost > 0 else 0
+        if shares < 1:
+            label = "contracts" if multiplier > 1 else "shares"
+            logger.info(
+                "Buy signal for %s at target_weight=%.4f but calculated 0 %s — skipping",
+                ticker, target_weight, label,
+            )
+            return None
+
+        if multiplier > 1:
+            margin_ok, margin_msg = self._check_margin(ticker, shares, account)
+            if not margin_ok:
+                logger.info("Buy signal for %s blocked: %s", ticker, margin_msg)
+                return None
+
+        order_type, limit_price = self._resolve_order_type(trader_proposal, quote)
+        asset_info = self._get_asset_info(ticker)
+        return OrderRequest(
+            ticker=ticker,
+            side=OrderSide.BUY,
+            order_type=order_type,
+            quantity=shares,
+            limit_price=limit_price,
+            multiplier=multiplier,
+            asset_class=asset_info["asset_class"],
+        )
 
     # ------------------------------------------------------------------
     # Signal handlers
