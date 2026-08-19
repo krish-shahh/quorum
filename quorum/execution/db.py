@@ -247,6 +247,176 @@ CREATE TABLE IF NOT EXISTS council_analyst_reports (
 );
 CREATE INDEX IF NOT EXISTS idx_car_ticker ON council_analyst_reports(ticker);
 CREATE INDEX IF NOT EXISTS idx_car_date ON council_analyst_reports(analysis_date);
+
+-- ────────────────────────────────────────────────────────────────────
+-- Decision log (v2 redesign, Phase 1) — signal -> target -> order -> fill.
+-- Written identically by backtest, walkforward, paper, shadow, and live
+-- runs, distinguished by run.mode, so attribution and paper-vs-backtest
+-- comparison work off one schema. See quorum/execution/decision_log.py.
+--
+-- Naming note: `signal` here is a per-decision alpha signal (this table),
+-- distinct from the older, ticker-level `signal_scores` table above (the
+-- quant layer's IC-tracking table, scheduled for removal alongside
+-- quorum/quant/ in the broader v2 cleanup). `order_intent` is used instead
+-- of `order` since ORDER is a SQL reserved word.
+-- ────────────────────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS run (
+    run_id           TEXT PRIMARY KEY,
+    strategy_id      TEXT NOT NULL,
+    strategy_version TEXT NOT NULL DEFAULT '',
+    strategy_yaml    TEXT NOT NULL DEFAULT '',
+    mode             TEXT NOT NULL DEFAULT 'live'
+                     CHECK(mode IN ('backtest','walkforward','paper','shadow','live')),
+    git_sha          TEXT NOT NULL DEFAULT '',
+    data_snapshot_id TEXT NOT NULL DEFAULT '',
+    code_env_hash    TEXT NOT NULL DEFAULT '',
+    params_json      TEXT NOT NULL DEFAULT '{}',
+    trial_index      INTEGER,
+    sweep_id         TEXT,
+    start_date       TEXT,
+    end_date         TEXT,
+    started_at       TEXT NOT NULL DEFAULT (datetime('now')),
+    finished_at      TEXT,
+    status           TEXT NOT NULL DEFAULT 'running'
+                     CHECK(status IN ('running','ok','error','killed')),
+    error            TEXT,
+    gate_result_json TEXT,
+    gate_passed      INTEGER,
+    metrics_json     TEXT NOT NULL DEFAULT '{}'
+);
+CREATE INDEX IF NOT EXISTS idx_run_strategy ON run(strategy_id);
+CREATE INDEX IF NOT EXISTS idx_run_mode ON run(mode);
+
+CREATE TABLE IF NOT EXISTS sweep (
+    sweep_id            TEXT PRIMARY KEY,
+    strategy_id         TEXT NOT NULL,
+    hypothesis          TEXT NOT NULL DEFAULT '',
+    search_space_json   TEXT NOT NULL DEFAULT '{}',
+    n_trials            INTEGER NOT NULL DEFAULT 0,
+    n_trials_cumulative INTEGER NOT NULL DEFAULT 0,
+    effective_k         REAL,
+    created_at          TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS signal (
+    signal_id         TEXT PRIMARY KEY,
+    run_id            TEXT NOT NULL,
+    ts                TEXT NOT NULL,
+    bar_ts            TEXT NOT NULL DEFAULT '',
+    symbol            TEXT NOT NULL,
+    direction         INTEGER NOT NULL DEFAULT 0,
+    score             REAL,
+    confidence        REAL,
+    rank              INTEGER,
+    features_json     TEXT NOT NULL DEFAULT '{}',
+    conditions_json   TEXT NOT NULL DEFAULT '{}',
+    rationale         TEXT NOT NULL DEFAULT '',
+    suppressed        INTEGER NOT NULL DEFAULT 0,
+    suppressed_reason TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_signal_run_ts ON signal(run_id, ts);
+CREATE INDEX IF NOT EXISTS idx_signal_symbol ON signal(symbol);
+
+CREATE TABLE IF NOT EXISTS target (
+    target_id             TEXT PRIMARY KEY,
+    run_id                TEXT NOT NULL,
+    signal_id             TEXT,
+    ts                    TEXT NOT NULL,
+    symbol                TEXT NOT NULL,
+    target_weight         REAL,
+    target_shares         INTEGER,
+    current_shares        INTEGER,
+    delta_shares          INTEGER,
+    sizing_method         TEXT NOT NULL DEFAULT '',
+    risk_adjustments_json TEXT NOT NULL DEFAULT '{}'
+);
+CREATE INDEX IF NOT EXISTS idx_target_run ON target(run_id);
+
+CREATE TABLE IF NOT EXISTS order_intent (
+    order_id        TEXT PRIMARY KEY,
+    run_id          TEXT NOT NULL,
+    target_id       TEXT,
+    broker_order_id TEXT,
+    ts_submitted    TEXT NOT NULL,
+    symbol          TEXT NOT NULL,
+    side            TEXT NOT NULL CHECK(side IN ('buy','sell')),
+    qty             REAL NOT NULL,
+    order_type      TEXT NOT NULL DEFAULT 'market',
+    limit_price     REAL,
+    tif             TEXT NOT NULL DEFAULT 'day',
+    status          TEXT NOT NULL DEFAULT 'new'
+                    CHECK(status IN ('new','submitted','partial','filled','cancelled','rejected','expired')),
+    reject_reason   TEXT,
+    ref_price       REAL,
+    intended_price  REAL
+);
+CREATE INDEX IF NOT EXISTS idx_order_run ON order_intent(run_id);
+
+CREATE TABLE IF NOT EXISTS fill (
+    fill_id      TEXT PRIMARY KEY,
+    order_id     TEXT NOT NULL,
+    ts           TEXT NOT NULL,
+    qty          REAL NOT NULL,
+    price        REAL NOT NULL,
+    commission   REAL NOT NULL DEFAULT 0,
+    fees         REAL NOT NULL DEFAULT 0,
+    slippage_bps REAL,
+    liquidity    TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_fill_order ON fill(order_id);
+
+CREATE TABLE IF NOT EXISTS portfolio_snapshot (
+    run_id         TEXT NOT NULL,
+    d              TEXT NOT NULL,
+    cash           REAL,
+    equity         REAL,
+    gross_exposure REAL,
+    net_exposure   REAL,
+    n_positions    INTEGER,
+    daily_return   REAL,
+    cum_return     REAL,
+    drawdown       REAL,
+    positions_json TEXT NOT NULL DEFAULT '{}',
+    PRIMARY KEY (run_id, d)
+);
+
+-- Materialized FIFO round-trips (entry fill -> exit fill), maintained by
+-- decision_log.recompute_closed_trades() rather than a live SQL view —
+-- FIFO lot matching is inherently stateful/sequential and not expressible
+-- as a single SQLite view query.
+CREATE TABLE IF NOT EXISTS closed_trade (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id        TEXT NOT NULL,
+    symbol        TEXT NOT NULL,
+    entry_fill_id TEXT,
+    exit_fill_id  TEXT,
+    entry_ts      TEXT NOT NULL,
+    exit_ts       TEXT NOT NULL,
+    qty           REAL NOT NULL,
+    entry_price   REAL NOT NULL,
+    exit_price    REAL NOT NULL,
+    pnl           REAL NOT NULL,
+    holding_days  REAL,
+    created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_ct_run ON closed_trade(run_id);
+CREATE INDEX IF NOT EXISTS idx_ct_symbol ON closed_trade(symbol);
+
+-- Free-form commentary (human or Claude) on a run/strategy/signal. Never
+-- load-bearing for any decision logic — purely for context.
+CREATE TABLE IF NOT EXISTS journal (
+    entry_id    TEXT PRIMARY KEY,
+    ts          TEXT NOT NULL DEFAULT (datetime('now')),
+    run_id      TEXT,
+    strategy_id TEXT,
+    signal_id   TEXT,
+    kind        TEXT NOT NULL DEFAULT 'note',
+    author      TEXT NOT NULL DEFAULT '',
+    body        TEXT NOT NULL,
+    tags_json   TEXT NOT NULL DEFAULT '[]'
+);
+CREATE INDEX IF NOT EXISTS idx_journal_run ON journal(run_id);
 """
 
 # ──────────────────────────────────────────────────────────────────────
