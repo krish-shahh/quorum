@@ -1,3 +1,1 @@
-"""Backtesting engine for quant score replay and signal validation."""
-
-from quorum.backtest.quant_replay import replay_quant_scores
+"""Conviction calibration — backs the desktop app's /api/v1/calibration endpoint."""
