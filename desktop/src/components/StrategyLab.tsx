@@ -1,17 +1,12 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Play, Save, Sparkles } from "lucide-react";
 import { cn, formatPct, formatUsd, gateColor } from "@/lib/utils";
+import { generateValidatedSpec, type SpecAttempt } from "@/lib/codegen";
 
 const AVAILABLE = typeof window !== "undefined" && !!window.electronAPI?.runQuorumCommand;
-const GENERATE_AVAILABLE = typeof window !== "undefined" && !!window.electronAPI?.generateStrategyYaml;
+const GENERATE_AVAILABLE = typeof window !== "undefined" && !!window.electronAPI?.generateSpecYaml;
 
-/** Strip a ```yaml ... ``` (or bare ``` ... ```) fence if the model wrapped
- * its output in one despite being told not to — cheap enough to always
- * run, no-op on already-bare YAML. */
-function stripCodeFence(text: string): string {
-  const match = text.trim().match(/^```(?:yaml)?\n([\s\S]*?)\n```$/);
-  return match ? match[1] : text;
-}
+const ATTEMPT_GLYPHS = ["①", "②", "③"];
 
 const TEMPLATE = `# strategy_id must match this file's name (strategies/<strategy_id>.yaml).
 # Closed-grammar schema (quorum/strategy/schema.py) — every field below is
@@ -103,6 +98,9 @@ export default function StrategyLab({ onOpenRun }: { onOpenRun: (runId: string) 
 
   const [description, setDescription] = useState("");
   const [generating, setGenerating] = useState(false);
+  const [attempts, setAttempts] = useState<SpecAttempt[]>([]);
+  const [expandedAttempt, setExpandedAttempt] = useState<number | null>(null);
+  const streamingAttemptRef = useRef(0);
 
   const [runMode, setRunMode] = useState<"backtest" | "shadow">("backtest");
   const [start, setStart] = useState("2018-01-01");
@@ -153,13 +151,29 @@ export default function StrategyLab({ onOpenRun }: { onOpenRun: (runId: string) 
     if (!description.trim() || !/^[a-z][a-z0-9_]{1,63}$/.test(strategyId)) return;
     const existingYaml = selected ? yamlText : undefined;
     setGenerating(true);
+    setAttempts([]);
+    setExpandedAttempt(null);
     setYamlText("");
+    streamingAttemptRef.current = 0;
     try {
-      const { text } = await window.electronAPI.generateStrategyYaml(
-        strategyId, description.trim(), existingYaml,
-        (chunk) => setYamlText((prev) => prev + chunk)
-      );
-      setYamlText(stripCodeFence(text));
+      const result = await generateValidatedSpec({
+        kind: "strategy",
+        specId: strategyId,
+        description: description.trim(),
+        existingYaml,
+        onAttempt: (attempt) => setAttempts((prev) => [...prev, attempt]),
+        onChunk: (attempt, chunk) => {
+          // A new attempt starting replaces the editor's content instead of
+          // appending to the previous attempt's draft.
+          if (attempt !== streamingAttemptRef.current) {
+            streamingAttemptRef.current = attempt;
+            setYamlText(chunk);
+          } else {
+            setYamlText((prev) => prev + chunk);
+          }
+        },
+      });
+      setYamlText(result.finalText);
     } finally {
       setGenerating(false);
     }
@@ -248,6 +262,35 @@ export default function StrategyLab({ onOpenRun }: { onOpenRun: (runId: string) 
               >
                 <Sparkles className="w-3 h-3" /> {generating ? "Writing..." : "Generate"}
               </button>
+            </div>
+          )}
+
+          {attempts.length > 0 && (
+            <div className="space-y-1">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {attempts.map((a) => (
+                  <button
+                    key={a.attempt}
+                    onClick={() => setExpandedAttempt(expandedAttempt === a.attempt ? null : a.attempt)}
+                    title={a.ok ? "Passed validation" : "Failed validation — click for the errors"}
+                    className={cn(
+                      "text-[10px] font-mono px-1.5 py-0.5 rounded border transition-colors",
+                      a.ok ? "border-profit/40 text-profit" : "border-loss/40 text-loss",
+                      expandedAttempt === a.attempt && "bg-muted"
+                    )}
+                  >
+                    {ATTEMPT_GLYPHS[a.attempt - 1] ?? a.attempt} {a.ok ? "✓" : "✗"} {a.model}
+                  </button>
+                ))}
+                {generating && attempts.length < 3 && (
+                  <span className="text-[10px] text-muted-foreground">retrying...</span>
+                )}
+              </div>
+              {expandedAttempt != null && (
+                <pre className="text-[10px] font-mono bg-muted/40 rounded-md p-2 max-h-32 overflow-y-auto whitespace-pre-wrap break-words">
+                  {attempts.find((a) => a.attempt === expandedAttempt)?.errors.join("\n") || "Passed validation."}
+                </pre>
+              )}
             </div>
           )}
 

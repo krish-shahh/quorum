@@ -1,7 +1,7 @@
 import { app, BrowserWindow, ipcMain } from "electron";
 import * as path from "path";
 import { startFlask, stopFlask, waitForFlask } from "./flask";
-import { askClaude, generateStrategyYaml } from "./claude";
+import { askClaude, generateSpecYaml } from "./claude";
 import { listStrategies, readStrategyFile, runQuorumCommand, saveStrategy } from "./quorumCli";
 import { withQueue } from "./queue";
 
@@ -58,13 +58,14 @@ ipcMain.handle("quorum:save-strategy", async (_event, strategyId: string, yamlCo
   saveStrategy(strategyId, yamlContent)
 );
 
-ipcMain.handle("claude:generate-strategy", async (
-  event, requestId: string, strategyId: string, description: string, existingYaml: string | undefined,
+ipcMain.handle("claude:generate-spec", async (
+  event, requestId: string, kind: "strategy", specId: string, description: string, existingYaml: string | undefined,
+  opts: { resumeSessionId?: string; retryError?: string; model?: string } | undefined,
 ) => {
   return withQueue("claude", 2, () =>
-    generateStrategyYaml(strategyId, description, existingYaml, (chunk) => {
+    generateSpecYaml(kind, specId, description, existingYaml, (chunk) => {
       event.sender.send(`claude:chunk:${requestId}`, chunk);
-    })
+    }, opts)
   );
 });
 

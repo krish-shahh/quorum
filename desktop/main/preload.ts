@@ -27,21 +27,25 @@ contextBridge.exposeInMainWorld("electronAPI", {
       .finally(() => ipcRenderer.removeListener(channel, listener));
   },
 
-  /** Generate a strategy YAML from a natural-language description (sonnet,
-   * read-only — see main/claude.ts's generateStrategyYaml). Streams raw
-   * text to onChunk and resolves with the full YAML text. */
-  generateStrategyYaml: (
-    strategyId: string,
+  /** Generate a spec YAML from a natural-language description (sonnet by
+   * default, read-only — see main/claude.ts's generateSpecYaml). Streams
+   * raw text to onChunk and resolves with the full text + session_id.
+   * `opts` lets a retry loop (desktop/src/lib/codegen.ts) resume the same
+   * session with just a correction, or step up to a stronger model. */
+  generateSpecYaml: (
+    kind: "strategy",
+    specId: string,
     description: string,
     existingYaml: string | undefined,
-    onChunk: (text: string) => void
+    onChunk: (text: string) => void,
+    opts?: { resumeSessionId?: string; retryError?: string; model?: string }
   ): Promise<{ text: string; sessionId: string | null }> => {
     const requestId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const channel = `claude:chunk:${requestId}`;
     const listener = (_event: unknown, chunk: string) => onChunk(chunk);
     ipcRenderer.on(channel, listener);
     return ipcRenderer
-      .invoke("claude:generate-strategy", requestId, strategyId, description, existingYaml)
+      .invoke("claude:generate-spec", requestId, kind, specId, description, existingYaml, opts)
       .finally(() => ipcRenderer.removeListener(channel, listener));
   },
 

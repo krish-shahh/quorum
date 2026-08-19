@@ -11,11 +11,13 @@ declare global {
         onChunk: (text: string) => void,
         resumeSessionId?: string
       ): Promise<{ text: string; sessionId: string | null }>;
-      generateStrategyYaml(
-        strategyId: string,
+      generateSpecYaml(
+        kind: "strategy",
+        specId: string,
         description: string,
         existingYaml: string | undefined,
-        onChunk: (text: string) => void
+        onChunk: (text: string) => void,
+        opts?: { resumeSessionId?: string; retryError?: string; model?: string }
       ): Promise<{ text: string; sessionId: string | null }>;
       listStrategies(): Promise<string[]>;
       readStrategyFile(strategyId: string): Promise<string | null>;

@@ -487,3 +487,23 @@ export async function resolveAnnotation(id: string): Promise<Annotation> {
   if (!res.ok) throw new Error(`API error: ${res.status} ${res.statusText}`);
   return res.json();
 }
+
+export interface ValidateSpecResult {
+  ok: boolean;
+  cleaned_text?: string;
+  errors?: string[];
+}
+
+/** Validate a generated spec YAML against its closed-grammar schema —
+ * always resolves (never throws for an invalid spec, only for a bad
+ * request); check `.ok`. Used by the generate -> validate -> retry loop
+ * (lib/codegen.ts) after every codegen attempt. */
+export async function validateSpec(kind: "strategy", text: string, expectedId?: string): Promise<ValidateSpecResult> {
+  const res = await fetch(`${BASE_URL}/api/v1/validate-spec`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ kind, text, expected_id: expectedId }),
+  });
+  if (!res.ok) throw new Error(`API error: ${res.status} ${res.statusText}`);
+  return res.json();
+}
