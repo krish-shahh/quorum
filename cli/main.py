@@ -691,15 +691,6 @@ def _write_profile(name: str) -> None:
     path.write_text(f"# Quorum risk profile. One of: {', '.join(_PROFILES)}.\nprofile: {name}\n")
 
 
-def _loaded_quorum_jobs() -> list[str]:
-    import subprocess
-    try:
-        out = subprocess.run(["launchctl", "list"], capture_output=True, text=True, timeout=10).stdout
-    except Exception:
-        return []
-    return [ln.split()[-1] for ln in out.splitlines() if "com.quorum." in ln]
-
-
 @app.command()
 def mode(
     name: str = typer.Argument(None, help=f"Profile to switch to: {', '.join(_PROFILES)}. Omit to show current."),
@@ -721,11 +712,9 @@ def mode(
         file_profile = _read_profile()
         import os
         env_profile = os.environ.get("QUORUM_PROFILE", "").strip().lower()
-        jobs = _loaded_quorum_jobs()
         console.print(f"[bold]profile.yaml:[/bold] {file_profile}")
         if env_profile:
             console.print(f"[bold]QUORUM_PROFILE env (overrides file this shell):[/bold] {env_profile}")
-        console.print(f"[bold]loaded launchd jobs:[/bold] {', '.join(jobs) if jobs else '(none)'}")
         console.print(f"[dim]Switch with: quorum mode {{{'|'.join(_PROFILES)}}}[/dim]")
         return
 
@@ -741,7 +730,7 @@ def mode(
         console.print(
             "[yellow]Note: scalp has no dedicated skill or schedule right now "
             "(scalp-planner/scalp-executor were retired) — trade it via /pod-cycle "
-            "or /trading-planner once a scalp strategy exists.[/yellow]"
+            "once a scalp strategy YAML exists.[/yellow]"
         )
     console.print("[dim]Restart any open Claude Code session so the MCP server reloads the profile.[/dim]")
 
