@@ -16,12 +16,28 @@ const today = () => new Date().toISOString().slice(0, 10);
  * produced, todays activity front and center, drill into any row for the
  * full decision + reasoning trace. Merges the old Runs, Today, and Logs
  * tabs: those were really one "what happened, and why" workflow split
- * across three pages. */
-export default function ActivityView() {
-  const [scope, setScope] = useState<"today" | "all">("today");
+ * across three pages.
+ *
+ * `initialRunId` (from the Research tab's "View in Activity ->" link)
+ * opens straight to that run — captured via useState initializer so it
+ * only applies on mount, not on every prop change while this tab stays
+ * mounted. `onConsumedInitialRun` lets the parent clear it once mounted
+ * so re-visiting this tab later doesn't reopen the same run. */
+export default function ActivityView({
+  initialRunId, onConsumedInitialRun,
+}: {
+  initialRunId?: string | null;
+  onConsumedInitialRun?: () => void;
+}) {
+  const [scope, setScope] = useState<"today" | "all">(initialRunId ? "all" : "today");
   const [mode, setMode] = useState<RunMode | "all">("all");
   const [selectedDate, setSelectedDate] = useState(today());
-  const [selectedRun, setSelectedRun] = useState<string | null>(null);
+  const [selectedRun, setSelectedRun] = useState<string | null>(initialRunId ?? null);
+
+  useEffect(() => {
+    if (initialRunId) onConsumedInitialRun?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const { data: recentDays } = useDailyRecaps(14);
   const { data: recap } = useDailyRecap(selectedDate);

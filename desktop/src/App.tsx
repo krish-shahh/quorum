@@ -8,6 +8,7 @@ import ReportsPanel from "@/components/ReportsPanel";
 import PortfolioView from "@/components/PortfolioView";
 import PerformanceView from "@/components/PerformanceView";
 import ActivityView from "@/components/ActivityView";
+import StrategyLab from "@/components/StrategyLab";
 import CommentsDrawer from "@/components/CommentsDrawer";
 import type { Annotation } from "@/lib/api";
 import { anchorElementId, anchorView } from "@/lib/anchor";
@@ -18,6 +19,7 @@ export default function App() {
   const [view, setView] = useState<View>("portfolio");
   const [selectedTicker, setSelectedTicker] = useState<string | null>(null);
   const [commentsOpen, setCommentsOpen] = useState(false);
+  const [pendingRunId, setPendingRunId] = useState<string | null>(null);
   const { data, dataUpdatedAt, isLoading, error } = useDashboard(live);
 
   // Comments drawer "jump to" — switch view, then poll for the target
@@ -82,10 +84,21 @@ export default function App() {
 
         {view === "performance" && <PerformanceView />}
 
-        {view === "activity" && <ActivityView />}
+        {view === "activity" && (
+          <ActivityView
+            initialRunId={pendingRunId}
+            onConsumedInitialRun={() => setPendingRunId(null)}
+          />
+        )}
 
         {view === "research" && (
           <>
+            <StrategyLab
+              onOpenRun={(runId) => {
+                setPendingRunId(runId);
+                setView("activity");
+              }}
+            />
             <ReportsPanel />
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
               <PlanMetrics status={data.status.plan} />

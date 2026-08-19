@@ -279,6 +279,8 @@ def shadow_sleeve(
     to decide whether the pod's authority should be cut back to
     evidence-extraction-only.
     """
+    import json
+
     from quorum.dataflows.regime import CrossAssetRegimeDetector
     from quorum.strategy.candidates import fetch_ohlcv, required_symbols
     from quorum.strategy.schema import load_strategy
@@ -308,6 +310,10 @@ def shadow_sleeve(
         f"[green]Shadow sleeve for {strategy_id}: final equity "
         f"${result['final_equity']:,.2f}, {len(result['trades'])} trade(s).[/green]"
     )
+    print("---SHADOW_RESULT---" + json.dumps({
+        "run_id": result["run_id"], "strategy_id": strategy_id,
+        "final_equity": result["final_equity"], "n_trades": len(result["trades"]),
+    }) + "---SHADOW_RESULT---")
 
 
 @app.command()
@@ -327,6 +333,8 @@ def backtest(
     N/A (no parameter sweep, no walk-forward windows) and show SKIPPED —
     that's expected here, not a bug.
     """
+    import json
+
     import empyrical as ep
 
     from quorum.strategy.candidates import fetch_ohlcv, required_symbols
@@ -425,6 +433,16 @@ def backtest(
                 "total_return": total_return,
             },
         )
+
+    # Machine-parseable summary for the desktop app's Research-tab runner
+    # (mirrors `cycle`'s --- NOTIFICATION --- fence). Plain print, not
+    # console.print — this must be untouched by Rich markup/styling.
+    print("---BACKTEST_RESULT---" + json.dumps({
+        "run_id": result["run_id"], "strategy_id": strategy_id,
+        "gate_passed": gate_result.passed, "final_equity": result["final_equity"],
+        "total_return": total_return, "n_trades": len(trades),
+        "win_rate": win_rate, "sharpe": sharpe, "max_dd": max_dd,
+    }) + "---BACKTEST_RESULT---")
 
 
 @app.command()
