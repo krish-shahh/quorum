@@ -959,6 +959,30 @@ def api_v1_calibration():
     return jsonify({"report": run_calibration()})
 
 
+@api_bp.route("/api/v1/daily-recap")
+def api_v1_daily_recap_list():
+    """Recent daily-recap summaries, newest first — backend for a future
+    dashboard timeline/calendar view (not built yet)."""
+    from quorum.default_config import DEFAULT_CONFIG
+    from quorum.execution.decision_log import list_daily_recaps
+
+    limit = request.args.get("limit", default=30, type=int)
+    return jsonify({"recaps": list_daily_recaps(DEFAULT_CONFIG, limit=limit)})
+
+
+@api_bp.route("/api/v1/daily-recap/<recap_date>")
+def api_v1_daily_recap_detail(recap_date):
+    """Full play-by-play for one day: every run (any mode), its candidates,
+    pod-PM decisions, orders/fills, and trades closed that day."""
+    from quorum.default_config import DEFAULT_CONFIG
+    from quorum.execution.decision_log import get_daily_recap
+
+    recap = get_daily_recap(DEFAULT_CONFIG, recap_date)
+    if recap is None:
+        return jsonify({"error": f"no recap saved for {recap_date}"}), 404
+    return jsonify(recap)
+
+
 @api_bp.route("/api/v1/historical")
 def api_v1_historical():
     date_str = request.args.get("date", "")

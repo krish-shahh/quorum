@@ -1541,15 +1541,37 @@ def _handle_tool(name: str, args: dict) -> str:
         start = end - timedelta(days=lookback_days)
         ohlcv = fetch_ohlcv(all_symbols, str(start), str(end))
 
+        if not ohlcv:
+            return f"No OHLCV data returned for '{strategy_id}'s universe — cannot generate candidates."
+
+        # Staleness guard: if the newest bar is more than 4 calendar days
+        # behind today (covers a 3-day weekend), the system likely missed
+        # one or more scheduled cycles (machine asleep, launchd not run,
+        # data vendor gap). The entry condition still only ever evaluates
+        # the last available bar — that's correct, not stale-unsafe — but
+        # trading on it without flagging the gap would hide the fact that
+        # multiple days of price action were skipped, not just today's.
+        latest_bar = max(df.index[-1] for df in ohlcv.values() if not df.empty)
+        staleness_days = (end - latest_bar.date()).days
+        stale_warning = (
+            f"\n\n**STALE DATA WARNING**: latest available bar is {latest_bar.date()} "
+            f"({staleness_days} calendar days behind today, {end}) — likely missed "
+            f"scheduled cycle(s). pod-pm should weigh this before approving any candidate below."
+            if staleness_days > 4 else ""
+        )
+
         regime = CrossAssetRegimeDetector().detect(str(end)).get("regime", "unknown")
         candidates = generate_candidates(
             spec, ohlcv, tradeable, regime=regime, log_config=config, mode="paper",
         )
 
         if not candidates:
-            return f"No candidates fired for '{strategy_id}' (regime={regime}) as of the latest bar."
+            return (
+                f"No candidates fired for '{strategy_id}' (regime={regime}) "
+                f"as of the latest bar ({latest_bar.date()})." + stale_warning
+            )
 
-        lines = [f"# {strategy_id} candidates ({len(candidates)}, regime={regime})"]
+        lines = [f"# {strategy_id} candidates ({len(candidates)}, regime={regime})" + stale_warning]
         for c in candidates:
             lines.append(
                 f"- **{c.symbol}** proposed_weight={c.weight:.4f} atr={c.score} "

@@ -193,3 +193,76 @@ class TestMigrateLegacyTrades:
 
         assert second["skipped"] is True
         assert second["total_pnl"] == pytest.approx(50.0)
+
+
+class TestDailyRecap:
+    def test_build_recap_groups_runs_across_all_modes_for_the_day(self, tmp_path):
+        config = _config(tmp_path)
+        paper_run = dl.new_run(config, strategy_id="regime_gate", mode="paper", start_date="2026-08-18")
+        backtest_run = dl.new_run(config, strategy_id="regime_gate", mode="backtest", start_date="2026-08-18")
+        db.get_db(config).execute(
+            "UPDATE run SET started_at = '2026-08-18 09:30:00' WHERE run_id IN (?, ?)",
+            (paper_run, backtest_run),
+        )
+        db.get_db(config).commit()
+
+        recap = dl.build_daily_recap(config, "2026-08-18")
+
+        assert recap["summary"]["n_runs"] == 2
+        assert {r["mode"] for r in recap["runs"]} == {"paper", "backtest"}
+
+    def test_build_recap_counts_fired_candidates_not_suppressed(self, tmp_path):
+        config = _config(tmp_path)
+        run_id = dl.new_run(config, strategy_id="regime_gate", mode="paper")
+        db.get_db(config).execute(
+            "UPDATE run SET started_at = '2026-08-18 09:30:00' WHERE run_id = ?", (run_id,)
+        )
+        db.get_db(config).commit()
+        dl.record_signal(config, run_id=run_id, ts="2026-08-18", symbol="NVDA", suppressed=False)
+        dl.record_signal(
+            config, run_id=run_id, ts="2026-08-18", symbol="AMD",
+            suppressed=True, suppressed_reason="zero_weight",
+        )
+
+        recap = dl.build_daily_recap(config, "2026-08-18")
+
+        assert recap["summary"]["n_candidates"] == 1
+        assert recap["runs"][0]["n_signals_suppressed"] == 1
+
+    def test_build_recap_includes_trades_closed_that_day_regardless_of_run(self, tmp_path):
+        config = _config(tmp_path)
+        run_id = dl.new_run(config, strategy_id="regime_gate", mode="paper")
+        buy = dl.record_order(config, run_id=run_id, ts_submitted="2026-08-01", symbol="NVDA", side="buy", qty=5)
+        dl.record_fill(config, order_id=buy, ts="2026-08-01", qty=5, price=100.0)
+        sell = dl.record_order(config, run_id=run_id, ts_submitted="2026-08-18", symbol="NVDA", side="sell", qty=5)
+        dl.record_fill(config, order_id=sell, ts="2026-08-18", qty=5, price=110.0)
+        dl.recompute_closed_trades(config, run_id)
+
+        recap = dl.build_daily_recap(config, "2026-08-18")
+
+        assert recap["summary"]["n_closed_trades"] == 1
+        assert recap["summary"]["realized_pnl"] == pytest.approx(50.0)
+
+    def test_save_daily_recap_upserts_on_rerun(self, tmp_path):
+        config = _config(tmp_path)
+        run_id = dl.new_run(config, strategy_id="regime_gate", mode="paper")
+        db.get_db(config).execute(
+            "UPDATE run SET started_at = '2026-08-18 09:30:00' WHERE run_id = ?", (run_id,)
+        )
+        db.get_db(config).commit()
+
+        dl.save_daily_recap(config, "2026-08-18")
+        dl.record_journal(config, run_id=run_id, body="pod-pm approved NVDA")
+        dl.save_daily_recap(config, "2026-08-18")
+
+        count = db.get_db(config).execute(
+            "SELECT COUNT(*) FROM daily_recap WHERE d = '2026-08-18'"
+        ).fetchone()[0]
+        assert count == 1
+        saved = dl.get_daily_recap(config, "2026-08-18")
+        assert saved["summary"]["n_decisions"] == 1
+
+    def test_get_daily_recap_returns_none_when_not_saved(self, tmp_path):
+        config = _config(tmp_path)
+
+        assert dl.get_daily_recap(config, "2026-01-01") is None

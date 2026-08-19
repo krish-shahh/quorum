@@ -421,6 +421,154 @@ def migrate_legacy_trades(config: Dict[str, Any], *, force: bool = False) -> Dic
     }
 
 
+# ── daily recap (dashboard play-by-play, backend only) ──────────────
+
+
+def build_daily_recap(config: Dict[str, Any], d: str) -> Dict[str, Any]:
+    """Assemble the full play-by-play for calendar day `d` (YYYY-MM-DD)
+    from the decision log — every run started that day, in every mode
+    (backtest/walkforward/paper/shadow/live), with its candidates,
+    pod-PM decisions, and orders/fills, plus trades that closed that day
+    across any run. Pure read; use save_daily_recap() to persist.
+    """
+    conn = db.get_db(config)
+
+    runs = conn.execute(
+        "SELECT run_id, strategy_id, strategy_version, mode, status, "
+        "started_at, finished_at, metrics_json FROM run "
+        "WHERE date(started_at) = ? ORDER BY started_at ASC",
+        (d,),
+    ).fetchall()
+
+    run_entries: List[Dict[str, Any]] = []
+    n_candidates = 0
+    n_decisions = 0
+    n_orders = 0
+    n_fills = 0
+
+    for run in runs:
+        run_id = run["run_id"]
+
+        signals = conn.execute(
+            "SELECT symbol, direction, score, rationale, suppressed, "
+            "suppressed_reason FROM signal WHERE run_id = ? ORDER BY ts ASC",
+            (run_id,),
+        ).fetchall()
+        candidates = [dict(s) for s in signals if not s["suppressed"]]
+        n_candidates += len(candidates)
+
+        decisions = conn.execute(
+            "SELECT ts, kind, author, body, tags_json FROM journal "
+            "WHERE run_id = ? ORDER BY ts ASC",
+            (run_id,),
+        ).fetchall()
+        decision_list = [
+            {**dict(row), "tags": json.loads(row["tags_json"])}
+            for row in decisions
+        ]
+        n_decisions += len(decision_list)
+
+        orders = conn.execute(
+            "SELECT o.symbol, o.side, o.qty, o.status, o.ts_submitted, "
+            "f.price, f.ts AS fill_ts, f.commission, f.slippage_bps "
+            "FROM order_intent o LEFT JOIN fill f ON f.order_id = o.order_id "
+            "WHERE o.run_id = ? ORDER BY o.ts_submitted ASC",
+            (run_id,),
+        ).fetchall()
+        order_list = [dict(row) for row in orders]
+        n_orders += len({row["symbol"] for row in orders})
+        n_fills += sum(1 for row in orders if row["fill_ts"] is not None)
+
+        run_entries.append({
+            "run_id": run_id,
+            "strategy_id": run["strategy_id"],
+            "strategy_version": run["strategy_version"],
+            "mode": run["mode"],
+            "status": run["status"],
+            "started_at": run["started_at"],
+            "finished_at": run["finished_at"],
+            "metrics": json.loads(run["metrics_json"] or "{}"),
+            "candidates": candidates,
+            "n_signals_suppressed": len(signals) - len(candidates),
+            "decisions": decision_list,
+            "orders": order_list,
+        })
+
+    closed_today = conn.execute(
+        "SELECT symbol, qty, entry_price, exit_price, pnl, run_id "
+        "FROM closed_trade WHERE date(exit_ts) = ? ORDER BY exit_ts ASC",
+        (d,),
+    ).fetchall()
+    closed_list = [dict(row) for row in closed_today]
+    realized_pnl = sum(row["pnl"] for row in closed_list) if closed_list else None
+
+    return {
+        "date": d,
+        "runs": run_entries,
+        "closed_trades": closed_list,
+        "summary": {
+            "n_runs": len(run_entries),
+            "n_candidates": n_candidates,
+            "n_decisions": n_decisions,
+            "n_orders": n_orders,
+            "n_fills": n_fills,
+            "n_closed_trades": len(closed_list),
+            "realized_pnl": realized_pnl,
+        },
+    }
+
+
+def save_daily_recap(config: Dict[str, Any], d: str) -> Dict[str, Any]:
+    """Build and upsert the recap for day `d` into ``daily_recap``. Meant
+    to run once daily (see the EOD step in scripts/start-trading-day.sh);
+    re-running for the same day recomputes and overwrites, so it's safe
+    to call more than once (e.g. a final-cycle re-run after more fills).
+    """
+    recap = build_daily_recap(config, d)
+    summary = recap["summary"]
+    conn = db.get_db(config)
+    with conn:
+        conn.execute(
+            "INSERT INTO daily_recap "
+            "(d, n_runs, n_candidates, n_decisions, n_orders, n_fills, "
+            " realized_pnl, recap_json, computed_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now')) "
+            "ON CONFLICT(d) DO UPDATE SET "
+            "n_runs=excluded.n_runs, n_candidates=excluded.n_candidates, "
+            "n_decisions=excluded.n_decisions, n_orders=excluded.n_orders, "
+            "n_fills=excluded.n_fills, realized_pnl=excluded.realized_pnl, "
+            "recap_json=excluded.recap_json, computed_at=excluded.computed_at",
+            (
+                d, summary["n_runs"], summary["n_candidates"], summary["n_decisions"],
+                summary["n_orders"], summary["n_fills"], summary["realized_pnl"],
+                json.dumps(recap, default=str),
+            ),
+        )
+    return recap
+
+
+def get_daily_recap(config: Dict[str, Any], d: str) -> Optional[Dict[str, Any]]:
+    """Read a previously saved recap for day `d`, or None if not computed yet."""
+    conn = db.get_db(config)
+    row = conn.execute(
+        "SELECT recap_json FROM daily_recap WHERE d = ?", (d,)
+    ).fetchone()
+    return json.loads(row["recap_json"]) if row else None
+
+
+def list_daily_recaps(config: Dict[str, Any], *, limit: int = 30) -> List[Dict[str, Any]]:
+    """List recent recap summaries (no full recap_json) newest-first, for a
+    dashboard index/calendar view.
+    """
+    conn = db.get_db(config)
+    rows = conn.execute(
+        "SELECT d, computed_at, n_runs, n_candidates, n_decisions, n_orders, "
+        "n_fills, realized_pnl FROM daily_recap ORDER BY d DESC LIMIT ?",
+        (limit,),
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
 def recompute_closed_trades(config: Dict[str, Any], run_id: str) -> Dict[str, Any]:
     """Rebuild ``closed_trade`` rows for one run via FIFO lot matching over its fills.
 

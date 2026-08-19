@@ -132,6 +132,80 @@ def fill_forward_returns():
     console.print(f"[green]Filled forward returns on {updated} signal_scores row(s).[/green]")
 
 
+@app.command(name="daily-recap")
+def daily_recap(
+    date: str = typer.Option(
+        None, "--date", "-d",
+        help="Calendar day YYYY-MM-DD to recap (default: today)",
+    ),
+):
+    """Save today's decision-log play-by-play for the dashboard.
+
+    Backend-only for now (no frontend view yet): pulls every run started
+    that day, in every mode (backtest/paper/shadow/live), with its
+    candidates, pod-PM decisions, and orders/fills, plus any trade that
+    closed that day. Meant to run once at EOD (see the final cycle in
+    scripts/start-trading-day.sh) but safe to re-run.
+    """
+    from quorum.execution.decision_log import save_daily_recap
+
+    d = date or datetime.date.today().isoformat()
+    recap = save_daily_recap(DEFAULT_CONFIG, d)
+    s = recap["summary"]
+    console.print(
+        f"[green]Saved recap for {d}: {s['n_runs']} run(s), {s['n_candidates']} candidate(s), "
+        f"{s['n_decisions']} decision(s), {s['n_fills']} fill(s), "
+        f"realized P&L ${s['realized_pnl']:,.2f}[/green]"
+        if s["realized_pnl"] is not None else
+        f"[green]Saved recap for {d}: {s['n_runs']} run(s), {s['n_candidates']} candidate(s), "
+        f"{s['n_decisions']} decision(s), {s['n_fills']} fill(s), no trades closed[/green]"
+    )
+
+
+@app.command(name="shadow-sleeve")
+def shadow_sleeve(
+    strategy_id: str = typer.Argument(..., help="Filename stem under strategies/, e.g. 'regime_gate'"),
+    lookback_days: int = typer.Option(400, "--lookback-days", help="Calendar days of history to fetch"),
+):
+    """Run a strategy's shadow benchmark sleeve (equal-weight, no council) against latest data.
+
+    Pure deterministic tracking — no LLM in the loop — so it's schedulable
+    on its own cadence, independent of pod-cycle. Logs to the decision log
+    under run.mode='shadow', which pod-pm's compare_sleeves() check reads
+    to decide whether the pod's authority should be cut back to
+    evidence-extraction-only.
+    """
+    from quorum.dataflows.regime import CrossAssetRegimeDetector
+    from quorum.strategy.candidates import fetch_ohlcv, required_symbols
+    from quorum.strategy.schema import load_strategy
+    from quorum.strategy.shadow import run_shadow_sleeve
+
+    strategy_path = Path(__file__).resolve().parent.parent / "strategies" / f"{strategy_id}.yaml"
+    if not strategy_path.exists():
+        console.print(f"[red]No strategy file at strategies/{strategy_id}.yaml[/red]")
+        raise typer.Exit(1)
+
+    spec = load_strategy(strategy_path)
+    tradeable = spec.universe.resolve()
+    all_symbols = required_symbols(spec)
+
+    end = datetime.date.today()
+    start = end - datetime.timedelta(days=lookback_days)
+    ohlcv = fetch_ohlcv(all_symbols, str(start), str(end))
+    if not ohlcv:
+        console.print(f"[yellow]No OHLCV data returned for {strategy_id}'s universe.[/yellow]")
+        raise typer.Exit(1)
+
+    result = run_shadow_sleeve(
+        spec, ohlcv, [s for s in tradeable if s in ohlcv],
+        log_config=DEFAULT_CONFIG,
+    )
+    console.print(
+        f"[green]Shadow sleeve for {strategy_id}: final equity "
+        f"${result['final_equity']:,.2f}, {len(result['trades'])} trade(s).[/green]"
+    )
+
+
 @app.command()
 def scan(
     mode: str = typer.Option(

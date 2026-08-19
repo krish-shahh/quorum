@@ -417,6 +417,24 @@ CREATE TABLE IF NOT EXISTS journal (
     tags_json   TEXT NOT NULL DEFAULT '[]'
 );
 CREATE INDEX IF NOT EXISTS idx_journal_run ON journal(run_id);
+
+-- One row per calendar day, computed by decision_log.save_daily_recap()
+-- (scheduled once at EOD). A "play by play" of everything the system did
+-- that day, across every run mode (backtest/paper/shadow/live) — the
+-- dashboard's timeline view reads this instead of re-joining run/signal/
+-- journal/fill on every request. recap_json holds the full structured
+-- timeline; the flat columns are for cheap listing/sorting.
+CREATE TABLE IF NOT EXISTS daily_recap (
+    d            TEXT PRIMARY KEY,
+    computed_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    n_runs       INTEGER NOT NULL DEFAULT 0,
+    n_candidates INTEGER NOT NULL DEFAULT 0,
+    n_decisions  INTEGER NOT NULL DEFAULT 0,
+    n_orders     INTEGER NOT NULL DEFAULT 0,
+    n_fills      INTEGER NOT NULL DEFAULT 0,
+    realized_pnl REAL,
+    recap_json   TEXT NOT NULL DEFAULT '{}'
+);
 """
 
 # ──────────────────────────────────────────────────────────────────────
