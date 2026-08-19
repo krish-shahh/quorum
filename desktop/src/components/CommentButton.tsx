@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { MessageCircle, Check, Sparkles } from "lucide-react";
 import { useAnnotations } from "@/hooks/use-annotations";
 import { createAnnotation, replyToAnnotation, resolveAnnotation, type AnchorType } from "@/lib/api";
+import { anchorElementId } from "@/lib/anchor";
 import { cn, timeAgo } from "@/lib/utils";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 
@@ -24,8 +25,22 @@ export default function CommentButton({
   const [draft, setDraft] = useState("");
   const [asking, setAsking] = useState(false);
   const [streamText, setStreamText] = useState("");
+  const [error, setError] = useState<string | null>(null);
   const queryClient = useQueryClient();
   const { data } = useAnnotations(anchorType, anchor);
+
+  const elementId = anchorElementId(anchorType, anchor);
+
+  // The comments drawer (Header badge) scrolls to this element then fires
+  // this event so the thread opens without every CommentButton call site
+  // having to thread an "open" prop down from App.
+  useEffect(() => {
+    function onOpenRequest(e: Event) {
+      if ((e as CustomEvent<{ id: string }>).detail?.id === elementId) setOpen(true);
+    }
+    window.addEventListener("quorum:open-thread", onOpenRequest);
+    return () => window.removeEventListener("quorum:open-thread", onOpenRequest);
+  }, [elementId]);
 
   const threads = data?.annotations ?? [];
   const openThreads = threads.filter((t) => t.status === "open");
@@ -47,17 +62,29 @@ export default function CommentButton({
 
   async function submit() {
     if (!draft.trim()) return;
-    await ensureThread(draft.trim());
-    setDraft("");
-    invalidate();
+    setError(null);
+    try {
+      await ensureThread(draft.trim());
+      setDraft("");
+      invalidate();
+    } catch {
+      setError("Couldn't send — try again.");
+    }
   }
 
   async function askClaude() {
     const question = draft.trim();
     if (!question || !CLAUDE_BRIDGE_AVAILABLE) return;
+    setError(null);
     setDraft("");
-    const threadId = await ensureThread(question);
-    invalidate();
+    let threadId: string;
+    try {
+      threadId = await ensureThread(question);
+      invalidate();
+    } catch {
+      setError("Couldn't send — try again.");
+      return;
+    }
 
     setAsking(true);
     setStreamText("");
@@ -68,6 +95,8 @@ export default function CommentButton({
       });
       await replyToAnnotation(threadId, finalText, "claude");
       invalidate();
+    } catch {
+      setError("Claude couldn't answer — try again.");
     } finally {
       setAsking(false);
       setStreamText("");
@@ -83,6 +112,7 @@ export default function CommentButton({
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button
+          id={elementId}
           className={cn(
             "inline-flex items-center gap-1 rounded p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground",
             !hasThreads && "opacity-0 group-hover:opacity-100",
@@ -138,6 +168,8 @@ export default function CommentButton({
             </div>
           )}
         </div>
+
+        {error && <p className="text-[10px] text-destructive">{error}</p>}
 
         <div className="flex items-center gap-1.5 pt-1 border-t">
           <input

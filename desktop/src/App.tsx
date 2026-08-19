@@ -15,6 +15,9 @@ import PerformanceView, { OverviewKpiStrip } from "@/components/PerformanceView"
 import RunsView from "@/components/RunsView";
 import TodayView from "@/components/TodayView";
 import LogsView from "@/components/LogsView";
+import CommentsDrawer from "@/components/CommentsDrawer";
+import type { Annotation } from "@/lib/api";
+import { anchorElementId, anchorView } from "@/lib/anchor";
 import type { View } from "@/lib/views";
 
 export default function App() {
@@ -22,11 +25,34 @@ export default function App() {
   const [view, setView] = useState<View>("overview");
   const [selectedTicker, setSelectedTicker] = useState<string | null>(null);
   const [logsCycleId, setLogsCycleId] = useState<string | null>(null);
+  const [commentsOpen, setCommentsOpen] = useState(false);
   const { data, dataUpdatedAt, isLoading, error } = useDashboard(live);
 
   function viewTrace(cycleId: string) {
     setLogsCycleId(cycleId);
     setView("logs");
+  }
+
+  // Comments drawer "jump to" — switch view, then poll for the target
+  // element (the view it lives on may still be fetching its own data) and
+  // scroll + flash it once it mounts.
+  function jumpToThread(thread: Annotation) {
+    const targetId = anchorElementId(thread.anchor_type, thread.anchor);
+    setView(anchorView(thread.anchor_type, thread.anchor));
+
+    let attempts = 0;
+    const tryScroll = () => {
+      const el = document.getElementById(targetId);
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        el.classList.add("annotation-highlight");
+        window.setTimeout(() => el.classList.remove("annotation-highlight"), 1600);
+        window.dispatchEvent(new CustomEvent("quorum:open-thread", { detail: { id: targetId } }));
+      } else if (attempts++ < 20) {
+        window.setTimeout(tryScroll, 100);
+      }
+    };
+    window.setTimeout(tryScroll, 50);
   }
 
   if (isLoading && !data) {
@@ -59,6 +85,7 @@ export default function App() {
         lastUpdated={dataUpdatedAt}
         view={view}
         onChangeView={setView}
+        onOpenComments={() => setCommentsOpen(true)}
       />
 
       <main className="px-6 pb-8 pt-4 space-y-4 max-w-[1600px] mx-auto">
@@ -112,6 +139,12 @@ export default function App() {
       <CouncilDetailModal
         ticker={selectedTicker}
         onClose={() => setSelectedTicker(null)}
+      />
+
+      <CommentsDrawer
+        open={commentsOpen}
+        onOpenChange={setCommentsOpen}
+        onNavigate={jumpToThread}
       />
     </div>
   );

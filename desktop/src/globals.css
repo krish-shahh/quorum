@@ -87,3 +87,16 @@
 .no-drag {
   -webkit-app-region: no-drag;
 }
+
+/* Flashed briefly when the comments drawer jumps to a thread's location */
+.annotation-highlight {
+  animation: annotation-flash 1.6s ease-out;
+  border-radius: 4px;
+}
+@keyframes annotation-flash {
+  0%, 40% { box-shadow: 0 0 0 3px hsl(var(--ring) / 0.5); }
+  100% { box-shadow: 0 0 0 3px hsl(var(--ring) / 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .annotation-highlight { animation: none; }
+}

@@ -15,11 +15,12 @@ interface HeaderProps {
   lastUpdated: number;
   view: View;
   onChangeView: (v: View) => void;
+  onOpenComments: () => void;
 }
 
 export default function Header({
   market, killSwitch, live, onToggleLive, lastUpdated,
-  view, onChangeView,
+  view, onChangeView, onOpenComments,
 }: HeaderProps) {
   const queryClient = useQueryClient();
   const { data: openCommentCount } = useOpenAnnotationCount();
@@ -72,13 +73,16 @@ export default function Header({
           {!!openCommentCount && (
             <Tooltip>
               <TooltipTrigger asChild>
-                <span className="flex items-center gap-1 text-[11px] font-medium px-2 py-1 rounded bg-muted text-muted-foreground">
+                <button
+                  onClick={onOpenComments}
+                  className="flex items-center gap-1 text-[11px] font-medium px-2 py-1 rounded bg-muted text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
+                >
                   <MessageCircle className="w-3 h-3" />
                   {openCommentCount}
-                </span>
+                </button>
               </TooltipTrigger>
               <TooltipContent>
-                <p>{openCommentCount} open comment thread{openCommentCount === 1 ? "" : "s"}</p>
+                <p>{openCommentCount} open comment thread{openCommentCount === 1 ? "" : "s"} — click to view</p>
               </TooltipContent>
             </Tooltip>
           )}
