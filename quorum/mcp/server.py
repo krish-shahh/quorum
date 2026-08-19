@@ -101,6 +101,9 @@ def create_server():
         Tool(name="record_pod_decision", description="Record a pod PM's decision on a strategy-generated candidate: approve at proposed size, reduce size, or veto entirely. Every override MUST be logged here with a reason — this is the audit trail the plan requires ('every override is written to journal with a reason').", inputSchema={"type": "object", "properties": {"ticker": {"type": "string"}, "decision": {"type": "string", "enum": ["approve", "reduce", "veto"]}, "proposed_weight": {"type": "number", "description": "The candidate's proposed position weight from the strategy engine"}, "final_weight": {"type": "number", "description": "The weight after this decision (0 if veto, < proposed_weight if reduce, == proposed_weight if approve)"}, "reason": {"type": "string", "description": "Why — cite the pod-analyst findings that drove this decision"}, "run_id": {"type": "string", "description": "The decision-log run_id this candidate came from, if known"}}, "required": ["ticker", "decision", "reason"]}),
         Tool(name="save_pod_evidence", description="Persist pod-analyst's structured, cited evidence for one ticker to the wiki so future cycles (this pod or another) can build on it instead of re-deriving from scratch. Call this at the end of your evidence-extraction pass, with your exact facts list — never a score or recommendation.", inputSchema={"type": "object", "properties": {"ticker": {"type": "string"}, "pod_id": {"type": "string", "description": "The pod/strategy_id this evidence is for, e.g. 'regime_gate'"}, "evidence": {"type": "array", "description": "Your facts list, unmodified", "items": {"type": "object", "properties": {"claim": {"type": "string"}, "source": {"type": "string"}, "directional_tag": {"type": "string", "enum": ["bullish", "bearish", "neutral"]}}, "required": ["claim", "directional_tag"]}}, "strategy_rationale": {"type": "string", "description": "Why the strategy's candidate fired, if given to you"}}, "required": ["ticker", "pod_id", "evidence"]}),
         Tool(name="get_pod_evidence", description="Retrieve prior pod-analyst evidence for a ticker from earlier cycles (today's is excluded — you already have that in context). Check this before deciding so evidence already on record isn't silently ignored.", inputSchema={"type": "object", "properties": {"ticker": {"type": "string"}, "limit": {"type": "integer", "default": 5}}, "required": ["ticker"]}),
+        # Screener (Track 2, Feature B — research only, never a trade signal)
+        Tool(name="list_screens", description="List filename stems under screens/*.yaml — the git-committed screens available to run_screen.", inputSchema={"type": "object", "properties": {}}),
+        Tool(name="run_screen", description="Run a git-committed screen (screens/<screen_id>.yaml) and return its ranked table. RESEARCH ONLY — not a trade signal: a screen's rank is never a sizing input and never introduces a ticker a pod's own strategy didn't already propose. Takes only a screen_id, never raw inline YAML, so a caller can't define an arbitrary ranking mid-cycle — screens go through the same git-commit review gate strategies do. First call for a screen referencing fundamental metrics can take ~20s (cold fundamentals fetch); repeat calls in the same session are near-instant from the warm cache.", inputSchema={"type": "object", "properties": {"screen_id": {"type": "string", "description": "Filename stem under screens/, e.g. 'ai_quality'"}, "limit": {"type": "integer", "description": "Cap the number of ranked rows returned (default: the screen's own rank.limit)"}}, "required": ["screen_id"]}),
     ]
 
     @server.list_tools()
@@ -1028,6 +1031,47 @@ def _handle_tool(name: str, args: dict) -> str:
         limit = args.get("limit", 5)
         context = wiki.get_pod_evidence_context(ticker, today, limit)
         return context if context else f"No prior pod evidence found for {ticker}."
+
+    if name == "list_screens":
+        from pathlib import Path
+        screens_dir = Path(_project_root) / "screens"
+        stems = sorted(p.stem for p in screens_dir.glob("*.yaml")) if screens_dir.exists() else []
+        if not stems:
+            return "No screens found under screens/."
+        return f"Screens ({len(stems)}): {', '.join(stems)}"
+
+    if name == "run_screen":
+        from pathlib import Path
+
+        from quorum.screen.engine import run_screen as _run_screen
+        from quorum.screen.schema import load_screen
+
+        screen_id = args["screen_id"]
+        limit = args.get("limit")
+        screen_path = Path(_project_root) / "screens" / f"{screen_id}.yaml"
+        if not screen_path.exists():
+            return f"No screen file at screens/{screen_id}.yaml"
+
+        spec = load_screen(screen_path)
+        result = _run_screen(spec)
+        rows = result.rows[:limit] if limit else result.rows
+        if not rows:
+            return f"Screen '{screen_id}': no symbols passed the filters (universe: {result.universe_size})."
+
+        lines = [
+            f"Screen '{screen_id}' — RESEARCH ONLY, not a trade signal "
+            f"(universe: {result.universe_size}, as of {result.as_of}):",
+            "",
+        ]
+        for i, row in enumerate(rows, 1):
+            score = f"{row.rank_score:.3f}" if row.rank_score is not None else "—"
+            lines.append(f"  {i}. {row.symbol} — score {score} (coverage {row.coverage:.0%})")
+        if result.warnings:
+            lines.append("")
+            lines.append("Warnings:")
+            for w in result.warnings:
+                lines.append(f"  - {w}")
+        return "\n".join(lines)
 
     return f"Unknown tool: {name}"
 

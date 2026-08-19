@@ -132,13 +132,15 @@ required before a new strategy YAML is trusted with paper capital.
 
 ```
 quorum/
-  mcp/             — MCP server (44 tools: data, portfolio, execution, wiki, safety, state, pod shop)
+  mcp/             — MCP server (46 tools: data, portfolio, execution, wiki, safety, state, pod shop, screener)
   strategy/        — v2 core: schema (closed-grammar YAML), engine (bar loop), features, candidates, shadow, gate, universe
+  screen/          — NL screener: schema (closed-grammar YAML, sibling of strategy/schema.py), metrics registry, engine (run_screen) — research only, never trades
   execution/       — decision_log.py (run/signal/target/order/fill), paper broker, safety, pretrade, position sizer, contracts registry, portfolio_analytics.py
   wiki/            — Knowledge base (run pages, digests, ticker pages, regimes)
   dataflows/       — Market data with TTL caching (yfinance primary / Finnhub fallback, Reddit, StockTwits, regime incl. FRED macro series, sectors, congressional trades incl. Senate via CongressInvests, SEC filings via data.sec.gov)
   api/             — Flask JSON API backend (/api/v1 endpoints, incl. daily-recap) consumed by the Electron desktop app (desktop/)
 strategies/        — Strategy YAML, one file per pod (git-committed)
+screens/           — Screen YAML, git-committed like strategies (e.g. ai_quality.yaml)
 ```
 
 ## Key Files
@@ -160,6 +162,9 @@ strategies/        — Strategy YAML, one file per pod (git-committed)
 | `quorum/strategy/engine.py` | The bar loop: same code path for backtest/paper/shadow, fills at next bar's open |
 | `quorum/strategy/candidates.py` | Live entry-candidate + exit-check generation (`generate_candidates`, `check_exits`) — the auto-mode coordination artifact |
 | `quorum/strategy/gate.py` | Backtest acceptance gate: DSR, PBO, WFE, cost stress |
+| `quorum/screen/schema.py` | Closed-grammar screen schema (`ScreenSpec`) — reuses `StrategySpec`'s `UniverseSpec` directly |
+| `quorum/screen/engine.py` | `run_screen`: lazy OHLCV/fundamentals fetch, cross-sectional rank, coverage-weighted blend |
+| `screens/*.yaml` | One screen per file — universe/filters/rank, `extra="forbid"` Pydantic schema; research only, never trades |
 | `quorum/execution/decision_log.py` | run/signal/target/order/fill insertion + daily/run-recap build/save + trace_event/cycle helpers |
 | `quorum/execution/trace_parser.py` | Normalizes `claude -p --output-format stream-json` lines into `trace_event` rows (unit-testable against canned transcripts, no live spawn) |
 | `quorum/execution/annotations.py` | CRUD for `dashboard_annotation` — element-level (KPI/run/table-row/chart-series) comment threads on the dashboard |
@@ -171,9 +176,11 @@ strategies/        — Strategy YAML, one file per pod (git-committed)
 | `~/.quorum/quorum.db` | SQLite: decision log, positions, trades, wiki, reports, dashboard annotations |
 | `scripts/start-trading-day.sh` | Scheduled-cycle script (not currently deployed — see Scheduling); calls `quorum cycle` for tracing |
 
-## MCP Tools (44)
+## MCP Tools (46)
 
 Pod shop: `get_pod_candidates`, `get_pod_exits`, `record_pod_decision`, `save_pod_evidence`, `get_pod_evidence`
+
+Screener (research only — never a trade signal, never a sizing input): `list_screens`, `run_screen`
 
 Data: get_stock_data, get_indicators, get_indicators_bulk, get_fundamentals, get_financial_statements, get_news, get_global_news, get_reddit_sentiment, get_stocktwits_sentiment, get_insider_transactions, get_insider_clusters, get_congress_trades, get_congress_summary, get_market_regime, get_sector_rotation, get_earnings_calendar, get_13f_holdings, get_consensus_estimates, get_sec_filings
 

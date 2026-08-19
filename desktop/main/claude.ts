@@ -30,6 +30,7 @@ const DASHBOARD_QA_ALLOWED_TOOLS = [
   "mcp__quorum__get_cache_stats", "mcp__quorum__get_analytics_summary", "mcp__quorum__get_rules",
   "mcp__quorum__get_wiki_page", "mcp__quorum__search_wiki", "mcp__quorum__get_trading_calendar",
   "mcp__quorum__get_13f_holdings", "mcp__quorum__get_consensus_estimates", "mcp__quorum__get_sec_filings",
+  "mcp__quorum__list_screens", "mcp__quorum__run_screen",
 ].join(",");
 
 const DASHBOARD_QA_DISALLOWED_TOOLS = [
