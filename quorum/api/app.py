@@ -176,6 +176,7 @@ def get_trades_data():
             compute_trade_stats,
             compute_equity_curve,
             compute_signal_distribution,
+            normalize_trade,
         )
         starting = float(config.get("paper_starting_balance", 100_000))
         trades = load_recent_trades(config, limit=500)
@@ -185,25 +186,25 @@ def get_trades_data():
         from quorum.execution.contracts import get_multiplier
 
         recent = []
-        for t in trades[:100]:
-            req = t.get("order_request") or {}
-            res = t.get("order_result") or {}
+        for raw in trades[:100]:
+            t = normalize_trade(raw)
             tkr = t.get("ticker", "")
             ai = detect_asset_type(tkr)
             mult = get_multiplier(tkr)
-            fill = res.get("filled_price")
-            qty = req.get("quantity", 0)
+            fill = t.get("fill_price")
+            qty = t.get("quantity", 0)
             recent.append({
-                "time": t.get("timestamp", "")[:16],
+                "time": str(t.get("timestamp", ""))[:16],
                 "ticker": tkr,
                 "signal": t.get("signal", ""),
                 "action": t.get("action_taken", ""),
-                "side": (req.get("side") or "").upper(),
+                "side": (t.get("side") or "").upper(),
                 "qty": qty,
                 "fill": fill,
                 "reason": t.get("reason", ""),
-                "account_before": t.get("account_value_before"),
-                "account_after": t.get("account_value_after"),
+                "account_before": t.get("account_before"),
+                "account_after": t.get("account_after"),
+                "realized_pnl": t.get("realized_pnl"),
                 "asset_class": ai["asset_class"],
                 "sector": ai["sector"],
                 "multiplier": mult,

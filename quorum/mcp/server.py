@@ -400,11 +400,16 @@ def _handle_tool(name: str, args: dict) -> str:
         record = engine.execute(ticker, signal, final_state)
         if record is None:
             return f"No trade executed for {ticker} (signal: {signal}). May have been blocked or skipped."
+        pnl_line = (
+            f"\nRealized P&L: ${record.realized_pnl:+,.2f}"
+            if record.realized_pnl is not None else ""
+        )
         return (
             f"Trade executed: {record.order_request.side.value.upper()} "
             f"{record.order_result.filled_quantity} {ticker} "
             f"@ ${record.order_result.filled_price:,.2f}\n"
             f"Account: ${record.account_value_before:,.2f} -> ${record.account_value_after:,.2f}"
+            f"{pnl_line}"
         )
 
     # ── Autonomous (subscription-powered) ────────────────────────
@@ -840,19 +845,27 @@ def _handle_tool(name: str, args: dict) -> str:
         stats = compute_trade_stats(trades, starting)
 
         # --- Empyrical-powered analytics (with fallback) ---
-        # Build a returns Series from executed trades
-        executed = sorted(
-            [t for t in trades
+        # Build a returns Series from realized P&L on sell fills — NOT from
+        # account-value deltas, which are ~0 for a sell (it just converts
+        # position value into cash) regardless of whether the trade won or
+        # lost. See executor.py's fill handling for where realized_pnl comes
+        # from, and db.backfill_realized_pnl_fifo for historical rows.
+        from quorum.execution.trade_data import normalize_trade
+        sells = sorted(
+            [t for t in (normalize_trade(r) for r in trades)
              if t.get("action_taken") == "executed"
-             and t.get("account_value_before") is not None
-             and t.get("account_value_after") is not None],
+             and t.get("side") == "sell"
+             and t.get("realized_pnl") is not None],
             key=lambda t: t.get("timestamp", ""),
         )
         returns_list = []
-        for t in executed:
-            bv = t["account_value_before"]
-            if bv and bv > 0:
-                returns_list.append((t["account_value_after"] - bv) / bv)
+        for t in sells:
+            price, qty, pnl = t.get("fill_price"), t.get("quantity"), t["realized_pnl"]
+            if not price or not qty:
+                continue
+            cost_basis = price * qty - pnl
+            if cost_basis > 0:
+                returns_list.append(pnl / cost_basis)
         returns_series = pd.Series(returns_list, dtype=float)
 
         empyrical_section = ""

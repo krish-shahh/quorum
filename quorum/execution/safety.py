@@ -362,16 +362,22 @@ def compute_live_risk(config: Dict[str, Any]) -> Dict[str, Any]:
         })
 
     # --- Consecutive losses ---
+    # Counted from realized_pnl on closing (sell) fills only — the account-
+    # value columns don't isolate win/loss per trade (a sell leaves account
+    # value ~unchanged; only realized_pnl reflects the outcome), and the
+    # actual column names are account_before/account_after, not
+    # account_value_before/account_value_after.
     consecutive_losses = 0
     try:
         recent_trades = conn.execute(
-            """SELECT account_value_before, account_value_after FROM trades
-               WHERE action_taken = 'executed' AND date(timestamp) = ?
+            """SELECT realized_pnl FROM trades
+               WHERE action_taken = 'executed' AND side = 'sell'
+                 AND realized_pnl IS NOT NULL AND date(timestamp) = ?
                ORDER BY timestamp DESC LIMIT 10""",
             (today,),
         ).fetchall()
         for t in recent_trades:
-            if t["account_value_after"] < t["account_value_before"]:
+            if t["realized_pnl"] < 0:
                 consecutive_losses += 1
             else:
                 break

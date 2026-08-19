@@ -496,13 +496,19 @@ class WikiWriter:
         best_trade = 0.0
         worst_trade = 0.0
         try:
-            from quorum.execution.trade_data import load_recent_trades
+            from quorum.execution.trade_data import load_recent_trades, normalize_trade
             trades = load_recent_trades(self.config, limit=500)
-            ticker_trades = [t for t in trades if t.get("ticker") == ticker and t.get("action_taken") == "executed"]
+            ticker_trades = [
+                normalize_trade(t) for t in trades
+                if t.get("ticker") == ticker and t.get("action_taken") == "executed"
+            ]
+            # Realized P&L on sell fills only — a buy has nothing realized
+            # yet, and account-value deltas are ~0 for a sell regardless of
+            # outcome. See executor.py's fill handling.
             for t in ticker_trades:
-                before = t.get("account_value_before") or t.get("account_before", 0)
-                after = t.get("account_value_after") or t.get("account_after", 0)
-                pnl = (after or 0) - (before or 0)
+                if t.get("side") != "sell" or t.get("realized_pnl") is None:
+                    continue
+                pnl = t["realized_pnl"]
                 total_pnl += pnl
                 if pnl > 0:
                     wins += 1
