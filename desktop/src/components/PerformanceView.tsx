@@ -7,6 +7,7 @@ import { usePerformance } from "@/hooks/use-performance";
 import { useRuns } from "@/hooks/use-runs";
 import { cn, formatPct, formatSignedUsd, pnlTextColor } from "@/lib/utils";
 import type { WinRateBucket } from "@/lib/api";
+import CommentButton from "@/components/CommentButton";
 
 const DAY_ORDER = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
@@ -155,8 +156,11 @@ function WinRateBarCard({ title, data }: { title: string; data: (WinRateBucket &
 
 function Kpi({ label, value, good }: { label: string; value: string; good: boolean }) {
   return (
-    <div className="rounded-lg border bg-card p-3">
-      <span className="text-[10px] text-muted-foreground uppercase tracking-wider">{label}</span>
+    <div className="group relative rounded-lg border bg-card p-3">
+      <div className="flex items-start justify-between gap-1">
+        <span className="text-[10px] text-muted-foreground uppercase tracking-wider">{label}</span>
+        <CommentButton anchorType="kpi" anchor={{ view: "performance", metric: label }} className="-mt-1 -mr-1" />
+      </div>
       <p className={cn("text-sm font-mono font-medium mt-0.5", good ? "text-profit" : "text-loss")}>{value}</p>
     </div>
   );

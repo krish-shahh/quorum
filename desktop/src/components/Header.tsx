@@ -1,7 +1,8 @@
-import { Activity, Pause, Power } from "lucide-react";
+import { Activity, Pause, Power, MessageCircle } from "lucide-react";
 import { cn, timeAgo } from "@/lib/utils";
 import { toggleKillSwitch, type MarketStatus } from "@/lib/api";
 import { useQueryClient } from "@tanstack/react-query";
+import { useOpenAnnotationCount } from "@/hooks/use-annotations";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { View } from "@/lib/views";
 import { VIEWS } from "@/lib/views";
@@ -21,6 +22,7 @@ export default function Header({
   view, onChangeView,
 }: HeaderProps) {
   const queryClient = useQueryClient();
+  const { data: openCommentCount } = useOpenAnnotationCount();
 
   const handleKillSwitch = async () => {
     await toggleKillSwitch();
@@ -66,6 +68,20 @@ export default function Header({
           <span className="text-[11px] text-muted-foreground mr-1">
             {lastUpdated ? timeAgo(new Date(lastUpdated).toISOString()) : "---"}
           </span>
+
+          {!!openCommentCount && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="flex items-center gap-1 text-[11px] font-medium px-2 py-1 rounded bg-muted text-muted-foreground">
+                  <MessageCircle className="w-3 h-3" />
+                  {openCommentCount}
+                </span>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>{openCommentCount} open comment thread{openCommentCount === 1 ? "" : "s"}</p>
+              </TooltipContent>
+            </Tooltip>
+          )}
 
           <Tooltip>
             <TooltipTrigger asChild>

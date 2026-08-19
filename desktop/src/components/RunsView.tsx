@@ -5,6 +5,7 @@ import { cn, formatSignedUsd, formatUsd, gateColor, pnlTextColor } from "@/lib/u
 import type { RunMode, RunSummary } from "@/lib/api";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
+import CommentButton from "@/components/CommentButton";
 
 const MODES: (RunMode | "all")[] = ["all", "paper", "backtest", "shadow", "walkforward", "live"];
 
@@ -40,19 +41,20 @@ export default function RunsView({ onViewTrace }: { onViewTrace?: (cycleId: stri
               <th className="text-left font-medium px-3 py-2">Started</th>
               <th className="text-right font-medium px-3 py-2">Gate</th>
               <th className="text-right font-medium px-3 py-2">Metrics</th>
+              <th className="w-8 px-1 py-2"></th>
             </tr>
           </thead>
           <tbody className="divide-y">
             {isLoading ? (
-              <tr><td colSpan={6} className="text-center py-8 text-muted-foreground">Loading runs...</td></tr>
+              <tr><td colSpan={7} className="text-center py-8 text-muted-foreground">Loading runs...</td></tr>
             ) : !data || data.runs.length === 0 ? (
-              <tr><td colSpan={6} className="text-center py-8 text-muted-foreground">No runs yet.</td></tr>
+              <tr><td colSpan={7} className="text-center py-8 text-muted-foreground">No runs yet.</td></tr>
             ) : (
               data.runs.map((r) => (
                 <tr
                   key={r.run_id}
                   onClick={() => setSelectedRun(r.run_id)}
-                  className="hover:bg-muted/30 cursor-pointer"
+                  className="group hover:bg-muted/30 cursor-pointer"
                 >
                   <td className="px-3 py-2 font-mono">{r.strategy_id}</td>
                   <td className="px-3 py-2">
@@ -67,6 +69,9 @@ export default function RunsView({ onViewTrace }: { onViewTrace?: (cycleId: stri
                   </td>
                   <td className="px-3 py-2 text-right font-mono text-muted-foreground">
                     <RunMetricsPreview r={r} />
+                  </td>
+                  <td className="px-1 py-2" onClick={(e) => e.stopPropagation()}>
+                    <CommentButton anchorType="run" anchor={{ run_id: r.run_id }} />
                   </td>
                 </tr>
               ))

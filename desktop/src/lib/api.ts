@@ -580,6 +580,64 @@ export function fetchCycleDetail(cycleId: string): Promise<CycleDetail> {
   return fetchJson(`/api/v1/cycles/${cycleId}`);
 }
 
+// ── Annotations ──
+
+export type AnchorType = "kpi" | "run" | "table_row" | "chart_series";
+
+export interface AnnotationComment {
+  author: "user" | "claude";
+  body: string;
+  ts: string;
+}
+
+export interface Annotation {
+  id: string;
+  anchor_type: AnchorType;
+  anchor: Record<string, unknown>;
+  status: "open" | "resolved";
+  created_at: string;
+  thread: AnnotationComment[];
+}
+
+export function fetchAnnotations(params?: {
+  anchor_type?: AnchorType;
+  anchor?: Record<string, unknown>;
+  status?: "open" | "resolved";
+}): Promise<{ annotations: Annotation[] }> {
+  const qs = new URLSearchParams();
+  if (params?.anchor_type) qs.set("anchor_type", params.anchor_type);
+  if (params?.anchor) qs.set("anchor", JSON.stringify(params.anchor));
+  if (params?.status) qs.set("status", params.status);
+  const suffix = qs.toString() ? `?${qs}` : "";
+  return fetchJson(`/api/v1/annotations${suffix}`);
+}
+
+export async function createAnnotation(anchor_type: AnchorType, anchor: Record<string, unknown>, body: string): Promise<Annotation> {
+  const res = await fetch(`${BASE_URL}/api/v1/annotations`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ anchor_type, anchor, body, author: "user" }),
+  });
+  if (!res.ok) throw new Error(`API error: ${res.status} ${res.statusText}`);
+  return res.json();
+}
+
+export async function replyToAnnotation(id: string, body: string, author: "user" | "claude" = "user"): Promise<Annotation> {
+  const res = await fetch(`${BASE_URL}/api/v1/annotations/${id}/reply`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ body, author }),
+  });
+  if (!res.ok) throw new Error(`API error: ${res.status} ${res.statusText}`);
+  return res.json();
+}
+
+export async function resolveAnnotation(id: string): Promise<Annotation> {
+  const res = await fetch(`${BASE_URL}/api/v1/annotations/${id}/resolve`, { method: "POST" });
+  if (!res.ok) throw new Error(`API error: ${res.status} ${res.statusText}`);
+  return res.json();
+}
+
 // ── Portfolio risk ──
 
 export interface PortfolioRisk {
