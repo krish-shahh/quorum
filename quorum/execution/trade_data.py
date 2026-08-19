@@ -10,7 +10,6 @@ DO NOT put dashboard-specific rendering logic here -- only data operations.
 from __future__ import annotations
 
 import json
-from collections import Counter, defaultdict
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -138,44 +137,6 @@ def compute_equity_curve(trades: List[Dict], starting_balance: float) -> List[Di
             ts_label = ts_raw[:10] if ts_raw else ""
             points.append({"time": dt or ts_label, "time_str": ts_label, "value": acct_after})
     return points
-
-
-def compute_signal_distribution(trades: List[Dict]) -> Dict[str, int]:
-    """Count how many times each signal was produced."""
-    signals = [t.get("signal", "Unknown") for t in trades if t.get("signal")]
-    return dict(Counter(signals).most_common())
-
-
-def compute_pnl_by_ticker(trades: List[Dict]) -> List[Dict]:
-    """Realized P&L breakdown grouped by ticker, sorted by absolute P&L.
-
-    Only sell fills carry realized P&L (FIFO-matched); ``trades`` counts
-    just those closing fills, not every buy+sell pair.
-    """
-    executed = [t for t in (normalize_trade(r) for r in trades) if t.get("action_taken") == "executed"]
-    if not executed:
-        return []
-
-    buckets: Dict[str, Dict[str, Any]] = defaultdict(
-        lambda: {"pnl": 0.0, "trades": 0, "wins": 0}
-    )
-    for t in executed:
-        if t.get("side") != "sell" or t.get("realized_pnl") is None:
-            continue
-        ticker = t.get("ticker", "UNKNOWN")
-        trade_pnl = t["realized_pnl"]
-        buckets[ticker]["pnl"] += trade_pnl
-        buckets[ticker]["trades"] += 1
-        if trade_pnl > 0:
-            buckets[ticker]["wins"] += 1
-
-    result = []
-    for ticker, data in buckets.items():
-        total = data["trades"]
-        result.append({"ticker": ticker, "pnl": round(data["pnl"], 2),
-                       "trades": total,
-                       "win_rate": round(data["wins"] / total, 4) if total > 0 else 0.0})
-    return sorted(result, key=lambda x: abs(x["pnl"]), reverse=True)
 
 
 # ──────────────────────────────────────────────────────────────────

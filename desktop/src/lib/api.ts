@@ -28,8 +28,6 @@ export interface AccountData {
   execution_mode: string;
   positions: Position[];
   allocation: { asset: string; value: number }[];
-  treemap: TreenmapItem[];
-  exposure: Record<string, unknown>;
   books: BookData[];
 }
 
@@ -40,14 +38,6 @@ export interface BookData {
   allocation_pct: number;
   position_count: number;
   positions: Position[];
-}
-
-export interface TreenmapItem {
-  group: string;
-  ticker: string;
-  weight: number;
-  pct_return: number;
-  market_value: number;
 }
 
 export interface Position {
@@ -76,8 +66,6 @@ export interface TradesData {
   win_rate: number;
   recent: RecentTrade[];
   equity: { time: string; value: number }[];
-  signal_dist: Record<string, number>;
-  analytics: Analytics;
 }
 
 export interface RecentTrade {
@@ -95,19 +83,6 @@ export interface RecentTrade {
   sector: string;
   multiplier: number;
   notional: number;
-}
-
-export interface Analytics {
-  sharpe?: number;
-  sortino?: number;
-  max_dd?: number;
-  alpha?: number;
-  profit_factor?: number;
-  expectancy?: number;
-  sqn?: number;
-  wr_signal?: { signal: string; wins: number; losses: number; wr: number }[];
-  wr_ticker?: { ticker: string; wins: number; losses: number; wr: number }[];
-  pnl_ticker?: { ticker: string; pnl: number; trades: number }[];
 }
 
 export interface RegimeData {
@@ -146,7 +121,6 @@ export interface StatusData {
   live_risk: LiveRisk;
   kill_switch: boolean;
   execution_mode: string;
-  exposure: Record<string, unknown> | null;
   risk_level: string;
 }
 
@@ -257,18 +231,6 @@ export function fetchCongress(): Promise<{ trades: unknown[] }> {
   return fetchJson("/api/v1/scans/congress");
 }
 
-export function fetchPlan(): Promise<Record<string, unknown>> {
-  return fetchJson("/api/v1/plan");
-}
-
-export function fetchCalibration(): Promise<{ report: string }> {
-  return fetchJson("/api/v1/calibration");
-}
-
-export function fetchHistorical(date: string): Promise<Record<string, unknown>> {
-  return fetchJson(`/api/v1/historical?date=${date}`);
-}
-
 export interface FullTradeReport {
   id: number;
   ticker: string;
@@ -302,17 +264,6 @@ export interface CandleData {
   low: number;
   close: number;
   volume: number;
-}
-
-export interface TradeMarker {
-  time: string;
-  side: string;
-  qty: number;
-  price: number;
-}
-
-export function fetchTickerTrades(ticker: string): Promise<{ trades: TradeMarker[] }> {
-  return fetchJson(`/api/v1/trades/${ticker}`);
 }
 
 export function fetchChart(ticker: string, days = 90): Promise<{ ticker: string; candles: CandleData[] }> {
@@ -486,10 +437,6 @@ export function fetchRunDetail(runId: string): Promise<RunDetail> {
   return fetchJson(`/api/v1/runs/${runId}`);
 }
 
-export function fetchGate(runId: string): Promise<GateResult> {
-  return fetchJson(`/api/v1/gate/${runId}`);
-}
-
 // ── Daily recap ──
 
 export interface DailyRecapSummary {
@@ -630,33 +577,6 @@ export async function resolveAnnotation(id: string): Promise<Annotation> {
   const res = await fetch(`${BASE_URL}/api/v1/annotations/${id}/resolve`, { method: "POST" });
   if (!res.ok) throw new Error(`API error: ${res.status} ${res.statusText}`);
   return res.json();
-}
-
-// ── Portfolio risk ──
-
-export interface PortfolioRisk {
-  account_value: number;
-  cash: number;
-  n_positions: number;
-  exposure: {
-    total_notional: number;
-    futures_notional: number;
-    equity_notional: number;
-    leverage: number;
-    max_leverage: number;
-    within_limits: boolean;
-  };
-  var: {
-    var_95_pct: number;
-    var_95_dollars: number;
-    threshold_pct: number;
-    threshold_dollars: number;
-    within_limits: boolean;
-  };
-}
-
-export function fetchPortfolioRisk(): Promise<PortfolioRisk> {
-  return fetchJson("/api/v1/portfolio-risk");
 }
 
 // ── Analyst accuracy ──

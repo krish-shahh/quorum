@@ -98,46 +98,11 @@ def get_account_data():
         except Exception:
             pass
 
-        # Notional exposure
-        exposure = safety.check_notional_exposure(account, positions_raw)
-
         # Allocation
         allocation = [{"asset": p["ticker"], "value": p["weight"]} for p in positions]
         cash_pct = round((acct_val - sum(pp.market_value for pp in positions_raw)) / acct_val * 100, 1)
         if cash_pct > 0:
             allocation.append({"asset": "Cash", "value": cash_pct})
-
-        # Treemap data: flat list of {sector, ticker, weight, pct_return, market_value, asset_class}
-        _SECTOR_LABELS = {
-            "tech": "Technology", "financials": "Financial", "healthcare": "Healthcare",
-            "consumer": "Consumer", "cyclical": "Industrials",
-            "etf_bond": "Fixed Income", "etf_commodity": "Commodities", "future": "Futures",
-        }
-        treemap_data = []
-        for p in positions:
-            ac = p.get("asset_class", "stock")
-            sec = p.get("sector")
-            if ac in ("etf_bond", "etf_commodity", "future"):
-                group = _SECTOR_LABELS.get(ac, "Other")
-            elif sec:
-                group = _SECTOR_LABELS.get(sec, sec.title())
-            else:
-                group = "Other"
-            treemap_data.append({
-                "group": group,
-                "ticker": p["ticker"],
-                "weight": p["weight"],
-                "pct_return": p["pct_return"],
-                "market_value": p["market_value"],
-            })
-        if cash_pct > 0:
-            treemap_data.append({
-                "group": "Cash",
-                "ticker": "Cash",
-                "weight": cash_pct,
-                "pct_return": 0,
-                "market_value": round(cash, 2),
-            })
 
         # Book view (portfolio hierarchy)
         from quorum.execution.portfolio import compute_book_view
@@ -154,8 +119,6 @@ def get_account_data():
             "execution_mode": config.get("execution_mode", "paper"),
             "positions": positions,
             "allocation": allocation,
-            "treemap": treemap_data,
-            "exposure": exposure,
             "books": books_data["books"],
         }
     except Exception as e:
@@ -175,7 +138,6 @@ def get_trades_data():
             load_recent_trades,
             compute_trade_stats,
             compute_equity_curve,
-            compute_signal_distribution,
             normalize_trade,
         )
         starting = float(config.get("paper_starting_balance", 100_000))
@@ -213,43 +175,6 @@ def get_trades_data():
 
         eq = compute_equity_curve(trades, starting)
         equity = [{"time": str(p.get("time_str", p.get("time", ""))), "value": p["value"]} for p in eq]
-        sig_dist = compute_signal_distribution(trades)
-
-        analytics = {}
-        try:
-            import logging as _lg
-            _lg.getLogger("yfinance").setLevel(_lg.ERROR)
-            from quorum.execution.analytics import (
-                compute_sharpe_ratio, compute_sortino_ratio,
-                compute_max_drawdown_series, compute_alpha_vs_benchmark,
-                compute_win_rate_by_ticker, compute_win_rate_by_signal,
-                compute_profit_factor, compute_expectancy, compute_sqn,
-            )
-            from quorum.execution.trade_data import compute_pnl_by_ticker
-
-            analytics["sharpe"] = round(compute_sharpe_ratio(trades, starting), 3)
-            analytics["sortino"] = round(compute_sortino_ratio(trades, starting), 3)
-            dd_series = compute_max_drawdown_series(trades, starting)
-            analytics["max_dd"] = round(min((d["drawdown"] for d in dd_series), default=0) * 100, 1)
-            alpha_data = compute_alpha_vs_benchmark(trades, starting)
-            analytics["alpha"] = round(alpha_data.get("alpha", 0) * 100, 2)
-            analytics["wr_ticker"] = [
-                {"ticker": k, "wins": v["wins"], "losses": v["losses"], "wr": round(v["win_rate"] * 100)}
-                for k, v in compute_win_rate_by_ticker(trades).items()
-            ]
-            analytics["wr_signal"] = [
-                {"signal": k, "wins": v["wins"], "losses": v["losses"], "wr": round(v["win_rate"] * 100)}
-                for k, v in compute_win_rate_by_signal(trades).items()
-            ]
-            analytics["pnl_ticker"] = [
-                {"ticker": d["ticker"], "pnl": round(d["pnl"], 2), "trades": d["trades"]}
-                for d in compute_pnl_by_ticker(trades)
-            ]
-            analytics["profit_factor"] = round(compute_profit_factor(trades), 2)
-            analytics["expectancy"] = round(compute_expectancy(trades), 2)
-            analytics["sqn"] = round(compute_sqn(trades), 2)
-        except Exception:
-            pass
 
         return {
             "total": stats["total_trades"],
@@ -258,13 +183,11 @@ def get_trades_data():
             "win_rate": round(stats["win_rate"], 3),
             "recent": recent,
             "equity": equity,
-            "signal_dist": dict(sig_dist),
-            "analytics": analytics,
         }
     except Exception as e:
         print(f"[v3] trades error: {e}")
         return {"total": 0, "wins": 0, "losses": 0, "win_rate": 0,
-                "recent": [], "equity": [], "signal_dist": {}, "analytics": {}}
+                "recent": [], "equity": []}
 
 
 def get_market_status():
@@ -550,44 +473,6 @@ def get_insider_clusters(positions, watchlist):
         return []
 
 
-def get_plan_metrics_data():
-    """Get plan adherence metrics with step-level detail for dashboard."""
-    try:
-        from quorum.execution.plan import get_plan_metrics, read_active_plan
-        plan = read_active_plan()
-        if plan is None:
-            return {"active": False}
-        metrics = get_plan_metrics(plan.get("plan_id"))
-        metrics["active"] = True
-        metrics["plan_type"] = plan.get("plan_type", "")
-        metrics["regime"] = plan.get("regime", "")
-        metrics["risk_level"] = plan.get("risk_level", "")
-        metrics["created_at"] = plan.get("created_at", "")
-
-        # Enrich with step-level detail
-        steps = plan.get("steps", [])
-        exec_log = _load_exec_log(plan.get("plan_id", ""))
-
-        enriched_steps = []
-        for s in steps:
-            ticker = str(s.get("ticker", ""))
-            action = str(s.get("action", "Hold"))
-            entry = s.get("entry")
-            log_entry = exec_log.get(ticker)
-            enriched_steps.append({
-                "ticker": ticker,
-                "action": action,
-                "entry": entry,
-                "exec_status": log_entry["status"] if log_entry else "PENDING",
-                "fill_price": log_entry.get("fill_price") if log_entry else None,
-                "slippage_bps": log_entry.get("slippage_bps") if log_entry else None,
-            })
-        metrics["steps"] = enriched_steps
-        return metrics
-    except Exception:
-        return {"active": False}
-
-
 def get_plan_status_data():
     """Get active plan status for the trading page plan bar."""
     try:
@@ -662,19 +547,8 @@ def get_trading_status_data():
         "live_risk": live_risk,
         "kill_switch": acct.get("kill_switch", False),
         "execution_mode": acct.get("execution_mode", "paper"),
-        "exposure": acct.get("exposure"),
         "risk_level": live_risk.get("risk_level", "unknown"),
     }
-
-
-def run_calibration():
-    """Run conviction calibration and return formatted report."""
-    try:
-        from quorum.backtest.calibrate_conviction import calibrate, format_report
-        result = calibrate(days=180)
-        return format_report(result)
-    except Exception as e:
-        return f"Calibration error: {e}"
 
 
 def get_congress_recent(positions, watchlist, days=30):
@@ -732,62 +606,6 @@ def get_live_risk_data():
             "position_stops": [],
             "stops_breached": [],
         }
-
-
-def get_historical_data(date_str):
-    if not date_str:
-        return {}
-    try:
-        config = _cfg()
-        from quorum.execution.db import get_db
-        conn = get_db(config)
-        d = date_str
-
-        from quorum.execution.ticker_utils import detect_asset_type
-
-        trade_rows = conn.execute(
-            "SELECT * FROM trades WHERE substr(timestamp, 1, 10) = ? ORDER BY timestamp", (d,)
-        ).fetchall()
-        trades = []
-        for r in trade_rows:
-            ai = detect_asset_type(r["ticker"])
-            trades.append({
-                "time": r["timestamp"][:16], "ticker": r["ticker"],
-                "signal": r["signal"], "action": r["action_taken"],
-                "side": (r["side"] or "").upper(), "qty": r["quantity"],
-                "fill": r["fill_price"], "reason": r["reason"] or "",
-                "asset_class": ai["asset_class"], "sector": ai["sector"],
-            })
-
-        executed = [r for r in trade_rows if r["action_taken"] == "executed"]
-        if executed and executed[0]["account_before"] and executed[-1]["account_after"]:
-            hist_pnl = round(executed[-1]["account_after"] - executed[0]["account_before"], 2)
-        else:
-            hist_pnl = 0.0
-
-        state_rows = conn.execute(
-            "SELECT * FROM ticker_state WHERE substr(analyzed_at, 1, 10) = ? ORDER BY analyzed_at DESC", (d,)
-        ).fetchall()
-        states = []
-        for s in state_rows:
-            ai = detect_asset_type(s["ticker"])
-            states.append({
-                "ticker": s["ticker"],
-                "technical": round(s["technical_score"], 1),
-                "fundamental": round(s["fundamental_score"], 1),
-                "sentiment": round(s["sentiment_score"], 1),
-                "news": round(s["news_score"], 1),
-                "signal": s["council_signal"],
-                "weighted": round(s["weighted_score"], 2),
-                "price": round(s["price_at_analysis"], 2) if s["price_at_analysis"] else 0,
-                "analyzed_at": s["analyzed_at"][:16],
-                "asset_class": ai["asset_class"],
-                "sector": ai["sector"],
-            })
-
-        return {"trades": trades, "pnl": hist_pnl, "states": states}
-    except Exception:
-        return {"trades": [], "pnl": 0, "states": []}
 
 
 def get_watchlist():
@@ -871,27 +689,6 @@ def api_v1_chart(ticker):
         return jsonify({"ticker": ticker.upper(), "candles": [], "error": str(e)})
 
 
-@api_bp.route("/api/v1/trades/<ticker>")
-def api_v1_ticker_trades(ticker):
-    """Get executed trades for a specific ticker (for chart markers)."""
-    try:
-        config = _cfg()
-        from quorum.execution.db import get_db
-        conn = get_db(config)
-        rows = conn.execute(
-            "SELECT timestamp, side, quantity, fill_price FROM trades "
-            "WHERE ticker = ? AND action_taken = 'executed' ORDER BY timestamp",
-            (ticker.upper(),),
-        ).fetchall()
-        trades = [
-            {"time": r["timestamp"][:10], "side": r["side"], "qty": r["quantity"], "price": r["fill_price"]}
-            for r in rows if r["fill_price"]
-        ]
-        return jsonify({"trades": trades})
-    except Exception:
-        return jsonify({"trades": []})
-
-
 @api_bp.route("/api/v1/refresh", methods=["POST"])
 def api_v1_refresh():
     """Manually bust the regime cache (the status strip's only TTL-cached
@@ -961,16 +758,6 @@ def api_v1_congress():
     return jsonify({"trades": trades})
 
 
-@api_bp.route("/api/v1/plan")
-def api_v1_plan():
-    return jsonify(get_plan_metrics_data())
-
-
-@api_bp.route("/api/v1/calibration")
-def api_v1_calibration():
-    return jsonify({"report": run_calibration()})
-
-
 @api_bp.route("/api/v1/performance")
 def api_v1_performance():
     """Full performance summary — rolling Sharpe/Sortino, win-rate by
@@ -1024,19 +811,6 @@ def api_v1_run_detail(run_id):
     return jsonify(detail)
 
 
-@api_bp.route("/api/v1/gate/<run_id>")
-def api_v1_gate(run_id):
-    """Just the gate checklist for one run — a thin slice of run-detail
-    for a standalone gate-badge view."""
-    from quorum.default_config import DEFAULT_CONFIG
-    from quorum.execution.decision_log import get_run_detail
-
-    detail = get_run_detail(DEFAULT_CONFIG, run_id)
-    if detail is None:
-        return jsonify({"error": f"no run {run_id}"}), 404
-    return jsonify(detail["gate"])
-
-
 @api_bp.route("/api/v1/runs/<run_id>/performance")
 def api_v1_run_performance(run_id):
     """Same shape as /api/v1/performance, scoped to one run's own closed
@@ -1053,17 +827,6 @@ def api_v1_run_performance(run_id):
     except Exception as e:
         print(f"[v3] run-performance error: {e}")
         return jsonify({"error": str(e)}), 500
-
-
-@api_bp.route("/api/v1/cycles")
-def api_v1_cycles():
-    """Cycle picker listing for the Activity view — one row per `quorum cycle`
-    invocation that has produced trace events."""
-    from quorum.default_config import DEFAULT_CONFIG
-    from quorum.execution.decision_log import list_cycles
-
-    limit = request.args.get("limit", default=50, type=int)
-    return jsonify({"cycles": list_cycles(DEFAULT_CONFIG, limit=limit)})
 
 
 @api_bp.route("/api/v1/cycles/<cycle_id>")
@@ -1130,19 +893,6 @@ def api_v1_annotation_resolve(annotation_id):
     return jsonify(annotation)
 
 
-@api_bp.route("/api/v1/portfolio-risk")
-def api_v1_portfolio_risk():
-    """Notional exposure + historical VaR. Read-only — unlike live-risk,
-    safe to poll without side effects."""
-    try:
-        config = _cfg()
-        from quorum.execution.safety import compute_portfolio_risk
-        return jsonify(compute_portfolio_risk(config))
-    except Exception as e:
-        print(f"[v3] portfolio-risk error: {e}")
-        return jsonify({"error": str(e)}), 500
-
-
 @api_bp.route("/api/v1/analyst-accuracy")
 def api_v1_analyst_accuracy():
     """Legacy council per-analyst IC/directional accuracy."""
@@ -1179,27 +929,10 @@ def api_v1_daily_recap_detail(recap_date):
     return jsonify(recap)
 
 
-@api_bp.route("/api/v1/historical")
-def api_v1_historical():
-    date_str = request.args.get("date", "")
-    if not date_str:
-        return jsonify({"error": "date param required"}), 400
-    return jsonify(get_historical_data(date_str))
-
-
 @api_bp.route("/api/v1/reports")
 def api_v1_reports():
     """All trade reports (pre + post trade analysis)."""
     return jsonify({"reports": get_trade_reports(limit=100)})
-
-
-@api_bp.route("/api/v1/reports/<int:report_id>")
-def api_v1_report(report_id):
-    reports = get_trade_reports(limit=100)
-    report = next((r for r in reports if r["id"] == report_id), None)
-    if not report:
-        return jsonify({"error": "not found"}), 404
-    return jsonify(report)
 
 
 @api_bp.route("/api/v1/kill-switch", methods=["POST"])
