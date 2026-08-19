@@ -5,12 +5,40 @@ from __future__ import annotations
 import math
 
 import numpy as np
+import pandas as pd
 import pytest
 from scipy import stats
 
 from quorum.strategy import gate
 
 pytestmark = pytest.mark.unit
+
+
+def _synthetic_result(n_days=300, n_trades=10, drift=0.0005, vol=0.01, seed=1, symbols=("A", "B")):
+    """A run_bar_loop()-shaped result dict with a random-walk-with-drift
+    equity curve and evenly distributed synthetic trades, for exercising
+    run_gate's wiring rather than any specific check's math.
+    """
+    rng = np.random.default_rng(seed)
+    idx = pd.bdate_range("2018-01-02", periods=n_days)
+    daily_rets = rng.normal(loc=drift, scale=vol, size=n_days)
+    equity = 100_000.0 * np.cumprod(1 + daily_rets)
+    equity_curve = [{"ts": str(ts), "equity": float(e)} for ts, e in zip(idx, equity)]
+
+    trades = []
+    step = max(n_days // n_trades, 1)
+    for i in range(n_trades):
+        entry_i = min(i * step, n_days - 2)
+        exit_i = min(entry_i + 1, n_days - 1)
+        symbol = symbols[i % len(symbols)]
+        pnl = 100.0 if i % 2 == 0 else -40.0
+        trades.append({
+            "symbol": symbol, "entry_ts": str(idx[entry_i]), "exit_ts": str(idx[exit_i]),
+            "entry_price": 100.0, "exit_price": 100.0 + pnl / 10.0, "qty": 10.0, "pnl": pnl, "reason": "rule_exit",
+        })
+
+    return {"run_id": None, "final_equity": float(equity[-1]), "equity_curve": equity_curve,
+            "trades": trades, "suppressed": [], "open_positions": []}
 
 
 def test_psr_with_normal_returns_matches_hand_computed_z_score():
@@ -144,3 +172,83 @@ def test_run_cost_stress_scales_cost_bps_and_reruns_the_engine():
     # 3x cost eats into the trade's entry/exit fill prices more, so equity
     # after the trade must be no better than the 1x-cost run.
     assert results[3.0]["final_equity"] <= results[1.0]["final_equity"]
+
+
+def test_daily_returns_is_pct_change_of_the_equity_curve():
+    equity_curve = [{"ts": "2026-01-01", "equity": 100.0}, {"ts": "2026-01-02", "equity": 110.0}]
+    rets = gate.daily_returns(equity_curve)
+    assert rets.iloc[0] == pytest.approx(0.10)
+
+
+def test_year_concentration_is_one_when_all_trades_are_in_one_year():
+    trades = [{"entry_ts": "2026-01-01", "symbol": "A", "pnl": 1.0} for _ in range(5)]
+    assert gate._year_concentration(trades) == pytest.approx(1.0)
+
+
+def test_year_concentration_splits_evenly_across_two_years():
+    trades = ([{"entry_ts": "2020-01-01", "symbol": "A", "pnl": 1.0}] * 5
+              + [{"entry_ts": "2021-01-01", "symbol": "A", "pnl": 1.0}] * 5)
+    assert gate._year_concentration(trades) == pytest.approx(0.5)
+
+
+def test_symbol_pnl_concentration_is_one_when_only_one_symbol_traded():
+    trades = [{"symbol": "A", "pnl": 100.0}, {"symbol": "A", "pnl": -20.0}]
+    assert gate._symbol_pnl_concentration(trades) == pytest.approx(1.0)
+
+
+def test_symbol_pnl_concentration_below_one_when_pnl_is_spread_across_symbols():
+    trades = [{"symbol": "A", "pnl": 100.0}, {"symbol": "B", "pnl": 100.0}]
+    assert gate._symbol_pnl_concentration(trades) == pytest.approx(0.5)
+
+
+def test_run_gate_skips_sweep_and_walk_forward_and_cost_stress_checks_when_omitted():
+    result = _synthetic_result()
+
+    gate_result = gate.run_gate(result)
+
+    by_name = {c.name: c for c in gate_result.checks}
+    for name in ("probability_of_backtest_overfitting", "walk_forward_efficiency", "cost_stress_3x"):
+        assert by_name[name].passed is True
+        assert by_name[name].value is None
+        assert "SKIPPED" in by_name[name].detail
+
+
+def test_run_gate_runs_every_declared_check():
+    result = _synthetic_result()
+    gate_result = gate.run_gate(result)
+    names = {c.name for c in gate_result.checks}
+    assert names == {
+        "deflated_sharpe_ratio", "probability_of_backtest_overfitting", "walk_forward_efficiency",
+        "minimum_backtest_length", "cost_stress_3x", "min_trade_count", "min_backtest_years",
+        "year_concentration", "symbol_pnl_concentration", "max_drawdown", "calmar_ratio",
+    }
+
+
+def test_run_gate_fails_min_trade_count_with_too_few_trades():
+    result = _synthetic_result(n_trades=5)
+    gate_result = gate.run_gate(result)
+    by_name = {c.name: c for c in gate_result.checks}
+    assert by_name["min_trade_count"].passed is False
+
+
+def test_run_gate_overall_passed_requires_every_check_to_pass():
+    result = _synthetic_result(n_trades=5)  # deliberately fails min_trade_count
+    gate_result = gate.run_gate(result)
+    assert gate_result.passed is False
+    assert any(not c.passed for c in gate_result.checks)
+
+
+def test_run_gate_uses_provided_wfe_windows():
+    result = _synthetic_result()
+    gate_result = gate.run_gate(result, wfe_is=[1.0, 1.0], wfe_oos=[1.0, 1.0])
+    by_name = {c.name: c for c in gate_result.checks}
+    assert by_name["walk_forward_efficiency"].value == pytest.approx(1.0)
+    assert by_name["walk_forward_efficiency"].passed is True
+
+
+def test_run_gate_uses_provided_cost_stress_results():
+    result = _synthetic_result()
+    stressed = {1.0: result, 3.0: {**result, "final_equity": 50.0}}  # 3x wipes out the account
+    gate_result = gate.run_gate(result, cost_stress_results=stressed)
+    by_name = {c.name: c for c in gate_result.checks}
+    assert by_name["cost_stress_3x"].passed is False

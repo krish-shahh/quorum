@@ -24,6 +24,7 @@ import math
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Sequence
 
+import empyrical as ep
 import numpy as np
 import pandas as pd
 from scipy import stats
@@ -279,3 +280,159 @@ def run_cost_stress(
         scaled_spec.execution.cost_bps = base_cost_bps * multiplier
         results[multiplier] = run_bar_loop(scaled_spec, ohlcv, symbols, **run_kwargs)
     return results
+
+
+# ---------------------------------------------------------------------------
+# Result-dict helpers shared by the sample-size checks and run_gate.
+# ---------------------------------------------------------------------------
+
+def daily_returns(equity_curve: List[Dict[str, Any]]) -> pd.Series:
+    """Day-over-day % return series from a run_bar_loop() equity_curve."""
+    idx = pd.DatetimeIndex([pd.Timestamp(p["ts"]) for p in equity_curve])
+    equity = pd.Series([p["equity"] for p in equity_curve], index=idx)
+    return equity.pct_change().dropna()
+
+
+def _years_span(equity_curve: List[Dict[str, Any]]) -> float:
+    if len(equity_curve) < 2:
+        return 0.0
+    start = pd.Timestamp(equity_curve[0]["ts"])
+    end = pd.Timestamp(equity_curve[-1]["ts"])
+    return (end - start).days / 365.25
+
+
+def _year_concentration(trades: List[Dict[str, Any]]) -> float:
+    """Largest fraction of trades whose entry falls in a single calendar year."""
+    if not trades:
+        return 0.0
+    years = pd.Series([pd.Timestamp(t["entry_ts"]).year for t in trades])
+    return float(years.value_counts(normalize=True).max())
+
+
+def _symbol_pnl_concentration(trades: List[Dict[str, Any]]) -> float:
+    """Largest fraction of total |P&L| attributable to a single symbol —
+    a strategy whose entire edge comes from one name isn't really a
+    portfolio strategy, it's a bet on that name.
+    """
+    if not trades:
+        return 0.0
+    by_symbol: Dict[str, float] = {}
+    for t in trades:
+        by_symbol[t["symbol"]] = by_symbol.get(t["symbol"], 0.0) + t["pnl"]
+    total_abs = sum(abs(v) for v in by_symbol.values())
+    if total_abs == 0:
+        return 0.0
+    return max(abs(v) for v in by_symbol.values()) / total_abs
+
+
+# ---------------------------------------------------------------------------
+# Top-level entry point
+# ---------------------------------------------------------------------------
+
+def run_gate(
+    result: Dict[str, Any],
+    *,
+    trial_returns: Optional[List[Sequence[float]]] = None,
+    n_trials: int = 1,
+    cost_stress_results: Optional[Dict[float, Dict[str, Any]]] = None,
+    wfe_is: Optional[Sequence[float]] = None,
+    wfe_oos: Optional[Sequence[float]] = None,
+    confidence: float = 0.95,
+    min_trades: int = 200,
+    min_years: float = 8.0,
+) -> GateResult:
+    """Run every applicable check against a run_bar_loop()-shaped `result`
+    dict and return the full breakdown — which checks passed, which
+    failed, and why (see each GateCheck.detail).
+
+    `trial_returns`/`cost_stress_results`/`wfe_is`+`wfe_oos` are all
+    optional: a single-strategy gate run (no parameter sweep, no walk-
+    forward re-optimization, no cost-stress rerun) skips those checks
+    (passed=True, detail explains why) rather than fabricating inputs
+    that don't exist. n_trials still applies to DSR/MinBTL even when
+    trial_returns is omitted (it doesn't need the actual sweep results,
+    just the count).
+    """
+    checks: List[GateCheck] = []
+    equity_curve = result["equity_curve"]
+    trades = result["trades"]
+    returns = daily_returns(equity_curve)
+    n_obs = len(returns)
+
+    sr = float(ep.sharpe_ratio(returns, annualization=1)) if n_obs > 1 else float("nan")
+    skew = float(stats.skew(returns)) if n_obs > 2 else 0.0
+    kurtosis = float(stats.kurtosis(returns, fisher=False)) if n_obs > 3 else 3.0
+
+    # 1. Deflated Sharpe Ratio
+    if n_obs > 1:
+        dsr = deflated_sharpe_ratio(sr, n_trials, skew, kurtosis, n_obs)
+        checks.append(GateCheck(
+            "deflated_sharpe_ratio", dsr > 0.95, dsr, "> 0.95",
+            f"observed SR={sr:.3f} over {n_obs} obs, n_trials={n_trials}, skew={skew:.2f}, kurtosis={kurtosis:.2f}",
+        ))
+    else:
+        checks.append(GateCheck("deflated_sharpe_ratio", False, None, "> 0.95", "not enough return observations to compute a Sharpe ratio"))
+
+    # 2. Probability of Backtest Overfitting
+    if trial_returns is not None:
+        pbo = probability_of_backtest_overfitting(trial_returns)
+        if pbo is None:
+            checks.append(GateCheck("probability_of_backtest_overfitting", True, None, "< 0.20", "SKIPPED: fewer than 2 trials given, nothing to cross-validate"))
+        else:
+            checks.append(GateCheck("probability_of_backtest_overfitting", pbo < 0.20, pbo, "< 0.20", f"CSCV over {len(trial_returns)} trials"))
+    else:
+        checks.append(GateCheck("probability_of_backtest_overfitting", True, None, "< 0.20", "SKIPPED (N/A): no trial_returns sweep provided for a single-strategy gate"))
+
+    # 3. Walk-Forward Efficiency
+    if wfe_is is not None and wfe_oos is not None:
+        wfe = walk_forward_efficiency(wfe_is, wfe_oos)
+        checks.append(GateCheck("walk_forward_efficiency", wfe >= 0.50, wfe, ">= 0.50", f"aggregated over {len(wfe_is)} walk-forward windows"))
+    else:
+        checks.append(GateCheck("walk_forward_efficiency", True, None, ">= 0.50", "SKIPPED (N/A): no walk-forward windows provided"))
+
+    # 4. Minimum Backtest Length
+    if n_obs > 1 and sr > 0:
+        min_btl = minimum_backtest_length(sr, n_trials, skew, kurtosis, confidence)
+        checks.append(GateCheck(
+            "minimum_backtest_length", n_obs > min_btl, min_btl, f"actual n_obs ({n_obs}) > computed minimum",
+            f"needs > {min_btl:.0f} observations for n_trials={n_trials} at {confidence:.0%} confidence, backtest has {n_obs}",
+        ))
+    else:
+        checks.append(GateCheck("minimum_backtest_length", False, None, "actual n_obs > computed minimum", "Sharpe ratio is non-positive; no backtest length makes it distinguishable from luck"))
+
+    # 5. Cost-stress test
+    if cost_stress_results is not None and 3.0 in cost_stress_results:
+        base = cost_stress_results.get(1.0, {"equity_curve": equity_curve})
+        starting_cash = base["equity_curve"][0]["equity"] if base["equity_curve"] else 0.0
+        stressed_equity = cost_stress_results[3.0]["final_equity"]
+        checks.append(GateCheck(
+            "cost_stress_3x", stressed_equity > starting_cash, stressed_equity, "net profitable at 3x baseline cost_bps",
+            f"final equity {stressed_equity:.2f} vs starting {starting_cash:.2f}",
+        ))
+    else:
+        checks.append(GateCheck("cost_stress_3x", True, None, "net profitable at 3x baseline cost_bps", "SKIPPED (N/A): no cost_stress_results at 3x provided"))
+
+    # 6. Sample-size / distribution checks
+    n_trades = len(trades)
+    checks.append(GateCheck("min_trade_count", n_trades >= min_trades, float(n_trades), f">= {min_trades}", f"{n_trades} closed trades"))
+
+    years = _years_span(equity_curve)
+    checks.append(GateCheck("min_backtest_years", years >= min_years, years, f">= {min_years}", f"{years:.1f} years of data available"))
+
+    year_conc = _year_concentration(trades)
+    checks.append(GateCheck("year_concentration", year_conc <= 0.40, year_conc, "<= 0.40", "largest fraction of trades in a single calendar year"))
+
+    symbol_conc = _symbol_pnl_concentration(trades)
+    checks.append(GateCheck("symbol_pnl_concentration", symbol_conc <= 0.20, symbol_conc, "<= 0.20", "largest fraction of total |P&L| from a single symbol"))
+
+    if n_obs > 1:
+        max_dd = abs(float(ep.max_drawdown(returns)))
+        checks.append(GateCheck("max_drawdown", max_dd < 0.25, max_dd, "< 0.25", f"max drawdown {max_dd:.1%}"))
+        calmar = ep.calmar_ratio(returns)
+        calmar = float(calmar) if calmar is not None and not math.isnan(calmar) else float("-inf")
+        checks.append(GateCheck("calmar_ratio", calmar >= 0.5, calmar, ">= 0.5", f"Calmar ratio {calmar:.2f}"))
+    else:
+        checks.append(GateCheck("max_drawdown", False, None, "< 0.25", "not enough return observations"))
+        checks.append(GateCheck("calmar_ratio", False, None, ">= 0.5", "not enough return observations"))
+
+    return GateResult(passed=all(c.passed for c in checks), checks=checks)
