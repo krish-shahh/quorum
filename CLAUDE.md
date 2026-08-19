@@ -22,7 +22,7 @@
 
 **`/trading-planner` + `/trading-executor`** remain the fallback for tickers or theses outside what a committed strategy covers — broader watchlist, full 12-agent debate, still useful until more of the plan's four target strategies (`strategies/`) exist.
 
-Or just say: "Run my autonomous trading cycle." Headless (traced, for the dashboard's Logs view): `quorum cycle`.
+Or just say: "Run my autonomous trading cycle." Headless (traced, for the dashboard's Activity view): `quorum cycle`.
 
 **No automation is currently scheduled.** The old launchd jobs (`com.quorum.daily`, `com.quorum.scalp`) were removed while a new scheduling approach is decided — see [Scheduling](#scheduling) below. Everything above is manual-invoke only for now.
 
@@ -80,7 +80,7 @@ No launchd job is currently deployed — both `com.quorum.daily` and `com.quorum
 
 Only one full entry-evaluation pass a day, by design — daily-bar entry signals can't change intraday, and the whole redesign exists partly to fix a churn problem (685 invocations/280 fills under the old 15-cycle schedule). Intraday cycles exist only to catch stop-loss/max-holding-day/rule-exit conditions, which do need to run repeatedly.
 
-Each cycle in the table above runs via `quorum cycle` (not a raw `claude -p`), so every run it creates gets a shared `cycle_id` and its full reasoning/tool-call trace lands in `trace_event` for the dashboard's Logs view. State persists via MCP (SQLite decision log). Logs would go to `~/.quorum/logs/trading-YYYY-MM-DD.log`.
+Each cycle in the table above runs via `quorum cycle` (not a raw `claude -p`), so every run it creates gets a shared `cycle_id` and its full reasoning/tool-call trace lands in `trace_event` for the dashboard's Activity view. State persists via MCP (SQLite decision log). Logs would go to `~/.quorum/logs/trading-YYYY-MM-DD.log`.
 
 ### Interactive Mode
 
@@ -101,11 +101,13 @@ get_pod_candidates (ranked entries) + get_pod_exits (mechanical exits)
   │
   ▼
 POD (one per strategy — Citadel/Millennium/Point72-style pod shop)
-  ├── pod-analyst (Sonnet) — evidence extraction ONLY: news/filing-delta/
+  ├── pod-analyst — evidence extraction ONLY: news/filing-delta/
   │     earnings-proximity → structured, cited facts. No score, no
   │     buy/sell recommendation (the published multi-agent trading
   │     literature doesn't support LLM judgment on price/indicators).
-  └── pod-pm (Fable 5)     — approve at proposed weight / reduce / veto.
+  │     Inherits the session's model (no model: pin in its frontmatter).
+  └── pod-pm                — approve at proposed weight / reduce / veto.
+        Inherits the session's model, same as pod-analyst.
         Never invents a trade the strategy didn't propose, never sizes
         above the proposed weight. Every decision -> record_pod_decision
         (journal table) for audit.
@@ -155,12 +157,15 @@ strategies/        — Strategy YAML, one file per pod (git-committed)
 | `.claude/settings.json` | Hooks, permissions, env vars (NOT MCP — that's in .mcp.json) |
 | `.claude/hooks/pre_trade_validate.py` | Pre-trade risk validation (deterministic, blocking) |
 | `.claude/hooks/post_tool_audit.py` | Audit trail for all MCP tool calls + subagent stops |
+| `.claude/hooks/session_start.py` | Runs at session start (SessionStart hook) |
+| `.claude/hooks/session_end.py` | Runs at session end (Stop hook) |
 | `.claude/skills/pod-cycle/` | Auto-mode coordinator — discovers pods, dispatches pod-analyst/pod-pm, executes |
 | `.claude/skills/pod-analyst/` | Pod analyst — evidence extraction only, no score |
 | `.claude/skills/pod-pm/` | Pod PM — approve/reduce/veto on a strategy-generated candidate |
 | `.claude/skills/trading-planner/` | Legacy full-council planner (no strategy YAML required) → plan file |
 | `.claude/skills/trading-executor/` | Legacy executor — reads plan, executes mechanically |
 | `.claude/skills/market-monitor/` | Background monitoring skill for /loop |
+| `.claude/skills/backtest/` | Worktree-isolated backtest of one `strategies/*.yaml` (parallel-safe, own DB per worktree) |
 | `strategies/*.yaml` | One strategy (pod) per file — universe/features/signal/sizing/risk/execution, `extra="forbid"` Pydantic schema |
 | `quorum/strategy/engine.py` | The bar loop: same code path for backtest/paper/shadow, fills at next bar's open |
 | `quorum/strategy/candidates.py` | Live entry-candidate + exit-check generation (`generate_candidates`, `check_exits`) — the auto-mode coordination artifact |
@@ -229,7 +234,7 @@ quorum                        # start the JSON API backend (the Electron desktop
 quorum mode scalp             # switch risk profile (default|moderate|scalp)
 quorum cycle ["/pod-cycle"]   # spawn a traced headless claude -p — primary way to run a cycle unattended;
                                # tags every run it creates with a shared cycle_id, persists the full
-                               # reasoning/tool-call stream to trace_event for the dashboard's Logs view
+                               # reasoning/tool-call stream to trace_event for the dashboard's Activity view
 quorum daily-recap            # save today's decision-log play-by-play, backing the dashboard's Today view
 quorum run-recap <run_id>     # manually (re-)save one run's recap (normally automatic — see decision_log.save_run_recap)
 quorum fill-forward-returns   # batch-fill forward returns on signal_scores rows old enough to score

@@ -1056,7 +1056,7 @@ def api_v1_run_performance(run_id):
 
 @api_bp.route("/api/v1/cycles")
 def api_v1_cycles():
-    """Cycle picker listing for the Logs view — one row per `quorum cycle`
+    """Cycle picker listing for the Activity view — one row per `quorum cycle`
     invocation that has produced trace events."""
     from quorum.default_config import DEFAULT_CONFIG
     from quorum.execution.decision_log import list_cycles
@@ -1156,8 +1156,8 @@ def api_v1_analyst_accuracy():
 
 @api_bp.route("/api/v1/daily-recap")
 def api_v1_daily_recap_list():
-    """Recent daily-recap summaries, newest first — backend for a future
-    dashboard timeline/calendar view (not built yet)."""
+    """Recent daily-recap summaries, newest first — backs the Activity
+    view's daily-recap list."""
     from quorum.default_config import DEFAULT_CONFIG
     from quorum.execution.decision_log import list_daily_recaps
 

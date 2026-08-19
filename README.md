@@ -141,7 +141,9 @@ quorum/
   execution/       — decision_log.py (run/signal/target/order/fill), paper broker, safety,
                       pretrade validation, position sizer, contracts registry
   council/         — Legacy council prompts (quorum/council/prompts/), read by trading-planner
-  dataflows/       — Market data with TTL caching (yfinance, Reddit, StockTwits, regime, sectors)
+  dataflows/       — Market data with TTL caching (yfinance primary / Finnhub fallback, Reddit,
+                     StockTwits, regime incl. FRED macro series, sectors, congressional trades
+                     incl. Senate via CongressInvests, SEC filings via data.sec.gov)
   quant/           — Deterministic scoring feeding the legacy council path
   api/             — Flask JSON API backend (/api/v1: performance, runs, cycles/traces,
                       annotations) consumed by the Electron desktop app
@@ -161,7 +163,7 @@ cd desktop && npm install && npm run dev   # launches the desktop app (spawns th
 
 To run just the API backend on its own (e.g. for debugging), use `quorum` with no subcommand.
 
-Views: **Overview** (equity curve, positions, watchlist), **Performance** (Sharpe/Sortino/drawdown/expectancy, scopeable to the live book or any single run), **Runs** (every backtest/paper/shadow run with its full candidate → target → order → fill → gate chain), **Today** (per-day play-by-play from `quorum daily-recap`), **Logs** (Opik-style reasoning/tool-call trace for every `quorum cycle` invocation, with subagent calls nested by `parent_tool_use_id`), and **Scans & Reports** (sector rotation, insider clusters, congressional trades, saved council reports).
+Four tabs, grouped by workflow rather than data type: **Portfolio** (equity curve, positions, watchlist), **Performance** (Sharpe/Sortino/drawdown/expectancy, scopeable to the live book or any single run), **Activity** (every backtest/paper/shadow/pod-cycle run with its full candidate → target → order → fill → gate chain, per-day play-by-play from `quorum daily-recap`, and an Opik-style reasoning/tool-call trace — subagent calls nested by `parent_tool_use_id` — for every `quorum cycle` invocation), and **Research** (sector rotation, insider clusters, congressional trades, saved reports, and **Strategy Lab** — a natural-language-to-YAML strategy editor that generates, validates, and backtests `strategies/*.yaml` without leaving the app).
 
 Every KPI card, run row, chart, and table row can carry a **threaded comment** (Plannotator-style, element-level rather than free-text-range) — click the comment icon, ask a question, and optionally route it to a **live, read-only headless Claude Code session** (`desktop/main/claude.ts`) scoped to the same MCP tools and project context as any other quorum session, restricted to `get_*` tools only so it can explain but never trade or mutate state.
 
@@ -186,7 +188,7 @@ Every KPI card, run row, chart, and table row can carry a **threaded comment** (
 
 Every run — backtest, paper, shadow, or live — writes through the same SQLite schema (`run → signal → target → order_intent → fill`, plus `journal` for pod decisions and `closed_trade` for FIFO-matched round-trips). That separation is the point: when a strategy loses money, it decomposes into bad alpha (`signal.score`), bad sizing (`target.target_weight`), or bad execution (`fill.slippage_bps`) instead of one number that can't tell you which.
 
-`quorum daily-recap` persists a per-day play-by-play (every run that day, in any mode, with its candidates/decisions/fills) and `quorum run-recap <run_id>` does the same per-run — both back the dashboard's Today and Runs views. `quorum cycle` additionally tags every run it creates with a shared `cycle_id` and persists the full reasoning/tool-call stream to `trace_event`, for the Logs view.
+`quorum daily-recap` persists a per-day play-by-play (every run that day, in any mode, with its candidates/decisions/fills) and `quorum run-recap <run_id>` does the same per-run — both back the dashboard's Activity view. `quorum cycle` additionally tags every run it creates with a shared `cycle_id` and persists the full reasoning/tool-call stream to `trace_event`, for the same view's embedded trace timeline.
 
 ---
 
