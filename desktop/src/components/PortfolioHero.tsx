@@ -1,5 +1,5 @@
 import { cn } from "@/lib/utils";
-import type { AccountData, TradesData, BookData } from "@/lib/api";
+import type { AccountData, TradesData } from "@/lib/api";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 interface Props {

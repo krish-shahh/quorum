@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import { ChevronRight, ChevronDown } from "lucide-react";
 import { cn, formatUsd, formatSignedUsd, formatSignedPct, signalColor } from "@/lib/utils";
 import type { Position, BookData } from "@/lib/api";

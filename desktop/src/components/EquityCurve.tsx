@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { createChart, ColorType, CandlestickSeries, HistogramSeries } from "lightweight-charts";
 import { Home } from "lucide-react";
-import { fetchChart, type CandleData, type Position, type BookData } from "@/lib/api";
+import { fetchChart, type CandleData, type BookData } from "@/lib/api";
 import { themeColor } from "@/lib/utils";
 import { AreaChart } from "@/components/dither-kit/area-chart";
 import { Area } from "@/components/dither-kit/area";
@@ -14,11 +14,10 @@ import CommentButton from "@/components/CommentButton";
 
 interface Props {
   equity: { time: string; value: number }[];
-  positions: Position[];
   books: BookData[];
 }
 
-export default function EquityCurve({ equity, positions, books }: Props) {
+export default function EquityCurve({ equity, books }: Props) {
   const [selected, setSelected] = useState<string>("portfolio");
   const isTicker = selected !== "portfolio";
 
