@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 
 const MODES: (RunMode | "all")[] = ["all", "paper", "backtest", "shadow", "walkforward", "live"];
 
-export default function RunsView() {
+export default function RunsView({ onViewTrace }: { onViewTrace?: (cycleId: string) => void }) {
   const [mode, setMode] = useState<RunMode | "all">("all");
   const [selectedRun, setSelectedRun] = useState<string | null>(null);
   const { data, isLoading } = useRuns(mode === "all" ? undefined : { mode });
@@ -75,7 +75,7 @@ export default function RunsView() {
         </table>
       </div>
 
-      <RunDetailDialog runId={selectedRun} onClose={() => setSelectedRun(null)} />
+      <RunDetailDialog runId={selectedRun} onClose={() => setSelectedRun(null)} onViewTrace={onViewTrace} />
     </div>
   );
 }
@@ -87,14 +87,30 @@ function RunMetricsPreview({ r }: { r: RunSummary }) {
   return <>---</>;
 }
 
-function RunDetailDialog({ runId, onClose }: { runId: string | null; onClose: () => void }) {
+function RunDetailDialog({
+  runId, onClose, onViewTrace,
+}: {
+  runId: string | null;
+  onClose: () => void;
+  onViewTrace?: (cycleId: string) => void;
+}) {
   const { data: detail, isLoading } = useRunDetail(runId);
 
   return (
     <Dialog open={runId != null} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="font-mono text-sm">{runId}</DialogTitle>
+          <div className="flex items-center justify-between gap-2 pr-6">
+            <DialogTitle className="font-mono text-sm">{runId}</DialogTitle>
+            {detail?.cycle_id && onViewTrace && (
+              <button
+                onClick={() => onViewTrace(detail.cycle_id!)}
+                className="text-[11px] font-medium text-accent-foreground hover:underline shrink-0"
+              >
+                View trace →
+              </button>
+            )}
+          </div>
         </DialogHeader>
 
         {isLoading || !detail ? (

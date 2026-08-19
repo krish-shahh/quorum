@@ -14,13 +14,20 @@ import ReportsPanel from "@/components/ReportsPanel";
 import PerformanceView, { OverviewKpiStrip } from "@/components/PerformanceView";
 import RunsView from "@/components/RunsView";
 import TodayView from "@/components/TodayView";
+import LogsView from "@/components/LogsView";
 import type { View } from "@/lib/views";
 
 export default function App() {
   const [live, setLive] = useState(true);
   const [view, setView] = useState<View>("overview");
   const [selectedTicker, setSelectedTicker] = useState<string | null>(null);
+  const [logsCycleId, setLogsCycleId] = useState<string | null>(null);
   const { data, dataUpdatedAt, isLoading, error } = useDashboard(live);
+
+  function viewTrace(cycleId: string) {
+    setLogsCycleId(cycleId);
+    setView("logs");
+  }
 
   if (isLoading && !data) {
     return (
@@ -70,9 +77,11 @@ export default function App() {
 
         {view === "performance" && <PerformanceView />}
 
-        {view === "runs" && <RunsView />}
+        {view === "runs" && <RunsView onViewTrace={viewTrace} />}
 
         {view === "today" && <TodayView />}
+
+        {view === "logs" && <LogsView initialCycleId={logsCycleId} />}
 
         {view === "positions" && (
           <>

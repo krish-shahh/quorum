@@ -456,6 +456,7 @@ export interface RunDetail {
   started_at: string;
   finished_at: string | null;
   error: string | null;
+  cycle_id: string | null;
   metrics: Record<string, unknown>;
   gate: GateResult;
   candidates: RunSignal[];
@@ -532,6 +533,51 @@ export function fetchDailyRecaps(limit = 30): Promise<{ recaps: DailyRecapSummar
 
 export function fetchDailyRecap(date: string): Promise<DailyRecap> {
   return fetchJson(`/api/v1/daily-recap/${date}`);
+}
+
+// ── Cycles / trace ──
+
+export interface CycleSummary {
+  cycle_id: string;
+  started_at: string;
+  n_trace_events: number;
+  run_ids: string[];
+  status: "running" | "ok" | "error" | "unknown";
+}
+
+export interface TraceEvent {
+  event_id: string;
+  ts: string;
+  session_id: string;
+  parent_tool_use_id: string | null;
+  role: "assistant" | "user";
+  event_type: "text" | "thinking" | "tool_use" | "tool_result";
+  tool_name: string | null;
+  tool_input: Record<string, unknown> | null;
+  tool_output_summary: string | null;
+  text: string | null;
+}
+
+export interface CycleRun {
+  run_id: string;
+  strategy_id: string;
+  mode: RunMode;
+  status: RunStatus;
+}
+
+export interface CycleDetail {
+  cycle_id: string;
+  started_at: string;
+  runs: CycleRun[];
+  trace_events: TraceEvent[];
+}
+
+export function fetchCycles(limit = 50): Promise<{ cycles: CycleSummary[] }> {
+  return fetchJson(`/api/v1/cycles?limit=${limit}`);
+}
+
+export function fetchCycleDetail(cycleId: string): Promise<CycleDetail> {
+  return fetchJson(`/api/v1/cycles/${cycleId}`);
 }
 
 // ── Portfolio risk ──
