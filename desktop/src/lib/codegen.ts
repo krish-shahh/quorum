@@ -1,6 +1,6 @@
 import { validateSpec } from "./api";
 
-export type SpecKind = "strategy";
+export type SpecKind = "strategy" | "screen";
 
 export interface SpecAttempt {
   attempt: number; // 1-based, 1..MAX_ATTEMPTS

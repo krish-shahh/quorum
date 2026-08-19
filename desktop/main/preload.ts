@@ -33,7 +33,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
    * `opts` lets a retry loop (desktop/src/lib/codegen.ts) resume the same
    * session with just a correction, or step up to a stronger model. */
   generateSpecYaml: (
-    kind: "strategy",
+    kind: "strategy" | "screen",
     specId: string,
     description: string,
     existingYaml: string | undefined,

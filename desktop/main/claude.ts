@@ -136,24 +136,27 @@ export function askClaude(
   return runHeadless(args, onChunk);
 }
 
-type SpecKind = "strategy";
+type SpecKind = "strategy" | "screen";
 
 // One entry per spec kind the generate -> validate -> retry loop supports
-// (desktop/src/lib/codegen.ts). Feature B registers "screen" here once
-// quorum/screen/schema.py + a golden screens/*.yaml example exist.
+// (desktop/src/lib/codegen.ts).
 const GROUNDING: Record<SpecKind, { schemaFile: string; exampleFile: string; noun: string }> = {
   strategy: {
     schemaFile: "quorum/strategy/schema.py",
     exampleFile: "strategies/regime_gate.yaml",
     noun: "Strategy",
   },
+  screen: {
+    schemaFile: "quorum/screen/schema.py",
+    exampleFile: "screens/ai_quality.yaml",
+    noun: "Screen",
+  },
 };
 
-/** Generate a spec YAML (strategy today, screen once Feature B registers
- * it in GROUNDING) from a natural-language description, grounded in its
- * closed-grammar schema and a working example. Read-only session — returns
- * text for the Research tab's editor to show for review; nothing is
- * written to disk here.
+/** Generate a spec YAML (strategy or screen) from a natural-language
+ * description, grounded in its closed-grammar schema and a working
+ * example. Read-only session — returns text for the Research tab's
+ * editor to show for review; nothing is written to disk here.
  *
  * `existingYaml` seeds the "revise this" context on a FRESH generation
  * (first attempt, or the retry ladder's fresh final attempt) — omit it to

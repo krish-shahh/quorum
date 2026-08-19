@@ -61,7 +61,7 @@ ipcMain.handle("quorum:save-strategy", async (_event, specId: string, yamlConten
 );
 
 ipcMain.handle("claude:generate-spec", async (
-  event, requestId: string, kind: "strategy", specId: string, description: string, existingYaml: string | undefined,
+  event, requestId: string, kind: "strategy" | "screen", specId: string, description: string, existingYaml: string | undefined,
   opts: { resumeSessionId?: string; retryError?: string; model?: string } | undefined,
 ) => {
   return withQueue("claude", 2, () =>

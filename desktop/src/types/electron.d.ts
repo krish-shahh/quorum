@@ -12,7 +12,7 @@ declare global {
         resumeSessionId?: string
       ): Promise<{ text: string; sessionId: string | null }>;
       generateSpecYaml(
-        kind: "strategy",
+        kind: "strategy" | "screen",
         specId: string,
         description: string,
         existingYaml: string | undefined,
