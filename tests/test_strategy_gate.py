@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 
+import numpy as np
 import pytest
 from scipy import stats
 
@@ -50,3 +51,32 @@ def test_sharpe_ratio_std_error_matches_mertens_formula_by_hand():
     sr, skew, kurt, n_obs = 0.2, -0.3, 5.0, 500
     expected = math.sqrt((1 - skew * sr + (kurt - 1) / 4 * sr ** 2) / (n_obs - 1))
     assert gate.sharpe_ratio_std_error(sr, skew, kurt, n_obs) == pytest.approx(expected)
+
+
+def test_pbo_is_none_for_a_single_trial_no_sweep_to_compare():
+    assert gate.probability_of_backtest_overfitting([[0.01, -0.01, 0.02, 0.0] * 10]) is None
+
+
+def test_pbo_rejects_odd_block_count():
+    with pytest.raises(ValueError, match="even"):
+        gate.probability_of_backtest_overfitting([[0.0] * 32, [0.0] * 32], n_blocks=15)
+
+
+def test_pbo_rejects_mismatched_trial_lengths():
+    with pytest.raises(ValueError, match="same length"):
+        gate.probability_of_backtest_overfitting([[0.0] * 32, [0.0] * 16])
+
+
+def test_pbo_is_low_when_the_in_sample_winner_genuinely_generalizes():
+    # One trial has a real, consistent edge (positive drift throughout the
+    # whole series); the rest are pure noise. The "IS-best" pick should keep
+    # winning out-of-sample too, since its edge isn't a sampling artifact.
+    rng = np.random.default_rng(7)
+    n_obs = 480
+    good = rng.normal(loc=0.004, scale=0.01, size=n_obs)
+    noise = [rng.normal(loc=0.0, scale=0.01, size=n_obs) for _ in range(5)]
+    trials = [good, *noise]
+
+    pbo = gate.probability_of_backtest_overfitting(trials, n_blocks=16)
+
+    assert pbo < 0.20

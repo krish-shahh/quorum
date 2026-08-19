@@ -19,6 +19,7 @@ results.
 
 from __future__ import annotations
 
+import itertools
 import math
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Sequence
@@ -128,3 +129,70 @@ def deflated_sharpe_ratio(sr: float, n_trials: int, skew: float, kurtosis: float
     sr_std = sharpe_ratio_std_error(sr, skew, kurtosis, n_obs)
     sr0 = expected_max_sharpe(n_trials, sr_std)
     return probabilistic_sharpe_ratio(sr, sr0, skew, kurtosis, n_obs)
+
+
+# ---------------------------------------------------------------------------
+# Probability of Backtest Overfitting via CSCV
+#
+# Bailey, D., Borwein, J., López de Prado, M., Zhu, Q. (2015), "The
+# Probability of Backtest Overfitting", Journal of Computational Finance.
+# Combinatorially Symmetric Cross-Validation: split the track record into S
+# contiguous blocks, evaluate every way of holding out half of them, and ask
+# how often the parameterization that looked best in-sample was actually
+# below the out-of-sample median.
+# ---------------------------------------------------------------------------
+
+def probability_of_backtest_overfitting(
+    trial_returns: List[Sequence[float]], n_blocks: int = 16,
+) -> Optional[float]:
+    """PBO of a parameter sweep's per-trial daily return series.
+
+    `trial_returns` is one return series per candidate parameterization, all
+    the same length. Returns None (N/A) if fewer than 2 trials are given —
+    PBO is a statement about a sweep, not about a single strategy; skip
+    rather than fabricate a comparison that doesn't exist (see run_gate).
+    """
+    n_trials = len(trial_returns)
+    if n_trials < 2:
+        return None
+    if n_blocks % 2 != 0:
+        raise ValueError("n_blocks must be even (CSCV splits into equal train/test halves)")
+    lengths = {len(r) for r in trial_returns}
+    if len(lengths) != 1:
+        raise ValueError("all trial return series must be the same length")
+    total_obs = lengths.pop()
+    if total_obs < n_blocks:
+        raise ValueError(f"need at least {n_blocks} observations, got {total_obs}")
+
+    block_size = total_obs // n_blocks
+    usable = block_size * n_blocks
+    # Trailing observations that don't fill a whole block are dropped so
+    # every block is the same size (required for the block/combination math).
+    matrix = np.array([np.asarray(r[:usable], dtype=float) for r in trial_returns])
+    blocks = [matrix[:, b * block_size:(b + 1) * block_size] for b in range(n_blocks)]
+
+    def _sharpe(row: np.ndarray) -> float:
+        std = row.std(ddof=1)
+        return 0.0 if std == 0 else float(row.mean() / std)
+
+    half = n_blocks // 2
+    logits: List[float] = []
+    for is_blocks in itertools.combinations(range(n_blocks), half):
+        oos_blocks = [b for b in range(n_blocks) if b not in is_blocks]
+        is_returns = np.concatenate([blocks[b] for b in is_blocks], axis=1)
+        oos_returns = np.concatenate([blocks[b] for b in oos_blocks], axis=1)
+
+        is_perf = np.array([_sharpe(is_returns[n]) for n in range(n_trials)])
+        oos_perf = np.array([_sharpe(oos_returns[n]) for n in range(n_trials)])
+
+        n_star = int(np.argmax(is_perf))
+        # Relative rank (1=worst .. n_trials=best) of the in-sample winner's
+        # out-of-sample performance among all trials.
+        rank = int(stats.rankdata(oos_perf)[n_star])
+        omega = rank / (n_trials + 1)
+        omega = min(max(omega, 1e-9), 1 - 1e-9)  # keep the logit finite
+        logits.append(math.log(omega / (1 - omega)))
+
+    # PBO = P[logit <= 0] = P[the in-sample winner is at/below the
+    # out-of-sample median] across all train/test combinations.
+    return sum(1 for logit in logits if logit <= 0) / len(logits)
