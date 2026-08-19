@@ -79,6 +79,11 @@ Then in Claude Code:
 /market-monitor      # background regime/position monitoring (use with /loop)
 ```
 
+Or headless, with a full reasoning/tool-call trace captured for the dashboard's Logs view:
+```bash
+quorum cycle          # spawns a traced claude -p "/pod-cycle" — the primary way to run a cycle unattended
+```
+
 No automation is scheduled by default right now — everything above is invoked manually until a scheduling approach is decided (see `CLAUDE.md`).
 
 ---
@@ -138,7 +143,8 @@ quorum/
   council/         — Legacy council prompts (quorum/council/prompts/), read by trading-planner
   dataflows/       — Market data with TTL caching (yfinance, Reddit, StockTwits, regime, sectors)
   quant/           — Deterministic scoring feeding the legacy council path
-  api/             — Flask JSON API backend (/api/v1) consumed by the Electron desktop app
+  api/             — Flask JSON API backend (/api/v1: performance, runs, cycles/traces,
+                      annotations) consumed by the Electron desktop app
   wiki/            — Knowledge base (run pages, digests, ticker summaries)
 strategies/        — Strategy YAML, one file per pod (git-committed)
 ```
@@ -147,13 +153,17 @@ strategies/        — Strategy YAML, one file per pod (git-committed)
 
 ## Desktop app
 
-Visualization is a native **Electron desktop app** (`desktop/`, React + Tailwind). It auto-starts the Python JSON API backend (`quorum.api`, served on `127.0.0.1:5050/api/v1/`) and renders everything from it — there is no separate browser dashboard.
+Visualization is a native **Electron desktop app** (`desktop/`, React + Tailwind + [dither-kit](https://tripwire.sh/dither-kit) for charts). It auto-starts the Python JSON API backend (`quorum.api`, served on `127.0.0.1:5050/api/v1/`) and renders everything from it — there is no separate browser dashboard.
 
 ```bash
 cd desktop && npm install && npm run dev   # launches the desktop app (spawns the API backend for you)
 ```
 
 To run just the API backend on its own (e.g. for debugging), use `quorum` with no subcommand.
+
+Views: **Overview** (equity curve, positions, watchlist), **Performance** (Sharpe/Sortino/drawdown/expectancy, scopeable to the live book or any single run), **Runs** (every backtest/paper/shadow run with its full candidate → target → order → fill → gate chain), **Today** (per-day play-by-play from `quorum daily-recap`), **Logs** (Opik-style reasoning/tool-call trace for every `quorum cycle` invocation, with subagent calls nested by `parent_tool_use_id`), and **Scans & Reports** (sector rotation, insider clusters, congressional trades, saved council reports).
+
+Every KPI card, run row, chart, and table row can carry a **threaded comment** (Plannotator-style, element-level rather than free-text-range) — click the comment icon, ask a question, and optionally route it to a **live, read-only headless Claude Code session** (`desktop/main/claude.ts`) scoped to the same MCP tools and project context as any other quorum session, restricted to `get_*` tools only so it can explain but never trade or mutate state.
 
 ---
 
@@ -176,7 +186,7 @@ To run just the API backend on its own (e.g. for debugging), use `quorum` with n
 
 Every run — backtest, paper, shadow, or live — writes through the same SQLite schema (`run → signal → target → order_intent → fill`, plus `journal` for pod decisions and `closed_trade` for FIFO-matched round-trips). That separation is the point: when a strategy loses money, it decomposes into bad alpha (`signal.score`), bad sizing (`target.target_weight`), or bad execution (`fill.slippage_bps`) instead of one number that can't tell you which.
 
-`quorum daily-recap` persists a per-day play-by-play (every run that day, in any mode, with its candidates/decisions/fills) — backend for a future dashboard timeline view.
+`quorum daily-recap` persists a per-day play-by-play (every run that day, in any mode, with its candidates/decisions/fills) and `quorum run-recap <run_id>` does the same per-run — both back the dashboard's Today and Runs views. `quorum cycle` additionally tags every run it creates with a shared `cycle_id` and persists the full reasoning/tool-call stream to `trace_event`, for the Logs view.
 
 ---
 

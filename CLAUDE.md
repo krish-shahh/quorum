@@ -22,7 +22,7 @@
 
 **`/trading-planner` + `/trading-executor`** remain the fallback for tickers or theses outside what a committed strategy covers — broader watchlist, full 12-agent debate, still useful until more of the plan's four target strategies (`strategies/`) exist.
 
-Or just say: "Run my autonomous trading cycle."
+Or just say: "Run my autonomous trading cycle." Headless (traced, for the dashboard's Logs view): `quorum cycle`.
 
 **No automation is currently scheduled.** The old launchd jobs (`com.quorum.daily`, `com.quorum.scalp`) were removed while a new scheduling approach is decided — see [Scheduling](#scheduling) below. Everything above is manual-invoke only for now.
 
@@ -80,7 +80,7 @@ No launchd job is currently deployed — both `com.quorum.daily` and `com.quorum
 
 Only one full entry-evaluation pass a day, by design — daily-bar entry signals can't change intraday, and the whole redesign exists partly to fix a churn problem (685 invocations/280 fills under the old 15-cycle schedule). Intraday cycles exist only to catch stop-loss/max-holding-day/rule-exit conditions, which do need to run repeatedly.
 
-State persists via MCP (SQLite decision log). Logs would go to `~/.quorum/logs/trading-YYYY-MM-DD.log`.
+Each cycle in the table above runs via `quorum cycle` (not a raw `claude -p`), so every run it creates gets a shared `cycle_id` and its full reasoning/tool-call trace lands in `trace_event` for the dashboard's Logs view. State persists via MCP (SQLite decision log). Logs would go to `~/.quorum/logs/trading-YYYY-MM-DD.log`.
 
 ### Interactive Mode
 
@@ -165,13 +165,16 @@ strategies/        — Strategy YAML, one file per pod (git-committed)
 | `quorum/strategy/engine.py` | The bar loop: same code path for backtest/paper/shadow, fills at next bar's open |
 | `quorum/strategy/candidates.py` | Live entry-candidate + exit-check generation (`generate_candidates`, `check_exits`) — the auto-mode coordination artifact |
 | `quorum/strategy/gate.py` | Backtest acceptance gate: DSR, PBO, WFE, cost stress |
-| `quorum/execution/decision_log.py` | run/signal/target/order/fill insertion + daily-recap build/save |
+| `quorum/execution/decision_log.py` | run/signal/target/order/fill insertion + daily/run-recap build/save + trace_event/cycle helpers |
+| `quorum/execution/trace_parser.py` | Normalizes `claude -p --output-format stream-json` lines into `trace_event` rows (unit-testable against canned transcripts, no live spawn) |
+| `quorum/execution/annotations.py` | CRUD for `dashboard_annotation` — element-level (KPI/run/table-row/chart-series) comment threads on the dashboard |
 | `quorum/execution/position_sizer.py` | Legacy account-profile sizer; `target_weight` param lets a pod's own sizing bypass it |
 | `quorum/execution/reflection.py` | Self-reflection engine: generates lessons from past trade outcomes |
+| `desktop/main/claude.ts` | Electron main-process module for the dashboard's live Claude Code bridge — spawns a read-only-tools `claude -p` per annotation question |
 | `~/.quorum/tickers.txt` | Legacy-path watchlist (one ticker per line) |
 | `~/.quorum/rules.json` | Trading restrictions (blocked tickers, max trade value) |
-| `~/.quorum/quorum.db` | SQLite: decision log, positions, trades, wiki, reports |
-| `scripts/start-trading-day.sh` | Scheduled-cycle script (not currently deployed — see Scheduling) |
+| `~/.quorum/quorum.db` | SQLite: decision log, positions, trades, wiki, reports, dashboard annotations |
+| `scripts/start-trading-day.sh` | Scheduled-cycle script (not currently deployed — see Scheduling); calls `quorum cycle` for tracing |
 
 ## MCP Tools
 
@@ -224,7 +227,11 @@ pytest tests/ -m unit
 ```bash
 quorum                        # start the JSON API backend (the Electron desktop app connects to this)
 quorum mode scalp             # switch risk profile (default|moderate|scalp)
-quorum daily-recap            # save today's decision-log play-by-play (backend for a future dashboard timeline view)
+quorum cycle ["/pod-cycle"]   # spawn a traced headless claude -p — primary way to run a cycle unattended;
+                               # tags every run it creates with a shared cycle_id, persists the full
+                               # reasoning/tool-call stream to trace_event for the dashboard's Logs view
+quorum daily-recap            # save today's decision-log play-by-play, backing the dashboard's Today view
+quorum run-recap <run_id>     # manually (re-)save one run's recap (normally automatic — see decision_log.save_run_recap)
 quorum fill-forward-returns   # batch-fill forward returns on signal_scores rows old enough to score
 quorum shadow-sleeve <id>     # run a strategy's equal-weight benchmark sleeve on demand
 quorum pipeline                # run the FULL legacy pipeline end-to-end (ungated, even off-hours) + ntfy status
