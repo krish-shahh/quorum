@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.quorum.daily</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/krish/Desktop/trader/scripts/start-trading-day.sh</string>
+    </array>
+
+    <!-- Pod-cycle schedule (see start-trading-day.sh's own header for the
+         rationale): one full entry-evaluation pass at 9:30, everything
+         after that is mechanical stop/exit reconciliation only. Runs under
+         whichever profile ~/.quorum/profile.yaml currently names (default
+         unless switched via `quorum mode`) — no QUORUM_PROFILE override
+         here, unlike the retired scalp schedule which force-pinned one. -->
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict><key>Hour</key><integer>9</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>10</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>12</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>13</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>15</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>16</integer><key>Minute</key><integer>15</integer></dict>
+    </array>
+
+    <key>StandardOutPath</key>
+    <string>/Users/krish/.quorum/logs/launchd-daily-stdout.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/krish/.quorum/logs/launchd-daily-stderr.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/Users/krish/.local/bin:/Users/krish/.nvm/versions/node/v22.22.2/bin:/Users/krish/miniforge3/bin:/usr/local/bin:/usr/bin:/bin</string>
+        <key>HOME</key>
+        <string>/Users/krish</string>
+        <key>QUORUM_PROJECT_DIR</key>
+        <string>/Users/krish/Desktop/trader</string>
+        <key>QUORUM_ALERTS_ENABLED</key>
+        <string>true</string>
+    </dict>
+</dict>
+</plist>
