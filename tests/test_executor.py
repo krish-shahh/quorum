@@ -21,6 +21,12 @@ def _make_config(tmp_path):
         "paper_state_path": str(tmp_path / "paper.json"),
         "safety_state_path": str(tmp_path / "safety.json"),
         "execution_log_path": str(tmp_path / "trades.jsonl"),
+        # Without these, LearningEngine and WikiWriter fall back to their
+        # ~/.quorum/... defaults and pollute the real, production data with
+        # synthetic test trades (this happened — see the realized_pnl
+        # backfill commit for the cleanup).
+        "learning_data_path": str(tmp_path / "learning.json"),
+        "wiki_enabled": False,
         "max_position_pct": 0.05,
         "max_single_ticker_pct": 0.25,
         "max_open_positions": 6,

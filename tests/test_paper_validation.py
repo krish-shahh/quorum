@@ -46,6 +46,12 @@ def _make_config(tmp_path, **overrides):
         "execution_log_path": str(tmp_path / "execution" / "trades.jsonl"),
         "stop_loss_path": str(tmp_path / "stop_losses.json"),
         "stop_loss_enabled": False,
+        # Without these, LearningEngine and WikiWriter fall back to their
+        # ~/.quorum/... defaults and pollute the real, production data with
+        # synthetic test trades (this happened — see the realized_pnl
+        # backfill commit for the cleanup).
+        "learning_data_path": str(tmp_path / "learning.json"),
+        "wiki_enabled": False,
         "max_position_pct": 0.05,
         "max_single_ticker_pct": 0.25,
         "max_open_positions": 6,
@@ -165,7 +171,10 @@ class TestKillSwitchBlocksSubsequentTrades:
             engine.safety.kill_switch_active = True
             engine.safety._save_state()
 
-            # Every subsequent execute() should return None
+            # Buys are blocked by the kill switch. Sells must always be
+            # allowed to exit, so they skip the kill-switch gate entirely —
+            # with no held position, GOOG is skipped for "no_order_needed"
+            # rather than blocked.
             r1 = engine.execute("AAPL", "Buy", {})
             r2 = engine.execute("MSFT", "Buy", {})
             r3 = engine.execute("GOOG", "Sell", {})
@@ -174,13 +183,15 @@ class TestKillSwitchBlocksSubsequentTrades:
         assert r2 is None
         assert r3 is None
 
-        # Verify blocked trades appear in the JSONL log
+        # Verify blocked/skipped trades appear in the JSONL log
         log_path = tmp_path / "execution" / "trades.jsonl"
         records = _read_jsonl(log_path)
         assert len(records) == 3
-        for rec in records:
+        for rec in records[:2]:
             assert rec["action_taken"] == "blocked"
             assert rec["reason"] == "kill_switch_active"
+        assert records[2]["action_taken"] == "skipped"
+        assert records[2]["reason"] == "no_order_needed"
 
 
 @pytest.mark.unit
@@ -397,11 +408,14 @@ class TestTradeLogRecordsBlockedTrades:
             engine.execute("AAPL", "Buy", {})
             engine.execute("MSFT", "Sell", {})
 
+        # Buys are blocked by the kill switch; sells must always be allowed
+        # to exit, so MSFT (no held position) is skipped instead.
         records = _read_jsonl(log_path)
         assert len(records) == 2
-        for rec in records:
-            assert rec["action_taken"] == "blocked"
-            assert rec["reason"] == "kill_switch_active"
+        assert records[0]["action_taken"] == "blocked"
+        assert records[0]["reason"] == "kill_switch_active"
+        assert records[1]["action_taken"] == "skipped"
+        assert records[1]["reason"] == "no_order_needed"
 
         assert records[0]["ticker"] == "AAPL"
         assert records[0]["signal"] == "Buy"

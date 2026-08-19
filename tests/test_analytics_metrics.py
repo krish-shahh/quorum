@@ -12,16 +12,19 @@ from quorum.execution.analytics import (
 
 
 def _make_trades(pnls):
-    """Build minimal trade dicts from a list of P&L values."""
-    base = 5000.0
+    """Build minimal trade dicts from a list of realized P&L values.
+
+    Shaped like a ``trades`` DB row (post realized_pnl fix): P&L lives in
+    ``realized_pnl`` on a ``side="sell"`` fill, not in the account-value
+    delta (which is ~0 for a sell regardless of outcome).
+    """
     trades = []
     for pnl in pnls:
         trades.append({
             "action_taken": "executed",
-            "account_value_before": base,
-            "account_value_after": base + pnl,
+            "side": "sell",
+            "realized_pnl": pnl,
         })
-        base += pnl
     return trades
 
 
