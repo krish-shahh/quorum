@@ -21,7 +21,21 @@ from typing import Any, Dict, List, Optional
 # ──────────────────────────────────────────────────────────────────
 
 def load_recent_trades(config: Dict[str, Any], limit: int = 200) -> List[Dict]:
-    """Load the most recent trades from the JSONL audit log (newest first)."""
+    """Load the most recent trades (newest first).
+
+    SQLite is the primary source — it carries ``realized_pnl`` (FIFO-matched
+    per-sell P&L; see ``db.backfill_realized_pnl_fifo``), which the JSONL
+    audit log does not reliably have for historical rows. Falls back to the
+    JSONL log only if the DB is unavailable.
+    """
+    try:
+        from .db import query_trades
+        rows = query_trades(config, limit=limit)
+        if rows:
+            return rows
+    except Exception:
+        pass
+
     log_path = Path(
         config.get("execution_log_path", "~/.quorum/execution/trades.jsonl")
     ).expanduser()
@@ -38,24 +52,56 @@ def load_recent_trades(config: Dict[str, Any], limit: int = 200) -> List[Dict]:
     return trades
 
 
-def format_trades_for_table(trades: List[Dict]) -> List[Dict]:
-    """Flatten trade records for table display."""
-    formatted = []
-    for t in trades:
+def normalize_trade(t: Dict[str, Any]) -> Dict[str, Any]:
+    """Flatten a trade record to a common shape regardless of source.
+
+    DB rows (from ``query_trades``) are already flat: ``side``, ``quantity``,
+    ``fill_price``, ``account_before``, ``account_after``, ``realized_pnl``.
+    JSONL fallback rows are nested under ``order_request``/``order_result``
+    and use ``account_value_before``/``account_value_after``; they predate
+    ``realized_pnl`` entirely, so it comes back ``None`` for those.
+    """
+    if "order_request" in t or "order_result" in t:
         req = t.get("order_request") or {}
         res = t.get("order_result") or {}
-        acct_before = t.get("account_value_before")
-        acct_after = t.get("account_value_after")
-        trade_pnl = (acct_after - acct_before) if acct_before and acct_after else None
-        formatted.append({
-            "timestamp": t.get("timestamp", "")[:19],
+        return {
+            "timestamp": t.get("timestamp", ""),
             "ticker": t.get("ticker", ""),
             "signal": t.get("signal", ""),
             "action_taken": t.get("action_taken", ""),
-            "side": req.get("side", "").upper() if req.get("side") else "",
-            "quantity": req.get("quantity", ""),
-            "fill_price": f"${res['filled_price']:.2f}" if res.get("filled_price") else "",
-            "trade_pnl": f"${trade_pnl:+,.0f}" if trade_pnl is not None else "",
+            "side": req.get("side", ""),
+            "quantity": req.get("quantity", 0),
+            "fill_price": res.get("filled_price"),
+            "account_before": t.get("account_value_before"),
+            "account_after": t.get("account_value_after"),
+            "realized_pnl": t.get("realized_pnl"),
+            "reason": t.get("reason", ""),
+        }
+    return t
+
+
+def format_trades_for_table(trades: List[Dict]) -> List[Dict]:
+    """Flatten trade records for table display.
+
+    ``trade_pnl`` shows realized P&L for sells only (FIFO-matched, from the
+    ``realized_pnl`` column) — buys have nothing realized yet, so they show
+    blank rather than the account-value delta (which is ~0 for a sell and
+    misleading for a buy).
+    """
+    formatted = []
+    for raw in trades:
+        t = normalize_trade(raw)
+        pnl = t.get("realized_pnl") if t.get("side") == "sell" else None
+        acct_after = t.get("account_after")
+        formatted.append({
+            "timestamp": str(t.get("timestamp", ""))[:19],
+            "ticker": t.get("ticker", ""),
+            "signal": t.get("signal", ""),
+            "action_taken": t.get("action_taken", ""),
+            "side": (t.get("side") or "").upper(),
+            "quantity": t.get("quantity", ""),
+            "fill_price": f"${t['fill_price']:.2f}" if t.get("fill_price") else "",
+            "trade_pnl": f"${pnl:+,.2f}" if pnl is not None else "",
             "account_after": f"${acct_after:,.0f}" if acct_after else "",
             "reason": t.get("reason", ""),
         })
@@ -67,8 +113,14 @@ def format_trades_for_table(trades: List[Dict]) -> List[Dict]:
 # ──────────────────────────────────────────────────────────────────
 
 def compute_trade_stats(trades: List[Dict], starting_balance: float) -> Dict[str, Any]:
-    """Compute summary statistics from trade history."""
-    executed = [t for t in trades if t.get("action_taken") == "executed"]
+    """Compute summary statistics from trade history.
+
+    Win/loss and P&L stats are computed from ``realized_pnl`` on sell fills
+    only — a buy has no realized P&L yet, and account-value deltas are ~0
+    for a sell regardless of outcome (see ``executor.py``'s fill handling).
+    ``total_trades`` still counts every executed fill (buys + sells).
+    """
+    executed = [t for t in (normalize_trade(r) for r in trades) if t.get("action_taken") == "executed"]
     if not executed:
         return {
             "total_trades": 0, "wins": 0, "losses": 0, "win_rate": 0,
@@ -76,12 +128,10 @@ def compute_trade_stats(trades: List[Dict], starting_balance: float) -> Dict[str
             "total_realized_pnl": 0,
         }
 
-    pnls = []
-    for t in executed:
-        before = t.get("account_value_before")
-        after = t.get("account_value_after")
-        if before and after:
-            pnls.append(after - before)
+    pnls = [
+        t["realized_pnl"] for t in executed
+        if t.get("side") == "sell" and t.get("realized_pnl") is not None
+    ]
 
     wins = sum(1 for p in pnls if p > 0)
     losses = sum(1 for p in pnls if p < 0)
@@ -99,14 +149,19 @@ def compute_trade_stats(trades: List[Dict], starting_balance: float) -> Dict[str
 
 
 def compute_equity_curve(trades: List[Dict], starting_balance: float) -> List[Dict]:
-    """Build equity curve from trade log (oldest to newest)."""
+    """Build equity curve from trade log (oldest to newest).
+
+    Equity curve points are legitimately account-value snapshots (not
+    per-trade P&L) — this is unaffected by the realized_pnl fix.
+    """
     now = datetime.now()
     points: List[Dict] = [{"time": now.replace(hour=0, minute=0, second=0, microsecond=0),
                            "time_str": "Start", "value": starting_balance}]
-    for t in reversed(trades):
-        acct_after = t.get("account_value_after")
+    for raw in reversed(trades):
+        t = normalize_trade(raw)
+        acct_after = t.get("account_after")
         if acct_after is not None:
-            ts_raw = t.get("timestamp", "")
+            ts_raw = str(t.get("timestamp", ""))
             dt = _parse_ts(ts_raw)
             ts_label = ts_raw[:10] if ts_raw else ""
             points.append({"time": dt or ts_label, "time_str": ts_label, "value": acct_after})
@@ -134,8 +189,12 @@ def compute_allocation(positions: list, account_value: float) -> List[Dict]:
 
 
 def compute_pnl_by_ticker(trades: List[Dict]) -> List[Dict]:
-    """P&L breakdown grouped by ticker, sorted by absolute P&L."""
-    executed = [t for t in trades if t.get("action_taken") == "executed"]
+    """Realized P&L breakdown grouped by ticker, sorted by absolute P&L.
+
+    Only sell fills carry realized P&L (FIFO-matched); ``trades`` counts
+    just those closing fills, not every buy+sell pair.
+    """
+    executed = [t for t in (normalize_trade(r) for r in trades) if t.get("action_taken") == "executed"]
     if not executed:
         return []
 
@@ -143,15 +202,14 @@ def compute_pnl_by_ticker(trades: List[Dict]) -> List[Dict]:
         lambda: {"pnl": 0.0, "trades": 0, "wins": 0}
     )
     for t in executed:
+        if t.get("side") != "sell" or t.get("realized_pnl") is None:
+            continue
         ticker = t.get("ticker", "UNKNOWN")
-        before = t.get("account_value_before")
-        after = t.get("account_value_after")
-        if before is not None and after is not None:
-            trade_pnl = after - before
-            buckets[ticker]["pnl"] += trade_pnl
-            buckets[ticker]["trades"] += 1
-            if trade_pnl > 0:
-                buckets[ticker]["wins"] += 1
+        trade_pnl = t["realized_pnl"]
+        buckets[ticker]["pnl"] += trade_pnl
+        buckets[ticker]["trades"] += 1
+        if trade_pnl > 0:
+            buckets[ticker]["wins"] += 1
 
     result = []
     for ticker, data in buckets.items():

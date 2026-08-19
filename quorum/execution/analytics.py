@@ -10,6 +10,8 @@ from typing import Any, Dict, List, Optional
 
 import numpy as np
 
+from .trade_data import normalize_trade
+
 logger = logging.getLogger(__name__)
 
 
@@ -19,41 +21,72 @@ logger = logging.getLogger(__name__)
 
 
 def _executed_trades(trades: List[Dict]) -> List[Dict]:
-    """Filter to only executed trades with valid before/after account values."""
+    """Normalize, then filter to executed trades with a valid account snapshot.
+
+    Used by functions that need the account-value time series (equity curve,
+    benchmark alpha) — legitimately account-value-based, unlike per-trade
+    P&L (see ``_trade_pnls``/``_trade_returns`` below).
+    """
     return [
         t
-        for t in trades
+        for t in (normalize_trade(r) for r in trades)
         if t.get("action_taken") == "executed"
-        and t.get("account_value_before") is not None
-        and t.get("account_value_after") is not None
+        and t.get("account_before") is not None
+        and t.get("account_after") is not None
     ]
 
 
-def _trade_returns(trades: List[Dict], starting_balance: float) -> np.ndarray:
-    """Compute per-trade percentage returns from account value changes.
+def _realized_sells(trades: List[Dict]) -> List[Dict]:
+    """Normalize, then filter to sell fills with a FIFO-matched realized P&L.
 
-    Returns a numpy array of fractional returns (e.g. 0.02 = 2%).
+    A buy has no realized P&L yet; the account-value delta on a sell is ~0
+    regardless of outcome (a sell just converts position value into cash),
+    so per-trade P&L and return metrics must come from ``realized_pnl``
+    (see ``executor.py``'s fill handling and ``db.backfill_realized_pnl_fifo``
+    for historical rows), not from account snapshots.
+
+    Sorted chronologically (oldest first) so index alignment with
+    ``_trade_returns``/``_trade_pnls`` is well-defined for callers that need
+    to zip them together (e.g. ``compute_rolling_metrics``).
     """
-    executed = _executed_trades(trades)
-    if not executed:
+    sells = [
+        t
+        for t in (normalize_trade(r) for r in trades)
+        if t.get("action_taken") == "executed"
+        and t.get("side") == "sell"
+        and t.get("realized_pnl") is not None
+    ]
+    return sorted(sells, key=lambda t: t.get("timestamp", ""))
+
+
+def _trade_returns(trades: List[Dict], starting_balance: float) -> np.ndarray:
+    """Compute per-(closing)-trade percentage returns from realized P&L.
+
+    Returns a numpy array of fractional returns (e.g. 0.02 = 2%), one per
+    sell fill. Cost basis is reconstructed as ``fill_price * quantity -
+    realized_pnl`` since that's what's stored on the trade row.
+    """
+    sells = _realized_sells(trades)
+    if not sells:
         return np.array([], dtype=float)
 
     returns = []
-    for t in executed:
-        before = t["account_value_before"]
-        after = t["account_value_after"]
-        if before and before > 0:
-            returns.append((after - before) / before)
+    for t in sells:
+        price = t.get("fill_price")
+        qty = t.get("quantity")
+        pnl = t["realized_pnl"]
+        if not price or not qty:
+            continue
+        proceeds = price * qty
+        cost_basis = proceeds - pnl
+        if cost_basis > 0:
+            returns.append(pnl / cost_basis)
     return np.array(returns, dtype=float)
 
 
 def _trade_pnls(trades: List[Dict]) -> List[float]:
-    """Compute per-trade P&L in absolute dollar terms."""
-    executed = _executed_trades(trades)
-    return [
-        t["account_value_after"] - t["account_value_before"]
-        for t in executed
-    ]
+    """Realized P&L in absolute dollar terms, one entry per sell fill."""
+    return [t["realized_pnl"] for t in _realized_sells(trades)]
 
 
 def _parse_timestamp(ts: Any) -> Optional[datetime]:
@@ -149,7 +182,7 @@ def compute_max_drawdown_series(
     peak = starting_balance
     series: List[Dict[str, Any]] = []
     for t in chronological:
-        value = t["account_value_after"]
+        value = t["account_after"]
         if value > peak:
             peak = value
         dd = (value - peak) / peak if peak > 0 else 0.0
@@ -159,15 +192,15 @@ def compute_max_drawdown_series(
 
 
 def compute_win_rate_by_ticker(trades: List[Dict]) -> Dict[str, Dict[str, Any]]:
-    """Win/loss breakdown grouped by ticker symbol.
+    """Win/loss breakdown grouped by ticker symbol, from realized P&L on sells.
 
     Returns ``{"AAPL": {"wins": 3, "losses": 1, "win_rate": 0.75}, ...}``.
     """
-    executed = _executed_trades(trades)
+    sells = _realized_sells(trades)
     buckets: Dict[str, Dict[str, int]] = defaultdict(lambda: {"wins": 0, "losses": 0})
-    for t in executed:
+    for t in sells:
         ticker = t.get("ticker", "UNKNOWN")
-        pnl = t["account_value_after"] - t["account_value_before"]
+        pnl = t["realized_pnl"]
         if pnl > 0:
             buckets[ticker]["wins"] += 1
         elif pnl < 0:
@@ -186,12 +219,12 @@ def compute_win_rate_by_ticker(trades: List[Dict]) -> Dict[str, Dict[str, Any]]:
 
 
 def compute_win_rate_by_signal(trades: List[Dict]) -> Dict[str, Dict[str, Any]]:
-    """Win/loss breakdown grouped by signal type (Buy/Sell/Hold/etc.)."""
-    executed = _executed_trades(trades)
+    """Win/loss breakdown grouped by signal type (Buy/Sell/Hold/etc.), from realized P&L on sells."""
+    sells = _realized_sells(trades)
     buckets: Dict[str, Dict[str, int]] = defaultdict(lambda: {"wins": 0, "losses": 0})
-    for t in executed:
+    for t in sells:
         signal = t.get("signal", "Unknown")
-        pnl = t["account_value_after"] - t["account_value_before"]
+        pnl = t["realized_pnl"]
         if pnl > 0:
             buckets[signal]["wins"] += 1
         elif pnl < 0:
@@ -209,16 +242,16 @@ def compute_win_rate_by_signal(trades: List[Dict]) -> Dict[str, Dict[str, Any]]:
 
 
 def compute_win_rate_by_day_of_week(trades: List[Dict]) -> Dict[str, Dict[str, Any]]:
-    """Win/loss breakdown grouped by day of week (Mon-Fri)."""
+    """Win/loss breakdown grouped by day of week (Mon-Fri), from realized P&L on sells."""
     day_names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
-    executed = _executed_trades(trades)
+    sells = _realized_sells(trades)
     buckets: Dict[str, Dict[str, int]] = defaultdict(lambda: {"wins": 0, "losses": 0})
-    for t in executed:
+    for t in sells:
         dt = _parse_timestamp(t.get("timestamp"))
         if dt is None:
             continue
         day = day_names[dt.weekday()]
-        pnl = t["account_value_after"] - t["account_value_before"]
+        pnl = t["realized_pnl"]
         if pnl > 0:
             buckets[day]["wins"] += 1
         elif pnl < 0:
@@ -256,7 +289,7 @@ def compute_alpha_vs_benchmark(
     first_ts = _parse_timestamp(chronological[0].get("timestamp"))
     last_ts = _parse_timestamp(chronological[-1].get("timestamp"))
 
-    final_value = chronological[-1]["account_value_after"]
+    final_value = chronological[-1]["account_after"]
     portfolio_return = (final_value - starting_balance) / starting_balance if starting_balance > 0 else 0.0
 
     benchmark_return = 0.0
@@ -314,8 +347,9 @@ def compute_rolling_metrics(
     if len(returns) < window:
         return []
 
-    executed = _executed_trades(trades)
-    chronological = sorted(executed, key=lambda t: t.get("timestamp", ""))
+    # _trade_returns iterates _realized_sells(trades) in the same
+    # chronological order, so this list aligns index-for-index with `returns`.
+    chronological = _realized_sells(trades)
 
     per_trade_rf = 0.05 / 252  # default risk-free rate
     results: List[Dict[str, Any]] = []
@@ -420,7 +454,7 @@ def generate_performance_summary(
     # Cumulative return
     if executed:
         chronological = sorted(executed, key=lambda t: t.get("timestamp", ""))
-        final_value = chronological[-1]["account_value_after"]
+        final_value = chronological[-1]["account_after"]
     else:
         final_value = starting_balance
     cumulative_return = (
