@@ -463,6 +463,56 @@ def compute_live_risk(config: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def compute_portfolio_risk(config: Dict[str, Any]) -> Dict[str, Any]:
+    """Portfolio-level risk snapshot: notional exposure + historical VaR
+    (95%, 1-day). Pure read, no side effects — safe to poll from a
+    dashboard, unlike compute_live_risk() which upserts intraday_risk and
+    can trip the kill switch. Originally inline in the get_portfolio_risk
+    MCP handler (markdown-only); extracted so a JSON API route can reuse
+    the same computation instead of re-deriving it.
+    """
+    import numpy as np
+
+    from .broker.paper_client import PaperBrokerClient
+
+    broker = PaperBrokerClient(config)
+    account = broker.get_account_info()
+    positions = broker.get_positions()
+    safety = SafetyMonitor(config)
+
+    exposure = safety.check_notional_exposure(account, positions)
+
+    var_data = {"var_95_pct": 0.0, "var_95_dollars": 0.0}
+    held_tickers = [p.ticker for p in positions if p.quantity > 0]
+    if held_tickers and account.account_value > 0:
+        try:
+            import yfinance as yf
+            data = yf.download(held_tickers, period="252d", progress=False)
+            if not data.empty:
+                returns = data["Close"].pct_change().dropna()
+                port_returns = returns if len(returns.shape) == 1 else returns.mean(axis=1)
+                var_95 = abs(float(np.percentile(port_returns, 5)))
+                var_data = {
+                    "var_95_pct": round(var_95 * 100, 2),
+                    "var_95_dollars": round(var_95 * account.account_value, 2),
+                }
+        except Exception:
+            pass
+
+    return {
+        "account_value": account.account_value,
+        "cash": account.cash_balance,
+        "n_positions": len(held_tickers),
+        "exposure": exposure,
+        "var": {
+            **var_data,
+            "threshold_pct": 3.0,
+            "threshold_dollars": round(account.account_value * 0.03, 2),
+            "within_limits": var_data["var_95_pct"] <= 3.0,
+        },
+    }
+
+
 # ---------------------------------------------------------------------------
 # Exit condition checks (trailing stops, profit targets, time decay)
 # ---------------------------------------------------------------------------

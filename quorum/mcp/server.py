@@ -1363,45 +1363,17 @@ def _handle_tool(name: str, args: dict) -> str:
         return "\n".join(lines)
 
     if name == "get_portfolio_risk":
-        import numpy as np
-
-        from quorum.execution.broker.paper_client import PaperBrokerClient
-        from quorum.execution.safety import SafetyMonitor
-        broker = PaperBrokerClient(config)
-        account = broker.get_account_info()
-        positions = broker.get_positions()
-        safety = SafetyMonitor(config)
-
-        # Notional exposure
-        exposure = safety.check_notional_exposure(account, positions)
-
-        # Portfolio VaR (historical, 95%, 1-day)
-        var_data = {"var_95_pct": 0, "var_95_dollars": 0}
-        held_tickers = [p.ticker for p in positions if p.quantity > 0]
-        if held_tickers and account.account_value > 0:
-            try:
-                import yfinance as yf
-                data = yf.download(held_tickers, period="252d", progress=False)
-                if not data.empty:
-                    returns = data["Close"].pct_change().dropna()
-                    if len(returns.shape) == 1:
-                        port_returns = returns
-                    else:
-                        port_returns = returns.mean(axis=1)
-                    var_95 = abs(float(np.percentile(port_returns, 5)))
-                    var_data = {
-                        "var_95_pct": round(var_95 * 100, 2),
-                        "var_95_dollars": round(var_95 * account.account_value, 2),
-                    }
-            except Exception:
-                pass
+        from quorum.execution.safety import compute_portfolio_risk
+        risk = compute_portfolio_risk(config)
+        exposure = risk["exposure"]
+        var_data = risk["var"]
 
         lines = [
             f"# Portfolio Risk Summary",
             f"",
-            f"**Account Value:** ${account.account_value:,.2f}",
-            f"**Cash:** ${account.cash_balance:,.2f}",
-            f"**Positions:** {len(held_tickers)}",
+            f"**Account Value:** ${risk['account_value']:,.2f}",
+            f"**Cash:** ${risk['cash']:,.2f}",
+            f"**Positions:** {risk['n_positions']}",
             f"",
             f"## Notional Exposure",
             f"- Total: ${exposure['total_notional']:,.2f}",
@@ -1410,8 +1382,8 @@ def _handle_tool(name: str, args: dict) -> str:
             f"",
             f"## Value at Risk (1-day, 95%)",
             f"- VaR: {var_data['var_95_pct']:.2f}% (${var_data['var_95_dollars']:,.2f})",
-            f"- Threshold: 3.0% (${account.account_value * 0.03:,.2f})",
-            f"- Within limits: {'YES' if var_data['var_95_pct'] <= 3.0 else '**NO**'}",
+            f"- Threshold: {var_data['threshold_pct']:.1f}% (${var_data['threshold_dollars']:,.2f})",
+            f"- Within limits: {'YES' if var_data['within_limits'] else '**NO**'}",
         ]
         return "\n".join(lines)
 

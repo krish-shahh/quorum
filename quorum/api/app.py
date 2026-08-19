@@ -959,6 +959,90 @@ def api_v1_calibration():
     return jsonify({"report": run_calibration()})
 
 
+@api_bp.route("/api/v1/performance")
+def api_v1_performance():
+    """Full performance summary — rolling Sharpe/Sortino, win-rate by
+    ticker/signal/day-of-week, best/worst trade — computed but never
+    exposed by any route until now. Reads the legacy `trades` table,
+    which is real fills only (both legacy-council and pod-cycle trades
+    land there via ExecutionEngine.record_execution), so this is safe
+    without a mode filter."""
+    try:
+        config = _cfg()
+        from quorum.execution.analytics import generate_performance_summary
+        from quorum.execution.trade_data import load_recent_trades
+
+        starting = float(config.get("paper_starting_balance", 100_000))
+        trades = load_recent_trades(config, limit=500)
+        return jsonify(generate_performance_summary(trades, starting))
+    except Exception as e:
+        print(f"[v3] performance error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@api_bp.route("/api/v1/runs")
+def api_v1_runs():
+    """Run browser listing — filterable by mode/strategy_id."""
+    from quorum.default_config import DEFAULT_CONFIG
+    from quorum.execution.decision_log import list_runs
+
+    mode = request.args.get("mode") or None
+    strategy_id = request.args.get("strategy_id") or None
+    limit = request.args.get("limit", default=50, type=int)
+    return jsonify({"runs": list_runs(DEFAULT_CONFIG, mode=mode, strategy_id=strategy_id, limit=limit)})
+
+
+@api_bp.route("/api/v1/runs/<run_id>")
+def api_v1_run_detail(run_id):
+    """One run's full decision chain: candidates, targets, orders/fills,
+    journal decisions, closed trades, and its gate result."""
+    from quorum.default_config import DEFAULT_CONFIG
+    from quorum.execution.decision_log import get_run_detail
+
+    detail = get_run_detail(DEFAULT_CONFIG, run_id)
+    if detail is None:
+        return jsonify({"error": f"no run {run_id}"}), 404
+    return jsonify(detail)
+
+
+@api_bp.route("/api/v1/gate/<run_id>")
+def api_v1_gate(run_id):
+    """Just the gate checklist for one run — a thin slice of run-detail
+    for a standalone gate-badge view."""
+    from quorum.default_config import DEFAULT_CONFIG
+    from quorum.execution.decision_log import get_run_detail
+
+    detail = get_run_detail(DEFAULT_CONFIG, run_id)
+    if detail is None:
+        return jsonify({"error": f"no run {run_id}"}), 404
+    return jsonify(detail["gate"])
+
+
+@api_bp.route("/api/v1/portfolio-risk")
+def api_v1_portfolio_risk():
+    """Notional exposure + historical VaR. Read-only — unlike live-risk,
+    safe to poll without side effects."""
+    try:
+        config = _cfg()
+        from quorum.execution.safety import compute_portfolio_risk
+        return jsonify(compute_portfolio_risk(config))
+    except Exception as e:
+        print(f"[v3] portfolio-risk error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@api_bp.route("/api/v1/analyst-accuracy")
+def api_v1_analyst_accuracy():
+    """Legacy council per-analyst IC/directional accuracy."""
+    try:
+        config = _cfg()
+        from quorum.execution.db import compute_analyst_accuracy
+        return jsonify(compute_analyst_accuracy(config))
+    except Exception as e:
+        print(f"[v3] analyst-accuracy error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
 @api_bp.route("/api/v1/daily-recap")
 def api_v1_daily_recap_list():
     """Recent daily-recap summaries, newest first — backend for a future

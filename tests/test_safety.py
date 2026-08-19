@@ -137,3 +137,23 @@ class TestPersistence:
         m2 = SafetyMonitor(config)
         assert m2.kill_switch_active is True
         assert m2._peak_value == 100_000
+
+
+@pytest.mark.unit
+class TestComputePortfolioRisk:
+    def test_zero_positions_skips_var_and_stays_within_limits(self, tmp_path):
+        from quorum.execution.safety import compute_portfolio_risk
+
+        config = {
+            "paper_starting_balance": 100_000.0,
+            "paper_state_path": str(tmp_path / "paper.json"),
+            "safety_state_path": str(tmp_path / "safety.json"),
+        }
+
+        risk = compute_portfolio_risk(config)
+
+        assert risk["n_positions"] == 0
+        assert risk["account_value"] == 100_000.0
+        assert risk["var"]["var_95_pct"] == 0.0
+        assert risk["var"]["within_limits"] is True
+        assert risk["exposure"]["within_limits"] is True

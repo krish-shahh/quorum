@@ -306,6 +306,22 @@ def backtest(
         "[red]Gate: FAIL[/red] — see failing checks above before trusting this strategy with paper capital"
     )
 
+    if log_config is not None and result["run_id"] is not None:
+        from dataclasses import asdict
+
+        from quorum.execution.decision_log import finish_run
+
+        finish_run(
+            log_config, result["run_id"], status="ok",
+            gate_result={"passed": gate_result.passed, "checks": [asdict(c) for c in gate_result.checks]},
+            gate_passed=gate_result.passed,
+            metrics={
+                "final_equity": result["final_equity"], "n_trades": len(trades),
+                "win_rate": win_rate, "sharpe": sharpe, "max_dd": max_dd,
+                "total_return": total_return,
+            },
+        )
+
 
 @app.command()
 def scan(

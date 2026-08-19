@@ -569,6 +569,103 @@ def list_daily_recaps(config: Dict[str, Any], *, limit: int = 30) -> List[Dict[s
     return [dict(row) for row in rows]
 
 
+def list_runs(
+    config: Dict[str, Any], *, mode: Optional[str] = None,
+    strategy_id: Optional[str] = None, limit: int = 50,
+) -> List[Dict[str, Any]]:
+    """List runs newest-first for a dashboard Runs browser, optionally
+    filtered by mode and/or strategy. Includes gate_passed so a caller can
+    show a pass/fail badge without a second query per row.
+    """
+    conn = db.get_db(config)
+    clauses, params = [], []
+    if mode is not None:
+        clauses.append("mode = ?")
+        params.append(mode)
+    if strategy_id is not None:
+        clauses.append("strategy_id = ?")
+        params.append(strategy_id)
+    where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+    params.append(limit)
+    rows = conn.execute(
+        f"SELECT run_id, strategy_id, strategy_version, mode, status, "
+        f"started_at, finished_at, gate_passed, metrics_json FROM run "
+        f"{where} ORDER BY started_at DESC LIMIT ?",
+        params,
+    ).fetchall()
+    return [
+        {**{k: row[k] for k in row.keys() if k != "metrics_json"},
+         "gate_passed": None if row["gate_passed"] is None else bool(row["gate_passed"]),
+         "metrics": json.loads(row["metrics_json"] or "{}")}
+        for row in rows
+    ]
+
+
+def get_run_detail(config: Dict[str, Any], run_id: str) -> Optional[Dict[str, Any]]:
+    """One run's full chain: candidates (fired + suppressed), targets,
+    orders+fills, journal decisions, closed trades, and its parsed gate
+    result — the drill-in behind a Runs browser row. Same join shapes as
+    build_daily_recap(), scoped by run_id instead of calendar day.
+    """
+    conn = db.get_db(config)
+    run = conn.execute(
+        "SELECT run_id, strategy_id, strategy_version, mode, status, started_at, "
+        "finished_at, error, gate_passed, gate_result_json, metrics_json FROM run "
+        "WHERE run_id = ?", (run_id,),
+    ).fetchone()
+    if run is None:
+        return None
+
+    signals = conn.execute(
+        "SELECT symbol, direction, score, rationale, suppressed, suppressed_reason "
+        "FROM signal WHERE run_id = ? ORDER BY ts ASC", (run_id,),
+    ).fetchall()
+
+    targets = conn.execute(
+        "SELECT symbol, target_weight, target_shares, sizing_method FROM target "
+        "WHERE run_id = ? ORDER BY ts ASC", (run_id,),
+    ).fetchall()
+
+    orders = conn.execute(
+        "SELECT o.symbol, o.side, o.qty, o.status, o.ts_submitted, "
+        "f.price, f.ts AS fill_ts, f.commission, f.slippage_bps "
+        "FROM order_intent o LEFT JOIN fill f ON f.order_id = o.order_id "
+        "WHERE o.run_id = ? ORDER BY o.ts_submitted ASC", (run_id,),
+    ).fetchall()
+
+    decisions = conn.execute(
+        "SELECT ts, kind, author, body, tags_json FROM journal "
+        "WHERE run_id = ? ORDER BY ts ASC", (run_id,),
+    ).fetchall()
+
+    closed = conn.execute(
+        "SELECT symbol, qty, entry_price, exit_price, pnl, entry_ts, exit_ts "
+        "FROM closed_trade WHERE run_id = ? ORDER BY exit_ts ASC", (run_id,),
+    ).fetchall()
+
+    return {
+        "run_id": run["run_id"],
+        "strategy_id": run["strategy_id"],
+        "strategy_version": run["strategy_version"],
+        "mode": run["mode"],
+        "status": run["status"],
+        "started_at": run["started_at"],
+        "finished_at": run["finished_at"],
+        "error": run["error"],
+        "metrics": json.loads(run["metrics_json"] or "{}"),
+        "gate": {
+            "passed": None if run["gate_passed"] is None else bool(run["gate_passed"]),
+            "checks": json.loads(run["gate_result_json"])["checks"] if run["gate_result_json"] else None,
+        },
+        "candidates": [dict(s) for s in signals if not s["suppressed"]],
+        "n_signals_suppressed": sum(1 for s in signals if s["suppressed"]),
+        "targets": [dict(row) for row in targets],
+        "orders": [dict(row) for row in orders],
+        "decisions": [{**dict(row), "tags": json.loads(row["tags_json"])} for row in decisions],
+        "closed_trades": [dict(row) for row in closed],
+    }
+
+
 def _fifo_match(fills: List[tuple]) -> List[tuple]:
     """FIFO lot-match a chronological (fill_id, ts, qty, price, symbol,
     side, run_id) sequence into closed_trade rows (run_id, symbol,

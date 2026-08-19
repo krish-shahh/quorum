@@ -338,3 +338,60 @@ class TestDailyRecap:
         config = _config(tmp_path)
 
         assert dl.get_daily_recap(config, "2026-01-01") is None
+
+
+class TestListRuns:
+    def test_filters_by_mode_and_strategy(self, tmp_path):
+        config = _config(tmp_path)
+        dl.new_run(config, strategy_id="regime_gate", mode="backtest")
+        paper_run = dl.new_run(config, strategy_id="regime_gate", mode="paper")
+        dl.new_run(config, strategy_id="other", mode="paper")
+
+        runs = dl.list_runs(config, mode="paper", strategy_id="regime_gate")
+
+        assert len(runs) == 1
+        assert runs[0]["run_id"] == paper_run
+
+    def test_newest_first_and_includes_gate_passed(self, tmp_path):
+        config = _config(tmp_path)
+        run_id = dl.new_run(config, strategy_id="s", mode="backtest")
+        dl.finish_run(config, run_id, status="ok", gate_passed=False, metrics={"n_trades": 5})
+
+        runs = dl.list_runs(config)
+
+        assert runs[0]["gate_passed"] is False
+        assert runs[0]["metrics"] == {"n_trades": 5}
+
+
+class TestGetRunDetail:
+    def test_returns_none_for_unknown_run(self, tmp_path):
+        config = _config(tmp_path)
+
+        assert dl.get_run_detail(config, "no-such-run") is None
+
+    def test_assembles_full_chain(self, tmp_path):
+        config = _config(tmp_path)
+        run_id = dl.new_run(config, strategy_id="regime_gate", mode="paper")
+        dl.record_signal(config, run_id=run_id, ts="2026-08-18", symbol="NVDA", suppressed=False)
+        dl.record_signal(
+            config, run_id=run_id, ts="2026-08-18", symbol="AMD",
+            suppressed=True, suppressed_reason="zero_weight",
+        )
+        buy = dl.record_order(config, run_id=run_id, ts_submitted="2026-08-18", symbol="NVDA", side="buy", qty=5)
+        dl.record_fill(config, order_id=buy, ts="2026-08-18", qty=5, price=100.0)
+        dl.record_journal(config, run_id=run_id, body="approved NVDA", kind="pm_approve")
+        dl.finish_run(
+            config, run_id, status="ok", gate_passed=True,
+            gate_result={"passed": True, "checks": [{"name": "dsr", "passed": True}]},
+        )
+
+        detail = dl.get_run_detail(config, run_id)
+
+        assert detail["run_id"] == run_id
+        assert len(detail["candidates"]) == 1
+        assert detail["n_signals_suppressed"] == 1
+        assert len(detail["orders"]) == 1
+        assert detail["orders"][0]["fill_ts"] is not None
+        assert len(detail["decisions"]) == 1
+        assert detail["gate"]["passed"] is True
+        assert detail["gate"]["checks"] == [{"name": "dsr", "passed": True}]
