@@ -14,7 +14,6 @@ import json
 import logging
 import os
 import re
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 
@@ -115,100 +114,7 @@ def _parse_value(v: str) -> Any:
     return v
 
 
-def _format_value(v: Any) -> str:
-    """Format a Python value as YAML-ish string."""
-    if v is None:
-        return "null"
-    if isinstance(v, bool):
-        return "true" if v else "false"
-    if isinstance(v, str):
-        return f'"{v}"' if " " in v or ":" in v else v
-    return str(v)
-
-
 # ── Public API ───────────────────────────────────────────────────────
-
-
-def write_plan(
-    plan_id: str,
-    steps: list[dict],
-    body_md: str,
-    *,
-    plan_type: str = "morning",
-    regime: str = "",
-    risk_level: str = "GREEN",
-    account_value: float = 0,
-    cash: float = 0,
-) -> Path:
-    """Write a plan file with YAML frontmatter + markdown body.
-
-    Returns the path to the written file.
-    """
-    _PLANS_DIR.mkdir(parents=True, exist_ok=True)
-
-    # Build frontmatter
-    lines = [
-        "---",
-        f'plan_id: "{plan_id}"',
-        f'created_at: "{datetime.now().isoformat(timespec="seconds")}"',
-        f'plan_type: "{plan_type}"',
-        f"regime: {regime}",
-        f"risk_level: {risk_level}",
-        f"account_value: {account_value}",
-        f"cash: {cash}",
-        "steps:",
-    ]
-    for step in steps:
-        first = True
-        for k, v in step.items():
-            prefix = "  - " if first else "    "
-            lines.append(f"{prefix}{k}: {_format_value(v)}")
-            first = False
-    lines.append("---")
-    lines.append("")
-
-    content = "\n".join(lines) + "\n" + body_md
-
-    plan_path = _PLANS_DIR / f"{plan_id}.md"
-    plan_path.write_text(content)
-    logger.info("Plan written: %s", plan_path)
-    return plan_path
-
-
-def activate_plan(plan_path: Path | str, *, review: bool = False) -> Path:
-    """Create/update the active.md symlink to point to the given plan.
-
-    If ``review=True``, print the plan and wait for stdin confirmation
-    before linking.  Headless runs should pass ``review=False``.
-    """
-    plan_path = Path(plan_path)
-    if not plan_path.exists():
-        raise FileNotFoundError(f"Plan not found: {plan_path}")
-
-    if review:
-        print("\n" + "=" * 60)
-        print("PLAN REVIEW — approve before activation")
-        print("=" * 60)
-        print(plan_path.read_text()[:3000])
-        print("=" * 60)
-        resp = input("Activate this plan? [y/N] ").strip().lower()
-        if resp != "y":
-            print("Plan NOT activated.")
-            return plan_path
-
-    # Atomic symlink update
-    tmp = _ACTIVE_LINK.with_suffix(".tmp")
-    try:
-        tmp.unlink(missing_ok=True)
-        tmp.symlink_to(plan_path.resolve())
-        tmp.rename(_ACTIVE_LINK)
-    except OSError:
-        # Fallback: direct replace
-        _ACTIVE_LINK.unlink(missing_ok=True)
-        _ACTIVE_LINK.symlink_to(plan_path.resolve())
-
-    logger.info("Active plan → %s", plan_path.name)
-    return _ACTIVE_LINK
 
 
 def read_active_plan() -> dict | None:
@@ -225,74 +131,6 @@ def read_active_plan() -> dict | None:
     meta["_body"] = body
     meta["_path"] = str(_ACTIVE_LINK.resolve())
     return meta
-
-
-def validate_trade_against_plan(ticker: str, signal: str) -> bool:
-    """Check if a (ticker, signal) trade matches a step in the active plan.
-
-    Signal mapping: Buy/Overweight match Buy/Strong Buy steps.
-    Sell/Underweight match Sell/Strong Sell steps.
-    """
-    plan = read_active_plan()
-    if plan is None:
-        # No active plan — allow trade (backward compat)
-        return True
-
-    steps = plan.get("steps", [])
-    ticker = ticker.upper()
-
-    buy_actions = {"buy", "strong buy"}
-    sell_actions = {"sell", "strong sell"}
-
-    for step in steps:
-        step_ticker = str(step.get("ticker", "")).upper()
-        step_action = str(step.get("action", "")).lower()
-
-        if step_ticker != ticker:
-            continue
-
-        if signal in ("Buy", "Overweight") and step_action in buy_actions:
-            return True
-        if signal in ("Sell", "Underweight") and step_action in sell_actions:
-            return True
-
-    return False
-
-
-def log_execution(
-    plan_id: str,
-    ticker: str,
-    status: str,
-    *,
-    fill_price: float | None = None,
-    plan_entry: float | None = None,
-    reason: str = "",
-) -> None:
-    """Append an execution log entry to a sidecar JSON file."""
-    log_path = _PLANS_DIR / f"{plan_id}.execlog.json"
-
-    entries = []
-    if log_path.exists():
-        try:
-            entries = json.loads(log_path.read_text())
-        except (json.JSONDecodeError, OSError):
-            pass
-
-    slippage = None
-    if fill_price is not None and plan_entry is not None and plan_entry > 0:
-        slippage = round((fill_price - plan_entry) / plan_entry * 10000, 1)  # bps
-
-    entries.append({
-        "timestamp": datetime.now().isoformat(timespec="seconds"),
-        "ticker": ticker,
-        "status": status,  # EXECUTED, SKIPPED, HOLD
-        "fill_price": fill_price,
-        "plan_entry": plan_entry,
-        "slippage_bps": slippage,
-        "reason": reason,
-    })
-
-    log_path.write_text(json.dumps(entries, indent=2))
 
 
 def get_plan_metrics(plan_id: str | None = None) -> dict:

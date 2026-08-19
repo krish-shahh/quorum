@@ -63,8 +63,6 @@ _ENV_OVERRIDES = {
     # Execution edge features
     "QUORUM_KELLY_SIZING":         "kelly_sizing_enabled",
     "QUORUM_CORRELATION_AWARE":    "correlation_aware_enabled",
-    # Push notifications
-    "QUORUM_PUSH_ENABLED":         "push_notifications_enabled",
     # Backtest
     "QUORUM_BACKTEST_BALANCE":     "backtest_starting_balance",
 }
@@ -384,13 +382,6 @@ DEFAULT_CONFIG = _apply_profile(_apply_env_overrides({
     "debate_trigger_spread": 2.0,           # analyst spread threshold
     "debate_force_on_new_position": True,   # always debate before first entry
     "debate_force_on_earnings": True,       # always debate near-earnings decisions
-    # ------------------------------------------------------------------
-    # Push notifications (VAPID web push)
-    # ------------------------------------------------------------------
-    "push_notifications_enabled": False,
-    "vapid_private_key": "",
-    "vapid_public_key": "",
-    "vapid_claims_email": "",
     # ------------------------------------------------------------------
     # Backtest
     # ------------------------------------------------------------------

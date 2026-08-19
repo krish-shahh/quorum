@@ -14,33 +14,18 @@ from __future__ import annotations
 import logging
 import re
 import time
-from collections import defaultdict
 from datetime import datetime, timedelta
 from html.parser import HTMLParser
 from typing import Any, Dict, List, Optional
 
 import requests
 
-from .schemas import PoliticianSignal, PoliticianTrade
+from .schemas import PoliticianTrade
 
 logger = logging.getLogger(__name__)
 
 # Capitol Trades pages (public, no auth)
 _CAPITOL_TRADES_URL = "https://www.capitoltrades.com/trades"
-
-# Amount-range midpoints used for dollar-volume estimation.
-_AMOUNT_MIDPOINTS: Dict[str, float] = {
-    "1k-15k": 8_000,
-    "15k-50k": 32_500,
-    "50k-100k": 75_000,
-    "100k-250k": 175_000,
-    "250k-500k": 375_000,
-    "500k-1m": 750_000,
-    "1m-5m": 3_000_000,
-    "5m-25m": 15_000_000,
-    "25m-50m": 37_500_000,
-    "50m+": 75_000_000,
-}
 
 # How long cached data stays valid (seconds).
 _CACHE_TTL = 6 * 60 * 60  # 6 hours
@@ -51,15 +36,6 @@ _HEADERS = {
         "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     ),
 }
-
-
-def _estimate_dollar_volume(amount_range: str) -> float:
-    """Return midpoint dollar estimate for a disclosure amount range."""
-    normalized = re.sub(r"[\s$,]", "", amount_range.lower()).replace("–", "-")
-    for key, val in _AMOUNT_MIDPOINTS.items():
-        if key in normalized:
-            return val
-    return 8_000
 
 
 def _parse_date(raw: str) -> Optional[datetime]:
@@ -265,114 +241,3 @@ class PoliticianTradesFetcher:
         self._cache = None
         self._cache_ts = 0.0
 
-
-# ──────────────────────────────────────────────────────────────────
-# Signal layer
-# ──────────────────────────────────────────────────────────────────
-
-
-class PoliticianSignalLayer:
-    """Analyze politician trades for convergence signals."""
-
-    def __init__(self, fetcher: Optional[PoliticianTradesFetcher] = None):
-        self._fetcher = fetcher or PoliticianTradesFetcher()
-
-    def get_trades_for_ticker(
-        self, ticker: str, days: int = 45
-    ) -> List[PoliticianTrade]:
-        """Return all politician trades for *ticker* within the window."""
-        ticker = ticker.upper()
-        return [
-            t for t in self._fetcher.fetch_recent_trades(days=days)
-            if t.ticker == ticker
-        ]
-
-    def detect_convergence(
-        self, window_days: int = 30
-    ) -> List[PoliticianSignal]:
-        """Flag tickers where 2+ politicians traded the same direction."""
-        trades = self._fetcher.fetch_recent_trades(days=window_days)
-        by_ticker: Dict[str, List[PoliticianTrade]] = defaultdict(list)
-        for t in trades:
-            by_ticker[t.ticker].append(t)
-
-        signals: List[PoliticianSignal] = []
-        for ticker, ticker_trades in by_ticker.items():
-            politicians = {t.politician for t in ticker_trades}
-            if len(politicians) < 2:
-                continue
-            signal = self._build_signal(ticker, ticker_trades)
-            signals.append(signal)
-
-        signals.sort(key=lambda s: s.signal_strength, reverse=True)
-        return signals
-
-    def get_hot_tickers(
-        self, min_politicians: int = 2, days: int = 30
-    ) -> List[PoliticianSignal]:
-        """Tickers with at least *min_politicians* unique politician trades."""
-        trades = self._fetcher.fetch_recent_trades(days=days)
-        by_ticker: Dict[str, List[PoliticianTrade]] = defaultdict(list)
-        for t in trades:
-            by_ticker[t.ticker].append(t)
-
-        signals: List[PoliticianSignal] = []
-        for ticker, ticker_trades in by_ticker.items():
-            politicians = {t.politician for t in ticker_trades}
-            if len(politicians) < min_politicians:
-                continue
-            signals.append(self._build_signal(ticker, ticker_trades))
-
-        signals.sort(key=lambda s: s.signal_strength, reverse=True)
-        return signals
-
-    def get_watchlist_suggestions(
-        self,
-        current_watchlist: Optional[List[str]] = None,
-        min_strength: float = 0.4,
-        days: int = 30,
-    ) -> List[PoliticianSignal]:
-        """Tickers with strong convergence not already in *current_watchlist*."""
-        current = {t.upper() for t in (current_watchlist or [])}
-        signals = self.detect_convergence(window_days=days)
-        return [
-            s for s in signals
-            if s.signal_strength >= min_strength and s.ticker not in current
-        ]
-
-    @staticmethod
-    def _build_signal(
-        ticker: str, trades: List[PoliticianTrade]
-    ) -> PoliticianSignal:
-        """Compute direction and signal strength for a set of trades."""
-        politicians = {t.politician for t in trades}
-        buys = [t for t in trades if t.transaction_type == "purchase"]
-        sells = [t for t in trades if t.transaction_type == "sale"]
-
-        buy_count = len(buys)
-        sell_count = len(sells)
-        total = buy_count + sell_count
-
-        if buy_count > sell_count:
-            direction = "bullish"
-        elif sell_count > buy_count:
-            direction = "bearish"
-        else:
-            direction = "mixed"
-
-        pol_score = min(len(politicians) / 5.0, 1.0)
-        consistency = abs(buy_count - sell_count) / total if total else 0
-        dollar_vol = sum(_estimate_dollar_volume(t.amount_range) for t in trades)
-        vol_score = min(dollar_vol / 1_000_000, 1.0)
-
-        strength = round(
-            0.40 * pol_score + 0.35 * consistency + 0.25 * vol_score, 3
-        )
-
-        return PoliticianSignal(
-            ticker=ticker,
-            direction=direction,
-            politician_count=len(politicians),
-            trades=trades,
-            signal_strength=min(strength, 1.0),
-        )

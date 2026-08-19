@@ -24,7 +24,6 @@ dependencies = [
 
 [project.optional-dependencies]
 mcp = ["mcp>=1.0"]
-push = ["pywebpush>=2.0"]
 api = ["flask>=3.0"]
 
 [project.scripts]

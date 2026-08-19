@@ -50,15 +50,6 @@ class ExecutionEngine:
             except Exception:
                 logger.debug("Wiki writer not available", exc_info=True)
 
-        # Push notifications
-        self._push = None
-        if config.get("push_notifications_enabled", False):
-            try:
-                from .push_notifications import PushNotificationService
-                self._push = PushNotificationService(config)
-            except Exception:
-                logger.debug("Push notifications not available", exc_info=True)
-
     def execute(
         self,
         ticker: str,
@@ -229,16 +220,6 @@ class ExecutionEngine:
             )
         elif order.side == OrderSide.SELL and result.filled_price:
             self.learner.record_exit(ticker, result.filled_price, realized_pnl or 0.0)
-
-        # 11. Push notification
-        if self._push is not None and result.filled_price:
-            try:
-                self._push.notify_trade(
-                    ticker, signal, order.side.value,
-                    result.filled_quantity, result.filled_price,
-                )
-            except Exception:
-                logger.debug("Push notification failed", exc_info=True)
 
         # 12. Wiki — write run page
         if self._wiki is not None:
