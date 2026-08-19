@@ -224,6 +224,7 @@ def cycle(
         [
             claude_bin, "-p", prompt,
             "--output-format", "stream-json",
+            "--verbose",  # required by claude -p whenever --output-format=stream-json is set
             "--include-partial-messages",
             "--forward-subagent-text",
             "--dangerously-skip-permissions",
