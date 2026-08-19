@@ -110,6 +110,8 @@ def create_server():
         Tool(name="get_live_risk", description="Live intraday risk check. Returns daily P&L, drawdown, ATR stop distances, cash reserve, VIX, and circuit breaker status (GREEN/YELLOW/ORANGE/RED). Call at the start of every trading council cycle.", inputSchema={"type": "object", "properties": {}}),
         # Calendar / datetime (prevents LLM day-of-week hallucination)
         Tool(name="get_trading_calendar", description="Get current date, time, day of week, and whether the market is open. ALWAYS call this instead of guessing the day of week or market status. Returns timezone-aware datetime, trading day status, market open/close times, and next trading day.", inputSchema={"type": "object", "properties": {"exchange": {"type": "string", "description": "Exchange MIC code (default: XNYS/NYSE)", "default": "XNYS"}}}),
+        # Decision log (Phase 4 slim council — records PM overrides on strategy-generated candidates)
+        Tool(name="record_council_decision", description="Record a slim-council Portfolio Manager decision on a strategy-generated candidate: approve at proposed size, reduce size, or veto entirely. Every override MUST be logged here with a reason — this is the audit trail the plan requires ('every override is written to journal with a reason'). Not for use with the legacy full council (trading-planner/trading-council) — those use save_council_reports instead.", inputSchema={"type": "object", "properties": {"ticker": {"type": "string"}, "decision": {"type": "string", "enum": ["approve", "reduce", "veto"]}, "proposed_weight": {"type": "number", "description": "The candidate's proposed position weight from the strategy engine"}, "final_weight": {"type": "number", "description": "The weight after this decision (0 if veto, < proposed_weight if reduce, == proposed_weight if approve)"}, "reason": {"type": "string", "description": "Why — cite the evidence-analyst findings that drove this decision"}, "run_id": {"type": "string", "description": "The decision-log run_id this candidate came from, if known"}}, "required": ["ticker", "decision", "reason"]}),
     ]
 
     @server.list_tools()
@@ -1516,6 +1518,26 @@ def _handle_tool(name: str, args: dict) -> str:
             f"- **Next trading day**: {next_td.strftime('%A, %B %d, %Y')}",
         ]
         return "\n".join(lines)
+
+    if name == "record_council_decision":
+        from quorum.execution import decision_log as dl
+
+        ticker = args["ticker"].upper()
+        decision = args["decision"]
+        proposed_weight = args.get("proposed_weight")
+        final_weight = args.get("final_weight")
+        reason = args["reason"]
+        run_id = args.get("run_id")
+
+        body = (
+            f"{decision.upper()} {ticker}: proposed_weight={proposed_weight}, "
+            f"final_weight={final_weight}. {reason}"
+        )
+        dl.record_journal(
+            config, body=body, run_id=run_id, kind=f"pm_{decision}",
+            author="slim_council_pm", tags=[ticker, decision],
+        )
+        return f"Recorded: {body}"
 
     return f"Unknown tool: {name}"
 
