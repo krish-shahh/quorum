@@ -11,9 +11,15 @@ docstring for why the feature computations themselves are causal).
 This module runs backtests today. The same run_bar_loop() is meant to
 also drive paper/live once a DataFeed/Broker injection point replaces the
 in-memory OHLCV dict and the "fill at next open" simulation — that
-wiring is a later Phase 4 step, not yet built. Universe tag resolution
-(universe.source == "tag" -> actual tickers) is likewise not built here;
-callers pass resolved symbols directly.
+wiring is a later Phase 4 step, not yet built.
+
+Decision-log writes (quorum/execution/decision_log.py) are opt-in via
+`log_config` — omitted, the loop is pure in-memory (fast for unit tests
+and parameter sweeps); passed, every fired entry/exit condition, order,
+and fill is written under one `run` row, including suppressed signals
+(condition true but blocked by a risk cap) — that's the case the plan
+calls out as the actual blind spot, not the "nothing happened" case,
+so a signal row is only written when a condition actually fires.
 """
 
 from __future__ import annotations
@@ -23,6 +29,7 @@ from typing import Any, Dict, List, Optional
 
 import pandas as pd
 
+from ..execution import decision_log as dl
 from .features import compute_all_features
 from .schema import StrategySpec
 
@@ -82,6 +89,8 @@ def run_bar_loop(
     *,
     starting_cash: float = 100_000.0,
     regime_series: Optional[pd.Series] = None,
+    log_config: Optional[Dict[str, Any]] = None,
+    mode: str = "backtest",
 ) -> Dict[str, Any]:
     """Run one backtest of `spec` over `symbols` against pre-fetched `ohlcv`.
 
@@ -91,9 +100,19 @@ def run_bar_loop(
     ('risk_on'/'risk_off'/'volatile'/'transition') indexed the same as the
     price data, used to scale `risk.regime_gate` multipliers; omitted means
     no regime scaling (multiplier 1.0 throughout).
+    `log_config`, if given, is a quorum config dict (needs at least
+    `db_path`) — every fired signal/target/order/fill is written through
+    quorum/execution/decision_log.py under one new `run` row of mode=`mode`.
     """
     all_features = compute_all_features(spec.features, ohlcv)
     entry_group, exit_group = spec.signal.entry, spec.signal.exit
+
+    run_id = None
+    if log_config is not None:
+        run_id = dl.new_run(
+            log_config, strategy_id=spec.strategy_id, mode=mode,
+            strategy_version=spec.version,
+        )
 
     def _group_true(group, i: int) -> bool:
         all_ok = all(bool(all_features[name].iloc[i]) for name in group.all_of)
@@ -128,7 +147,14 @@ def run_bar_loop(
             )
             rule_exit = symbol in symbols and _group_true(exit_group, i)
             if stop_hit or rule_exit:
-                _close_position(state, spec, ohlcv, symbol, i, fill_ts, "stop_loss" if stop_hit else "rule_exit")
+                reason = "stop_loss" if stop_hit else "rule_exit"
+                sig_id = None
+                if run_id is not None:
+                    sig_id = dl.record_signal(
+                        log_config, run_id=run_id, ts=str(ts), symbol=symbol,
+                        direction=-1, rationale=reason,
+                    )
+                _close_position(state, spec, ohlcv, symbol, i, ts, fill_ts, reason, log_config, run_id, sig_id)
 
         # 2. Entries.
         for symbol in symbols:
@@ -138,6 +164,11 @@ def run_bar_loop(
                 continue
             if spec.risk.max_positions is not None and len(state.positions) >= spec.risk.max_positions:
                 state.suppressed.append({"ts": str(ts), "symbol": symbol, "reason": "max_positions"})
+                if run_id is not None:
+                    dl.record_signal(
+                        log_config, run_id=run_id, ts=str(ts), symbol=symbol, direction=1,
+                        suppressed=True, suppressed_reason="max_positions",
+                    )
                 continue
 
             atr = all_features[atr_feature_name].iloc[i] if atr_feature_name else None
@@ -146,7 +177,19 @@ def run_bar_loop(
             weight = min(weight, spec.risk.max_single_ticker_pct)
             if weight <= 0:
                 state.suppressed.append({"ts": str(ts), "symbol": symbol, "reason": "zero_weight"})
+                if run_id is not None:
+                    dl.record_signal(
+                        log_config, run_id=run_id, ts=str(ts), symbol=symbol, direction=1,
+                        suppressed=True, suppressed_reason="zero_weight",
+                    )
                 continue
+
+            sig_id = None
+            if run_id is not None:
+                sig_id = dl.record_signal(
+                    log_config, run_id=run_id, ts=str(ts), symbol=symbol, direction=1,
+                    score=float(atr) if atr is not None else None,
+                )
 
             equity = _mark_to_market(state, ohlcv, i)
             fill_price = ohlcv[symbol]["open"].iloc[i + 1] * (1 + spec.execution.cost_bps / 10_000)
@@ -163,10 +206,35 @@ def run_bar_loop(
                 entry_ts=fill_ts, entry_atr=float(atr) if atr is not None else None,
             )
 
+            if run_id is not None:
+                tgt_id = dl.record_target(
+                    log_config, run_id=run_id, ts=str(ts), symbol=symbol, signal_id=sig_id,
+                    target_weight=weight, target_shares=int(shares), sizing_method=spec.sizing.method,
+                )
+                order_id = dl.record_order(
+                    log_config, run_id=run_id, ts_submitted=str(ts), symbol=symbol,
+                    side="buy", qty=shares, target_id=tgt_id, status="filled",
+                )
+                dl.record_fill(log_config, order_id=order_id, ts=str(fill_ts), qty=shares, price=fill_price)
+
         state.equity_curve.append({"ts": str(ts), "equity": _mark_to_market(state, ohlcv, i)})
+        if run_id is not None:
+            dl.record_snapshot(
+                log_config, run_id=run_id, d=str(ts), cash=state.cash,
+                equity=state.equity_curve[-1]["equity"], n_positions=len(state.positions),
+            )
 
     final_equity = _mark_to_market(state, ohlcv, len(index) - 1)
+
+    if run_id is not None:
+        dl.recompute_closed_trades(log_config, run_id)
+        dl.finish_run(
+            log_config, run_id, status="ok",
+            metrics={"final_equity": final_equity, "n_trades": len(state.trades)},
+        )
+
     return {
+        "run_id": run_id,
         "final_equity": final_equity,
         "equity_curve": state.equity_curve,
         "trades": state.trades,
@@ -188,7 +256,7 @@ def _find_atr_feature(spec: StrategySpec, symbols: List[str]) -> Optional[str]:
     return None
 
 
-def _close_position(state, spec, ohlcv, symbol, i, fill_ts, reason) -> None:
+def _close_position(state, spec, ohlcv, symbol, i, ts, fill_ts, reason, log_config=None, run_id=None, sig_id=None) -> None:
     pos = state.positions.pop(symbol)
     fill_price = ohlcv[symbol]["open"].iloc[i + 1] * (1 - spec.execution.cost_bps / 10_000)
     proceeds = pos.shares * fill_price
@@ -199,6 +267,17 @@ def _close_position(state, spec, ohlcv, symbol, i, fill_ts, reason) -> None:
         "qty": pos.shares, "pnl": (fill_price - pos.entry_price) * pos.shares,
         "reason": reason,
     })
+    if run_id is not None:
+        tgt_id = dl.record_target(
+            log_config, run_id=run_id, ts=str(ts), symbol=symbol, signal_id=sig_id,
+            target_weight=0.0, target_shares=0, current_shares=int(pos.shares),
+            sizing_method="exit",
+        )
+        order_id = dl.record_order(
+            log_config, run_id=run_id, ts_submitted=str(ts), symbol=symbol,
+            side="sell", qty=pos.shares, target_id=tgt_id, status="filled",
+        )
+        dl.record_fill(log_config, order_id=order_id, ts=str(fill_ts), qty=pos.shares, price=fill_price)
 
 
 def _mark_to_market(state: _BacktestState, ohlcv: Dict[str, pd.DataFrame], i: int) -> float:
