@@ -82,8 +82,8 @@ class ExecutionEngine:
         positions = self.broker.get_positions()
         value_before = account.account_value
 
-        # 2. Safety check
-        if not self.safety.check_drawdown(account):
+        # 2. Safety check (buys only — sells must always be allowed to exit)
+        if signal in ("Buy", "Overweight") and not self.safety.check_drawdown(account):
             self.log.record_blocked(ticker, signal, "kill_switch_active", value_before)
             return None
 
@@ -142,6 +142,20 @@ class ExecutionEngine:
         # 8. Post-trade account snapshot
         account_after = self.broker.get_account_info()
 
+        # 8b. Realized P&L for sells, from (fill_price - avg_cost) * quantity —
+        # NOT (account_value_after - account_value_before). A sell converts
+        # position value into cash and leaves account value ~unchanged, so
+        # that delta is ~0 regardless of whether the trade won or lost.
+        # `positions` was fetched in step 1, before this fill, so avg_cost
+        # here is the pre-trade cost basis for the shares being sold.
+        realized_pnl: Optional[float] = None
+        if order.side == OrderSide.SELL and result.filled_price:
+            avg_cost = next(
+                (p.avg_cost for p in positions if p.ticker == ticker), None,
+            )
+            if avg_cost is not None:
+                realized_pnl = (result.filled_price - avg_cost) * result.filled_quantity
+
         # 9. Build and log the record
         record = ExecutionRecord(
             timestamp=datetime.now(),
@@ -152,6 +166,7 @@ class ExecutionEngine:
             order_result=result,
             account_value_before=value_before,
             account_value_after=account_after.account_value,
+            realized_pnl=realized_pnl,
         )
         self.log.record_execution(record)
 
@@ -167,8 +182,7 @@ class ExecutionEngine:
                 quantity=result.filled_quantity,
             )
         elif order.side == OrderSide.SELL and result.filled_price:
-            pnl = account_after.account_value - value_before
-            self.learner.record_exit(ticker, result.filled_price, pnl)
+            self.learner.record_exit(ticker, result.filled_price, realized_pnl or 0.0)
 
         # 11. Push notification
         if self._push is not None and result.filled_price:

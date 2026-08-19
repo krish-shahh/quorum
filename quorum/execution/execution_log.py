@@ -149,8 +149,8 @@ class ExecutionLog:
                 conn.execute(
                     "INSERT INTO trades "
                     "(timestamp, ticker, signal, action_taken, side, quantity, "
-                    " fill_price, account_before, account_after, reason, raw_json) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    " fill_price, account_before, account_after, realized_pnl, reason, raw_json) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         str(data.get("timestamp", "")),
                         data.get("ticker", ""),
@@ -161,6 +161,7 @@ class ExecutionLog:
                         res.get("filled_price"),
                         data.get("account_value_before"),
                         data.get("account_value_after"),
+                        data.get("realized_pnl"),
                         data.get("reason") or "",
                         json.dumps(data, default=str),
                     ),

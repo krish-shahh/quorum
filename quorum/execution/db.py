@@ -18,6 +18,7 @@ import json
 import logging
 import sqlite3
 import threading
+from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -68,6 +69,7 @@ CREATE TABLE IF NOT EXISTS trades (
     fill_price      REAL,
     account_before  REAL,
     account_after   REAL,
+    realized_pnl    REAL,
     reason          TEXT    NOT NULL DEFAULT '',
     raw_json        TEXT    NOT NULL DEFAULT '{}'
 );
@@ -294,6 +296,7 @@ def get_db(config: Optional[Dict[str, Any]] = None) -> sqlite3.Connection:
             "ALTER TABLE paper_positions ADD COLUMN trailing_high REAL",
             "ALTER TABLE paper_positions ADD COLUMN multiplier INTEGER NOT NULL DEFAULT 1",
             "ALTER TABLE ticker_state ADD COLUMN debate_triggered INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE trades ADD COLUMN realized_pnl REAL",
         ]:
             try:
                 conn.execute(migration)
@@ -440,8 +443,8 @@ def _migrate_trades(config: Dict[str, Any], conn: sqlite3.Connection) -> None:
             conn.execute(
                 "INSERT INTO trades "
                 "(timestamp, ticker, signal, action_taken, side, quantity, "
-                " fill_price, account_before, account_after, reason, raw_json) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                " fill_price, account_before, account_after, realized_pnl, reason, raw_json) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     str(t.get("timestamp", "")),
                     t.get("ticker", ""),
@@ -452,6 +455,7 @@ def _migrate_trades(config: Dict[str, Any], conn: sqlite3.Connection) -> None:
                     res.get("filled_price"),
                     t.get("account_value_before"),
                     t.get("account_value_after"),
+                    t.get("realized_pnl"),
                     t.get("reason", ""),
                     json.dumps(t, default=str),
                 ),
@@ -460,6 +464,101 @@ def _migrate_trades(config: Dict[str, Any], conn: sqlite3.Connection) -> None:
 
     if imported:
         logger.info("Migrated %d trade records from %s", imported, path)
+
+
+def backfill_realized_pnl_fifo(config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """One-time backfill: FIFO-reconstruct ``realized_pnl`` for historical sells.
+
+    ``trades.realized_pnl`` was only ever populated correctly starting with the
+    executor fix that replaced ``account_value_after - account_value_before``
+    (~0 on every sell, since a sell just converts position value into cash)
+    with a real per-fill calculation. This walks every ticker's executed
+    fills in chronological order, matches sells against the oldest open buy
+    lots (FIFO), and writes the resulting P&L into rows where it is still
+    NULL. Idempotent — already-populated rows are left untouched.
+
+    Returns a summary dict: ``{"tickers": N, "sells_updated": N, "total_pnl": F}``.
+    """
+    conn = get_db(config)
+    rows = conn.execute(
+        "SELECT id, timestamp, ticker, side, quantity, fill_price, realized_pnl "
+        "FROM trades WHERE action_taken = 'executed' AND side IN ('buy', 'sell') "
+        "ORDER BY ticker, timestamp, id"
+    ).fetchall()
+
+    by_ticker: Dict[str, List[sqlite3.Row]] = defaultdict(list)
+    for r in rows:
+        by_ticker[r["ticker"]].append(r)
+
+    updates: List[tuple] = []
+    total_pnl = 0.0
+    sells_updated = 0
+    for ticker, ticker_rows in by_ticker.items():
+        lots: List[List[float]] = []  # [[qty, price], ...] oldest first
+        for r in ticker_rows:
+            qty = r["quantity"] or 0
+            price = r["fill_price"]
+            if price is None or qty <= 0:
+                continue
+            if r["side"] == "buy":
+                lots.append([float(qty), float(price)])
+                continue
+
+            # side == "sell": match against oldest open lots (FIFO)
+            if r["realized_pnl"] is not None:
+                # Already correctly recorded going forward — still consume
+                # lots so later sells for this ticker match correctly.
+                remaining = float(qty)
+                while remaining > 1e-9 and lots:
+                    lot_qty, lot_price = lots[0]
+                    take = min(lot_qty, remaining)
+                    lot_qty -= take
+                    remaining -= take
+                    if lot_qty <= 1e-9:
+                        lots.pop(0)
+                    else:
+                        lots[0][0] = lot_qty
+                continue
+
+            remaining = float(qty)
+            pnl = 0.0
+            while remaining > 1e-9 and lots:
+                lot_qty, lot_price = lots[0]
+                take = min(lot_qty, remaining)
+                pnl += (price - lot_price) * take
+                lot_qty -= take
+                remaining -= take
+                if lot_qty <= 1e-9:
+                    lots.pop(0)
+                else:
+                    lots[0][0] = lot_qty
+            if remaining > 1e-9:
+                # Sold more than we have recorded buys for (pre-audit-window
+                # trade, manual position, etc.) — leave the unmatched portion
+                # out of the P&L rather than guessing.
+                logger.debug(
+                    "FIFO backfill: %s sell of %s at row %s has no matching "
+                    "buy lot for %.4f shares", ticker, qty, r["id"], remaining,
+                )
+            updates.append((round(pnl, 4), r["id"]))
+            total_pnl += pnl
+            sells_updated += 1
+
+    with conn:
+        for pnl, row_id in updates:
+            conn.execute(
+                "UPDATE trades SET realized_pnl = ? WHERE id = ?", (pnl, row_id),
+            )
+
+    logger.info(
+        "FIFO backfill complete: %d tickers, %d sells updated, total realized P&L $%.2f",
+        len(by_ticker), sells_updated, total_pnl,
+    )
+    return {
+        "tickers": len(by_ticker),
+        "sells_updated": sells_updated,
+        "total_pnl": round(total_pnl, 2),
+    }
 
 
 def _migrate_watchlist(config: Dict[str, Any], conn: sqlite3.Connection) -> None:

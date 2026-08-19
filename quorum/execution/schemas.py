@@ -100,6 +100,11 @@ class ExecutionRecord(BaseModel):
     order_result: Optional[OrderResult] = None
     account_value_before: Optional[float] = None
     account_value_after: Optional[float] = None
+    # Realized P&L for SELL fills, computed from (fill_price - avg_cost) * quantity.
+    # None for BUY fills (nothing realized yet) and for blocked/skipped records.
+    # NOT the same as (account_value_after - account_value_before), which is
+    # ~0 for a sell since it just converts position value into cash.
+    realized_pnl: Optional[float] = None
 
 
 class DiscoveryStatus(str, Enum):
