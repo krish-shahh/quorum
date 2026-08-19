@@ -7,6 +7,7 @@ to the decision log exactly like a backtest run (same schema, run.mode=
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
@@ -58,6 +59,14 @@ def required_symbols(spec: StrategySpec) -> List[str]:
     return sorted(set(spec.universe.resolve()) | feature_symbols)
 
 
+def _fetch_one(symbol: str, start: str, end: str) -> Optional[pd.DataFrame]:
+    data = yf.Ticker(symbol).history(start=start, end=end)
+    if data.empty:
+        return None
+    data = data.rename(columns=str.lower)
+    return data[["open", "high", "low", "close", "volume"]]
+
+
 def fetch_ohlcv(symbols: List[str], start: str, end: str) -> Dict[str, pd.DataFrame]:
     """Fetch daily OHLCV for `symbols` and normalize to engine-ready columns.
 
@@ -65,14 +74,21 @@ def fetch_ohlcv(symbols: List[str], start: str, end: str) -> Dict[str, pd.DataFr
     close/volume, lowercase) — distinct from quorum/dataflows/y_finance.py's
     get_YFin_data_online, which returns an LLM-formatted string, not data
     the engine can compute features over.
+
+    Fetches run concurrently (each symbol is an independent network call,
+    same pattern as get_full_ticker_data's concurrent fetch in
+    quorum/mcp/server.py) — serially this was ~60-120s for a 65-ticker
+    universe, which every caller (backtest, shadow-sleeve,
+    get_pod_candidates, and the screener) pays on every invocation.
     """
-    result = {}
-    for symbol in symbols:
-        data = yf.Ticker(symbol).history(start=start, end=end)
-        if data.empty:
-            continue
-        data = data.rename(columns=str.lower)
-        result[symbol] = data[["open", "high", "low", "close", "volume"]]
+    result: Dict[str, pd.DataFrame] = {}
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        future_to_symbol = {pool.submit(_fetch_one, symbol, start, end): symbol for symbol in symbols}
+        for future in as_completed(future_to_symbol):
+            symbol = future_to_symbol[future]
+            data = future.result()
+            if data is not None:
+                result[symbol] = data
     return result
 
 

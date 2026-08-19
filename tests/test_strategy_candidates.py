@@ -6,7 +6,7 @@ import pandas as pd
 import pytest
 
 from quorum.execution import db
-from quorum.strategy.candidates import check_exits, generate_candidates
+from quorum.strategy.candidates import check_exits, fetch_ohlcv, generate_candidates
 from quorum.strategy.schema import load_strategy
 
 pytestmark = pytest.mark.unit
@@ -99,6 +99,51 @@ def test_log_config_writes_signal_rows(tmp_path):
     assert tuple(run_row) == ("shadow", "ok")
     signal_row = conn.execute("SELECT symbol, suppressed FROM signal").fetchone()
     assert tuple(signal_row) == ("A", 0)
+
+
+class TestFetchOhlcvParallel:
+    """fetch_ohlcv fetches symbols concurrently (Feature B3b) — this pins
+    that the concurrent version produces the exact same dict a serial
+    implementation would: same keys, same data, empty-history symbols
+    excluded, regardless of fetch order."""
+
+    def _stub_ticker(self, monkeypatch, histories):
+        class _StubTicker:
+            def __init__(self, symbol):
+                self.symbol = symbol
+
+            def history(self, start, end):
+                return histories.get(self.symbol, pd.DataFrame())
+
+        monkeypatch.setattr("quorum.strategy.candidates.yf.Ticker", _StubTicker)
+
+    def test_matches_expected_dict_for_multiple_symbols(self, monkeypatch):
+        idx = pd.date_range("2026-01-01", periods=3, freq="D")
+        histories = {
+            "A": pd.DataFrame({"Open": [1, 2, 3], "High": [1, 2, 3], "Low": [1, 2, 3],
+                                "Close": [1, 2, 3], "Volume": [10, 20, 30]}, index=idx),
+            "B": pd.DataFrame({"Open": [4, 5, 6], "High": [4, 5, 6], "Low": [4, 5, 6],
+                                "Close": [4, 5, 6], "Volume": [40, 50, 60]}, index=idx),
+        }
+        self._stub_ticker(monkeypatch, histories)
+
+        result = fetch_ohlcv(["A", "B"], "2026-01-01", "2026-01-04")
+
+        assert set(result.keys()) == {"A", "B"}
+        assert list(result["A"]["close"]) == [1, 2, 3]
+        assert list(result["B"]["volume"]) == [40, 50, 60]
+
+    def test_excludes_symbols_with_empty_history(self, monkeypatch):
+        idx = pd.date_range("2026-01-01", periods=1, freq="D")
+        histories = {
+            "A": pd.DataFrame({"Open": [1], "High": [1], "Low": [1], "Close": [1], "Volume": [1]}, index=idx),
+            "B": pd.DataFrame(),  # delisted / no data
+        }
+        self._stub_ticker(monkeypatch, histories)
+
+        result = fetch_ohlcv(["A", "B"], "2026-01-01", "2026-01-02")
+
+        assert set(result.keys()) == {"A"}
 
 
 def _exit_spec(**risk_overrides):
