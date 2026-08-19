@@ -49,16 +49,23 @@ contextBridge.exposeInMainWorld("electronAPI", {
       .finally(() => ipcRenderer.removeListener(channel, listener));
   },
 
-  /** Strategy_id stems available under strategies/*.yaml. */
-  listStrategies: (): Promise<string[]> => ipcRenderer.invoke("quorum:list-strategies"),
+  /** spec_id stems available under strategies/*.yaml (default) or
+   * screens/*.yaml (kind="screen"). */
+  listStrategies: (kind?: "strategy" | "screen"): Promise<string[]> =>
+    ipcRenderer.invoke("quorum:list-strategies", kind),
 
-  /** Raw YAML of an existing strategy file, or null if it doesn't exist. */
-  readStrategyFile: (strategyId: string): Promise<string | null> =>
-    ipcRenderer.invoke("quorum:read-strategy", strategyId),
+  /** Raw YAML of an existing strategy/screen file, or null if it doesn't exist. */
+  readStrategyFile: (specId: string, kind?: "strategy" | "screen"): Promise<string | null> =>
+    ipcRenderer.invoke("quorum:read-strategy", specId, kind),
 
-  /** Create or overwrite strategies/<strategyId>.yaml with raw YAML text. */
-  saveStrategy: (strategyId: string, yamlContent: string): Promise<{ ok: boolean; error?: string }> =>
-    ipcRenderer.invoke("quorum:save-strategy", strategyId, yamlContent),
+  /** Create or overwrite strategies/<specId>.yaml or screens/<specId>.yaml
+   * with raw YAML text. */
+  saveStrategy: (
+    specId: string,
+    yamlContent: string,
+    kind?: "strategy" | "screen"
+  ): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke("quorum:save-strategy", specId, yamlContent, kind),
 
   /** Run a quorum CLI command (e.g. ["backtest", "regime_gate", "--start", "2023-01-01"]).
    * Only ever used for read-only testing tooling from the Research tab —

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useDashboard } from "@/hooks/use-dashboard";
 import Header from "@/components/Header";
 import ScansPanel from "@/components/ScansPanel";
+import ScreenerPanel from "@/components/ScreenerPanel";
 import PortfolioView from "@/components/PortfolioView";
 import PerformanceView from "@/components/PerformanceView";
 import ActivityView from "@/components/ActivityView";
@@ -93,6 +94,7 @@ export default function App() {
                 setView("activity");
               }}
             />
+            <ScreenerPanel />
             <ScansPanel />
           </>
         )}

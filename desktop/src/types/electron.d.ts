@@ -19,9 +19,13 @@ declare global {
         onChunk: (text: string) => void,
         opts?: { resumeSessionId?: string; retryError?: string; model?: string }
       ): Promise<{ text: string; sessionId: string | null }>;
-      listStrategies(): Promise<string[]>;
-      readStrategyFile(strategyId: string): Promise<string | null>;
-      saveStrategy(strategyId: string, yamlContent: string): Promise<{ ok: boolean; error?: string }>;
+      listStrategies(kind?: "strategy" | "screen"): Promise<string[]>;
+      readStrategyFile(specId: string, kind?: "strategy" | "screen"): Promise<string | null>;
+      saveStrategy(
+        specId: string,
+        yamlContent: string,
+        kind?: "strategy" | "screen"
+      ): Promise<{ ok: boolean; error?: string }>;
       runQuorumCommand(
         args: string[],
         onChunk: (text: string) => void

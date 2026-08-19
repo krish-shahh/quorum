@@ -2,7 +2,7 @@ import { app, BrowserWindow, ipcMain } from "electron";
 import * as path from "path";
 import { startFlask, stopFlask, waitForFlask } from "./flask";
 import { askClaude, generateSpecYaml } from "./claude";
-import { listStrategies, readStrategyFile, runQuorumCommand, saveStrategy } from "./quorumCli";
+import { listStrategies, readStrategyFile, runQuorumCommand, saveStrategy, SpecKind } from "./quorumCli";
 import { withQueue } from "./queue";
 
 let mainWindow: BrowserWindow | null = null;
@@ -52,10 +52,12 @@ ipcMain.handle("claude:ask", async (
   );
 });
 
-ipcMain.handle("quorum:list-strategies", async () => listStrategies());
-ipcMain.handle("quorum:read-strategy", async (_event, strategyId: string) => readStrategyFile(strategyId));
-ipcMain.handle("quorum:save-strategy", async (_event, strategyId: string, yamlContent: string) =>
-  saveStrategy(strategyId, yamlContent)
+ipcMain.handle("quorum:list-strategies", async (_event, kind?: SpecKind) => listStrategies(kind));
+ipcMain.handle("quorum:read-strategy", async (_event, specId: string, kind?: SpecKind) =>
+  readStrategyFile(specId, kind)
+);
+ipcMain.handle("quorum:save-strategy", async (_event, specId: string, yamlContent: string, kind?: SpecKind) =>
+  saveStrategy(specId, yamlContent, kind)
 );
 
 ipcMain.handle("claude:generate-spec", async (

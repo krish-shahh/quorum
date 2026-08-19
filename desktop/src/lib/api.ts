@@ -498,11 +498,45 @@ export interface ValidateSpecResult {
  * always resolves (never throws for an invalid spec, only for a bad
  * request); check `.ok`. Used by the generate -> validate -> retry loop
  * (lib/codegen.ts) after every codegen attempt. */
-export async function validateSpec(kind: "strategy", text: string, expectedId?: string): Promise<ValidateSpecResult> {
+export async function validateSpec(kind: "strategy" | "screen", text: string, expectedId?: string): Promise<ValidateSpecResult> {
   const res = await fetch(`${BASE_URL}/api/v1/validate-spec`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ kind, text, expected_id: expectedId }),
+  });
+  if (!res.ok) throw new Error(`API error: ${res.status} ${res.statusText}`);
+  return res.json();
+}
+
+export interface ScreenRow {
+  symbol: string;
+  metrics: Record<string, number | null>;
+  rank_score: number | null;
+  coverage: number;
+}
+
+export interface ScreenRunResult {
+  screen_id: string;
+  as_of: string;
+  universe_size: number;
+  fetched: { ohlcv: boolean; fundamentals: boolean };
+  warnings: string[];
+  rows: ScreenRow[];
+}
+
+/** Filename stems under screens/*.yaml — for the screener panel's picker. */
+export function fetchScreens(): Promise<{ screens: string[] }> {
+  return fetchJson("/api/v1/screens");
+}
+
+/** Run a screen (research only — never trades) and return its ranked
+ * table. Runs in the long-lived Flask process, so a second run of the
+ * same screen reuses the warm fundamentals cache instead of re-fetching. */
+export async function runScreen(screenId: string, asOf?: string): Promise<ScreenRunResult> {
+  const res = await fetch(`${BASE_URL}/api/v1/screen/run`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ screen_id: screenId, as_of: asOf }),
   });
   if (!res.ok) throw new Error(`API error: ${res.status} ${res.statusText}`);
   return res.json();
