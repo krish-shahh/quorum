@@ -293,8 +293,13 @@ def run_cost_stress(
 # ---------------------------------------------------------------------------
 
 def daily_returns(equity_curve: List[Dict[str, Any]]) -> pd.Series:
-    """Day-over-day % return series from a run_bar_loop() equity_curve."""
-    idx = pd.DatetimeIndex([pd.Timestamp(p["ts"]) for p in equity_curve])
+    """Day-over-day % return series from a run_bar_loop() equity_curve.
+
+    `ts` strings come from a tz-aware yfinance index (str(Timestamp)), so a
+    multi-year curve mixes EDT/EST offsets across DST transitions —
+    pd.DatetimeIndex on mixed-offset strings raises without utc=True.
+    """
+    idx = pd.to_datetime([p["ts"] for p in equity_curve], utc=True)
     equity = pd.Series([p["equity"] for p in equity_curve], index=idx)
     return equity.pct_change().dropna()
 

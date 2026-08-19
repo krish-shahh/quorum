@@ -207,6 +207,107 @@ def shadow_sleeve(
 
 
 @app.command()
+def backtest(
+    strategy_id: str = typer.Argument(..., help="Filename stem under strategies/, e.g. 'regime_gate'"),
+    start: str = typer.Option("2018-01-01", "--start", help="Backtest start date (YYYY-MM-DD)"),
+    end: str = typer.Option(None, "--end", help="Backtest end date (default: today)"),
+    cash: float = typer.Option(100_000.0, "--cash", help="Starting cash for the backtest"),
+    no_log: bool = typer.Option(False, "--no-log", help="Don't write this run to the decision log"),
+):
+    """Run a strategy through the full bar-loop engine over historical data,
+    report results, and check it against the Phase 3 acceptance gate.
+
+    Logs to the decision log under run.mode='backtest' by default (every
+    run gets a play-by-play, not just live ones) — pass --no-log to skip.
+    This is a single-strategy run: PBO and walk-forward-efficiency are
+    N/A (no parameter sweep, no walk-forward windows) and show SKIPPED —
+    that's expected here, not a bug.
+    """
+    import empyrical as ep
+
+    from quorum.strategy.candidates import fetch_ohlcv, required_symbols
+    from quorum.strategy.engine import run_bar_loop
+    from quorum.strategy.gate import daily_returns, run_cost_stress, run_gate
+    from quorum.strategy.schema import load_strategy
+
+    strategy_path = Path(__file__).resolve().parent.parent / "strategies" / f"{strategy_id}.yaml"
+    if not strategy_path.exists():
+        console.print(f"[red]No strategy file at strategies/{strategy_id}.yaml[/red]")
+        raise typer.Exit(1)
+
+    end_date = end or datetime.date.today().isoformat()
+    spec = load_strategy(strategy_path)
+    tradeable = spec.universe.resolve()
+    all_symbols = required_symbols(spec)
+
+    console.print(f"[bold]Backtesting {strategy_id}[/bold] ({start} -> {end_date}, {len(tradeable)} symbols)...")
+    ohlcv = fetch_ohlcv(all_symbols, start, end_date)
+    missing = set(all_symbols) - set(ohlcv.keys())
+    if missing:
+        console.print(f"[yellow]No data for: {sorted(missing)} (may not have existed yet, e.g. a recent IPO)[/yellow]")
+    symbols = [s for s in tradeable if s in ohlcv]
+    if not symbols:
+        console.print("[red]No tradeable symbols returned data — aborting.[/red]")
+        raise typer.Exit(1)
+
+    # run_bar_loop requires every symbol's OHLCV to share the exact same
+    # index. A universe with a mixed listing history (e.g. ARM IPO'd
+    # 2023) won't naturally line up against a symbol trading since 2018 —
+    # trim every symbol to the intersection of what's actually available,
+    # and say so, rather than crashing or silently backfilling.
+    common_index = None
+    for df in ohlcv.values():
+        common_index = df.index if common_index is None else common_index.intersection(df.index)
+    ohlcv = {sym: df.loc[common_index] for sym, df in ohlcv.items()}
+    if len(common_index) and str(common_index[0].date()) > start:
+        console.print(
+            f"[yellow]Universe has mixed listing history — trimmed effective start to "
+            f"{common_index[0].date()} (requested {start}) so every symbol shares one index.[/yellow]"
+        )
+
+    log_config = None if no_log else DEFAULT_CONFIG
+    result = run_bar_loop(spec, ohlcv, symbols, starting_cash=cash, log_config=log_config, mode="backtest")
+
+    trades = result["trades"]
+    wins = [t for t in trades if t["pnl"] > 0]
+    win_rate = len(wins) / len(trades) if trades else None
+    returns = daily_returns(result["equity_curve"])
+    sharpe = float(ep.sharpe_ratio(returns)) if len(returns) > 1 else None
+    max_dd = float(ep.max_drawdown(returns)) if len(returns) > 1 else None
+    total_return = (result["final_equity"] - cash) / cash
+
+    table = Table(title=f"{strategy_id} backtest results", box=box.SIMPLE)
+    table.add_column("Metric", style="bold")
+    table.add_column("Value", justify="right")
+    table.add_row("Period", f"{start} -> {end_date}")
+    table.add_row("Symbols", str(len(symbols)))
+    table.add_row("Final equity", f"${result['final_equity']:,.2f}")
+    table.add_row("Total return", f"{total_return:+.2%}")
+    table.add_row("Trades", str(len(trades)))
+    table.add_row("Win rate", f"{win_rate:.1%}" if win_rate is not None else "n/a")
+    table.add_row("Sharpe (daily, ann.)", f"{sharpe:.2f}" if sharpe is not None else "n/a")
+    table.add_row("Max drawdown", f"{max_dd:.2%}" if max_dd is not None else "n/a")
+    console.print(table)
+
+    console.print("[dim]Running cost-stress (1x/3x) + acceptance gate...[/dim]")
+    cost_stress = run_cost_stress(spec, ohlcv, symbols, multipliers=(1.0, 3.0), starting_cash=cash)
+    gate_result = run_gate(result, n_trials=1, cost_stress_results=cost_stress)
+
+    gate_table = Table(title="Acceptance gate", box=box.SIMPLE)
+    gate_table.add_column("Check")
+    gate_table.add_column("Result")
+    gate_table.add_column("Detail")
+    for check in gate_result.checks:
+        mark = "[green]PASS[/green]" if check.passed else "[red]FAIL[/red]"
+        gate_table.add_row(check.name, mark, check.detail)
+    console.print(gate_table)
+    console.print(
+        f"[green]Gate: PASS[/green]" if gate_result.passed else
+        "[red]Gate: FAIL[/red] — see failing checks above before trusting this strategy with paper capital"
+    )
+
+
+@app.command()
 def scan(
     mode: str = typer.Option(
         "advisory", "--mode", "-m",
