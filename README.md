@@ -1,6 +1,6 @@
 # quorum
 
-Autonomous paper trading system powered by Claude Code. A council of specialist AI analysts runs in parallel, debates, and reaches a **quorum** — then executes trades. All through your Claude subscription, with no LLM API keys.
+Autonomous paper trading system powered by Claude Code, scoped to **TMT equities long/short** (technology, media, telecom). Deterministic strategies propose candidates; a **pod** — one portfolio manager and one analyst per strategy, modeled on a real multi-strategy hedge fund's pod structure (Citadel/Millennium/Point72-style) — reviews and sizes them; a decision log records every step from signal to fill. All through your Claude subscription, with no LLM API keys.
 
 The architecture is inspired by [TauricResearch/TradingAgents](https://github.com/TauricResearch/TradingAgents) ([arXiv:2412.20138](https://arxiv.org/abs/2412.20138)), but quorum is a different kind of system: where the original framework orchestrates agents via LLM API calls, quorum is harnessed *entirely* through Claude Code — subagents, skills, hooks, and MCP tools — so the model running it is your Claude subscription, not a metered API.
 
@@ -10,18 +10,47 @@ The architecture is inspired by [TauricResearch/TradingAgents](https://github.co
 
 ## How It Works
 
-![Architecture](architecture.png)
+```
+strategies/*.yaml (git-committed, closed-grammar schema)
+        │
+        ▼
+strategy engine — one streaming bar loop, shared by backtest/paper/shadow.
+Deterministic: features → entry/exit conditions → vol-targeted sizing →
+regime-scaled weight. No LLM in this layer, and fills only ever happen at
+the NEXT bar's open — lookahead is structurally impossible, not just
+runtime-checked.
+        │
+        ▼
+ranked candidates + mechanical exit checks (stop-loss / max-hold / rule-exit)
+        │
+        ▼
+pod (one per strategy)
+  ├── pod-analyst — evidence extraction only: news, SEC filing deltas,
+  │     earnings proximity → structured, cited facts. No score, no
+  │     buy/sell recommendation.
+  └── pod-pm      — approve at proposed weight / reduce / veto. Never
+        invents a trade the strategy didn't propose. Every decision is
+        logged for audit.
+        │
+        ▼
+paper broker, gated by a deterministic pre-trade hook (the central risk
+desk — sits outside every pod, no pod PM can override it)
+        │
+        ▼
+decision log (SQLite): run → signal → target → order → fill, plus a
+shadow sleeve running the same signals equal-weighted with no pod
+involvement, so the pod's added value is measured, not assumed.
+```
 
-<sub>High-level overview. For the full per-component detail (every analyst's tools, the scoring formula, vetoes, debate gates), see the [detailed diagram](architecture-detailed.png).</sub>
+### Why it's built this way
 
-### Key Design Decisions
+An honest external audit of the published multi-agent LLM trading literature (TradingAgents and its successors) found it's close to worthless as evidence — a field-wide review of 12 systems found **none satisfied all five basic evaluation standards** (no lookahead, survivorship-free data, overfitting control, transaction costs, regime coverage), and a two-decade replication of a flagship result **flipped its sign** (+23% → −22%). General multi-agent-debate research shows debate performs at or below a single agent and doesn't scale with more inference. Where LLMs *do* show real, if narrow, value: turning fresh unstructured text into structured evidence. Where they demonstrably don't help: price/chart interpretation, and portfolio weighting — one benchmark found LLM portfolio construction loses to naive equal-weighting in 27/30 tested configurations.
 
-- **Model tiering**: Analysts run on Haiku (fast, cheap). Chairman runs on Opus (deep reasoning). Cuts cost ~75% vs all-Opus.
-- **Sector-aware analysis**: 7 domain-specific analyst skills (tech, financials, healthcare, consumer, cyclical, bonds, commodities) — each with focused metrics and prompt templates.
-- **Delta-aware cycles**: `get_ticker_deltas` checks price movement, news staleness, regime shifts. Unchanged tickers carry forward prior scores.
-- **Deterministic scoring**: `score_council` is code, not LLM reasoning. Quant pre-screen (Altman Z, FCF yield, regime-conditional technicals) anchors LLM scores with auditable math.
-- **Pre-trade hooks**: Risk validation runs as a Claude Code hook — the model literally cannot bypass it.
-- **Live intraday risk**: Circuit breakers (GREEN/YELLOW/ORANGE/RED) with auto kill switch on daily loss > 3% or VIX > 30.
+Every architectural choice above is a direct response to one of those findings:
+- **Strategies are deterministic YAML, not LLM judgment** — Claude writes the strategy, but a closed-grammar Pydantic schema (`extra="forbid"` at every level) means it can't express arbitrary code, and a backtest acceptance gate (Deflated Sharpe Ratio, Probability of Backtest Overfitting via CSCV, walk-forward efficiency, 3x cost-stress) has to pass before any strategy trades paper money.
+- **The pod's LLM role is capped at evidence extraction and veto/size** — never entry timing, never portfolio weighting, never a numeric score.
+- **A shadow sleeve runs in parallel, permanently** — if a pod doesn't beat the same signals equal-weighted over a rolling window, its authority is meant to be cut back to evidence-only. The system doesn't get to assume its own LLM layer is adding value.
+- **A decision log, not one undifferentiated P&L number** — a loss decomposes into bad alpha (signal), bad sizing (target), or bad execution (fill), because those require different fixes and a single number can't tell you which one happened.
 
 ---
 
@@ -35,39 +64,29 @@ quorum health        # verify everything works
 
 Then in Claude Code:
 ```
-/trading-council            # 4 parallel analyst subagents (recommended)
-/trading-day                # full day: immediate cycle + scheduled follow-ups
-/loop /trading-council      # continuous 30-min delta-aware cycles
-/scalp-planner              # aggressive short-term day-trading on today's movers
-/market-monitor             # background regime/position monitoring (use with /loop)
+/pod-cycle           # auto mode: strategy proposes → pod reviews → executes (recommended)
+/trading-planner     # legacy full-council analysis for tickers outside any pod's strategy
+/trading-executor     # mechanically executes the planner's plan
+/market-monitor      # background regime/position monitoring (use with /loop)
 ```
+
+No automation is scheduled by default right now — everything above is invoked manually until a scheduling approach is decided (see `CLAUDE.md`).
 
 ---
 
 ## Claude Code Harness
 
-### Skills (20+)
+### Skills
 
 | Skill | Model | Purpose |
 |-------|-------|---------|
-| `/trading-council` | Opus | Full council: delta check -> 4 parallel analysts -> score -> execute |
-| `/scalp-planner` | Sonnet | Aggressive short-term momentum plan on today's dynamic movers |
-| `/scalp-executor` | Sonnet | Fast mechanical execution of the scalp plan (tight stops) |
-| `/trading-day` | Opus | Schedule a full trading day (CronCreate) |
-| `/market-monitor` | Opus | Background regime/position monitoring (use with /loop) |
-| `/trading-cycle` | Opus | Simpler single-agent mode |
-| `/backtest` | Opus | Run backtests in isolated git worktrees |
-| `analyst-technical` | Haiku | Price action, RSI, MACD, SMA. **Restricted tools** |
-| `analyst-sector-tech` | Haiku | SaaS metrics, R&D, TAM, AI exposure |
-| `analyst-sector-financials` | Haiku | NIM, credit quality, CET1, ROE |
-| `analyst-sector-healthcare` | Haiku | Drug pipeline, FDA catalysts, patent cliffs |
-| `analyst-sector-consumer` | Haiku | Brand moat, pricing power, same-store sales |
-| `analyst-sector-cyclical` | Haiku | Capex cycles, commodity exposure, order backlogs |
-| `analyst-bonds` | Haiku | Yield curve, duration, credit spreads |
-| `analyst-commodities` | Haiku | Supply/demand, contango, geopolitical risk |
-| `analyst-sentiment` | Haiku | StockTwits, Reddit, insider activity |
-| `analyst-news` | Haiku | Real-time web search + regime |
-| `analyst-fundamental` | Haiku | Generic valuation fallback |
+| `/pod-cycle` | session default | Discovers every pod, dispatches pod-analyst/pod-pm, executes approved trades and mechanical exits |
+| `pod-analyst` | Sonnet | Evidence extraction for one candidate — no score, no recommendation |
+| `pod-pm` | Fable 5 | Approve/reduce/veto a strategy-generated candidate; every decision logged |
+| `/trading-planner` | session default | Legacy 12-agent council for tickers outside any pod's strategy |
+| `/trading-executor` | session default | Mechanically executes the planner's plan |
+| `/market-monitor` | session default | Background regime/position monitoring (use with /loop) |
+| `analyst-*` (7 domain, `quorum/council/prompts/`) | Sonnet | Sector-specific analysis for the legacy council path (tech, financials, healthcare, consumer, cyclical, bonds, commodities) |
 
 ### Hooks
 
@@ -79,33 +98,22 @@ Then in Claude Code:
 | `SessionStart` | `session_start.py` | Auto-injects portfolio state + regime |
 | `Stop` | `session_end.py` | Auto-saves portfolio state to memory |
 
-### MCP Tools (38)
+### MCP Tools (55+)
 
-| Category | Count | Tools |
-|----------|-------|-------|
-| Data | 13 | get_stock_data, get_indicators, get_fundamentals, get_financial_statements, get_news, get_global_news, get_reddit_sentiment, get_stocktwits_sentiment, get_insider_transactions, get_insider_clusters, get_market_regime, get_sector_rotation, get_earnings_calendar |
-| Portfolio | 5 | get_portfolio, get_trades, get_watchlist, add_to_watchlist, remove_from_watchlist |
-| Execution | 1 | execute_paper_trade |
-| Safety | 2 | kill_switch, get_rules |
-| Council | 6 | get_autonomous_tickers, get_full_ticker_data, save_analysis_to_wiki, save_trade_report, get_trade_reports, score_council |
-| State & Cache | 4 | get_ticker_state, get_ticker_deltas, get_cache_stats, get_asset_info |
-| Quant & Risk | 3 | get_quant_scores, get_portfolio_risk, get_live_risk |
-| Maintenance | 4 | prune_wiki, get_analytics_summary, search_wiki, get_wiki_page |
+| Category | Tools |
+|----------|-------|
+| Pod shop | `get_pod_candidates`, `get_pod_exits`, `record_pod_decision` |
+| Data | get_stock_data, get_indicators(_bulk), get_fundamentals, get_financial_statements, get_news, get_global_news, get_reddit_sentiment, get_stocktwits_sentiment, get_insider_transactions, get_insider_clusters, get_congress_trades, get_congress_summary, get_market_regime, get_sector_rotation, get_earnings_calendar |
+| Portfolio | get_portfolio, get_trades, get_watchlist, add/remove_from_watchlist |
+| Execution | execute_paper_trade (accepts a pod's `target_weight`; pre-trade hook validates) |
+| Safety | kill_switch, get_rules, get_live_risk |
+| Legacy council | get_autonomous_tickers, get_full_ticker_data, save/get_council_reports, score_council |
+| State & Cache | get_ticker_state, get_ticker_deltas, get_cache_stats, get_asset_info |
+| Quant & Risk | get_quant_scores, get_portfolio_risk |
+| Reflection & Analytics | get_trade_reflections, get_analyst_accuracy, get_analytics_summary |
+| Maintenance | prune_wiki, search_wiki, get_wiki_page |
 
-### Automation
-
-Runs fully unattended via macOS launchd + `claude -p` (subscription, not API):
-
-| Time | Cycle |
-|------|-------|
-| 9:30 AM | Market open: council |
-| 1:30 PM | Midday rebalance |
-| 3:30 PM | Late afternoon |
-| 4:15 PM | EOD report + memory update |
-
-Each cycle is independent — state persists via MCP (SQLite + wiki + memory files). Logs: `~/.quorum/logs/trading-YYYY-MM-DD.log`.
-
-**Run it on demand:** `quorum pipeline` runs the whole flow front-to-back *regardless* of market hours / trading day, then pushes a status notification via [ntfy.sh](https://ntfy.sh) (set `QUORUM_NTFY_TOPIC` in `.env`). Use `quorum pipeline --dry-run` to test the plumbing without trading.
+Full list with descriptions: `CLAUDE.md`.
 
 ---
 
@@ -113,14 +121,17 @@ Each cycle is independent — state persists via MCP (SQLite + wiki + memory fil
 
 ```
 quorum/
-  mcp/             — MCP server (50 tools)
-  council/         — Council skills + 11 analyst prompts (4 universal + 7 domain)
-  dataflows/       — Market data with TTL caching (yfinance, Reddit, StockTwits, regime, arb scanner)
-  execution/       — Paper broker, safety (live risk + circuit breakers), contracts, position sizer, analytics
-  quant/           — Deterministic scoring (14 files): Altman Z, FCF yield, technicals, 9 sector scorers, vetoes
-  backtest/        — Quant score replay: historical IC computation, signal validation
-  api/             — Flask JSON API backend (14 /api/v1 endpoints) that the Electron desktop app reads from
+  mcp/             — MCP server (55+ tools)
+  strategy/        — v2 core: schema (closed-grammar YAML), engine (bar loop), features,
+                      candidates (live entries + exits), shadow sleeve, backtest gate, universe
+  execution/       — decision_log.py (run/signal/target/order/fill), paper broker, safety,
+                      pretrade validation, position sizer, contracts registry
+  council/         — Legacy council prompts (quorum/council/prompts/), read by trading-planner
+  dataflows/       — Market data with TTL caching (yfinance, Reddit, StockTwits, regime, sectors)
+  quant/           — Deterministic scoring feeding the legacy council path
+  api/             — Flask JSON API backend (/api/v1) consumed by the Electron desktop app
   wiki/            — Knowledge base (run pages, digests, ticker summaries)
+strategies/        — Strategy YAML, one file per pod (git-committed)
 ```
 
 ---
@@ -135,45 +146,28 @@ cd desktop && npm install && npm run dev   # launches the desktop app (spawns th
 
 To run just the API backend on its own (e.g. for debugging), use `quorum` with no subcommand.
 
-Views: **Portfolio** (positions, regime, live-risk status GREEN/YELLOW/ORANGE/RED), **Council** (analyst scores, deep dive, reports), **Performance** (Sharpe/Sortino/Calmar, profit factor, equity curve), **Research** (wiki, reports, digest), and **Pipeline** (cycle timeline, ticker deltas, decision DAG).
-
 ---
 
 ## Safety
 
-1. **PreToolUse hook** blocks trades violating: max positions, ticker concentration (25%), cash reserve (20%), blocked tickers, kill switch
-2. **`score_council` vetoes**: fundamental collapse, unanimous bearish, 2-2 split + 12 quant hard vetoes (Altman Z, FCF streak, RSI extreme, penny stock, etc.)
-3. **Live intraday risk** (`get_live_risk`): circuit breakers with tiered response — YELLOW (no new buys), ORANGE (sell-only), RED (auto kill switch). Monitors daily P&L, intraday drawdown, ATR stop distances, VIX spikes.
-4. **Kill switch** halts all trading — persists across restarts until manually reset
-5. **`rules.json`** blocks specific tickers (e.g. employer stock)
-6. **Audit trail** logs every tool call to `~/.quorum/audit/tool_calls.jsonl`
-7. **Spread/slippage model** simulates realistic fills (feature-flagged)
-8. **Futures**: notional exposure tracking, max leverage (3.0x), margin checks, contract expiry warnings
+1. **PreToolUse hook** — the central risk desk, sitting outside every pod — blocks trades violating: max positions, ticker concentration, cash reserve, blocked tickers, kill switch
+2. **`get_pod_exits`** enforces each pod's own stop-loss/max-holding-day/rule-exit on every currently-held position, every cycle
+3. **`score_council` vetoes** (legacy path): fundamental collapse, unanimous bearish, 2-2 split, plus deterministic quant hard vetoes
+4. **Live intraday risk** (`get_live_risk`): circuit breakers with tiered response — YELLOW (no new buys), ORANGE (sell-only), RED (auto kill switch)
+5. **Kill switch** halts all trading — persists across restarts until manually reset
+6. **`rules.json`** blocks specific tickers (e.g. employer stock); crypto is hard-banned
+7. **Audit trail** logs every tool call to `~/.quorum/audit/`
+8. **Backtest acceptance gate** blocks a new strategy from paper trading unless it clears DSR/PBO/WFE/cost-stress thresholds — see `quorum/strategy/gate.py`
 
-> **Live trading**: the default and intended mode is a **simulated paper account**. A Schwab broker integration (`quorum/execution/broker/schwab_client.py`) exists and *can* place real orders if you supply real API credentials and switch execution mode — this path is **unsupported, untested for production, and entirely at your own risk**. Don't point this at real money.
+> **Live trading**: the only supported mode is a **simulated paper account**. There is no live-broker integration in this codebase.
 
 ---
 
-## Quantitative Scoring
+## Decision Log
 
-The quant layer provides deterministic, auditable scores that anchor LLM analysis:
+Every run — backtest, paper, shadow, or live — writes through the same SQLite schema (`run → signal → target → order_intent → fill`, plus `journal` for pod decisions and `closed_trade` for FIFO-matched round-trips). That separation is the point: when a strategy loses money, it decomposes into bad alpha (`signal.score`), bad sizing (`target.target_weight`), or bad execution (`fill.slippage_bps`) instead of one number that can't tell you which.
 
-| Scorer | Assets | Key Metrics |
-|--------|--------|-------------|
-| `fundamental.py` | All equities | Altman Z, FCF yield, PE, PEG, margins, ROE |
-| `tech_sector.py` | Tech stocks | Rule of 40, R&D intensity, gross margin |
-| `financials.py` | Banks | NIM, P/TBV, provision trend, efficiency ratio |
-| `healthcare.py` | Biotech/pharma | R&D growth, cash runway, margin trajectory |
-| `consumer.py` | Consumer/REITs | Pricing power, P/FFO, dividend coverage |
-| `cyclical.py` | Energy/industrial | Capex/revenue, margin cyclicality, D/E |
-| `bond_etf.py` | Bond ETFs | Duration x yield direction x regime x credit tier |
-| `commodity_etf.py` | Commodity ETFs | Trend vs SMA200, DXY impact, commodity type |
-| `futures_score.py` | Futures | Vol percentile, DTE penalty, term structure proxy |
-| `technical.py` | All | RSI, MACD, SMA, Bollinger, volume — regime-conditional thresholds |
-
-**Trade quality metrics**: Profit Factor, Expectancy, SQN (Van Tharp), Sharpe, Sortino, Calmar, VaR, CVaR, alpha/beta.
-
-**Backtesting**: `replay_quant_scores()` replays technical scores over historical dates, computes IC (Information Coefficient) vs actual forward returns.
+`quorum daily-recap` persists a per-day play-by-play (every run that day, in any mode, with its candidates/decisions/fills) — backend for a future dashboard timeline view.
 
 ---
 
@@ -194,7 +188,7 @@ QUORUM_MAX_OPEN_POSITIONS=6
 ## Testing
 
 ```bash
-pytest tests/ -m unit    # 136 tests
+pytest tests/ -m unit
 ```
 
 ---

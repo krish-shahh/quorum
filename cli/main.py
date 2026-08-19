@@ -442,12 +442,6 @@ def reset(
 
 
 _PROFILES = ("default", "moderate", "scalp")
-# Which headless launchd schedule each profile uses.
-_PROFILE_SCHEDULE = {
-    "default":  "com.quorum.daily",
-    "moderate": "com.quorum.daily",
-    "scalp":    "com.quorum.scalp",
-}
 
 
 def _profile_yaml_path() -> Path:
@@ -490,54 +484,22 @@ def _loaded_quorum_jobs() -> list[str]:
     return [ln.split()[-1] for ln in out.splitlines() if "com.quorum." in ln]
 
 
-def _swap_schedule(target_label: str) -> None:
-    """Load the target launchd job, unload any other quorum trading job (mutually exclusive account)."""
-    import shutil
-    import subprocess
-
-    agents_dir = Path.home() / "Library" / "LaunchAgents"
-    repo_root = Path(__file__).resolve().parent.parent
-
-    # Stage the scalp plist from the repo if it isn't installed yet.
-    if target_label == "com.quorum.scalp":
-        dest = agents_dir / "com.quorum.scalp.plist"
-        src = repo_root / "scripts" / "com.quorum.scalp.plist"
-        if src.exists():
-            agents_dir.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(src, dest)
-
-    # Unload the OTHER trading schedule so they don't both trade the account.
-    other = "com.quorum.daily" if target_label == "com.quorum.scalp" else "com.quorum.scalp"
-    other_plist = agents_dir / f"{other}.plist"
-    if other in _loaded_quorum_jobs() and other_plist.exists():
-        subprocess.run(["launchctl", "unload", str(other_plist)], capture_output=True, text=True)
-        console.print(f"[dim]Unloaded {other}[/dim]")
-
-    target_plist = agents_dir / f"{target_label}.plist"
-    if not target_plist.exists():
-        console.print(f"[yellow]{target_label}.plist not found in ~/Library/LaunchAgents — schedule not loaded.[/yellow]")
-        return
-    # Reload to pick up any changes (unload is harmless if not loaded).
-    subprocess.run(["launchctl", "unload", str(target_plist)], capture_output=True, text=True)
-    res = subprocess.run(["launchctl", "load", str(target_plist)], capture_output=True, text=True)
-    if res.returncode == 0:
-        console.print(f"[green]Loaded {target_label}[/green]")
-    else:
-        console.print(f"[yellow]launchctl load {target_label} said: {res.stderr.strip() or 'see logs'}[/yellow]")
-
-
 @app.command()
 def mode(
     name: str = typer.Argument(None, help=f"Profile to switch to: {', '.join(_PROFILES)}. Omit to show current."),
-    schedule: bool = typer.Option(True, "--schedule/--no-schedule", help="Also swap the headless launchd schedule."),
 ):
-    """Switch trading risk profile (default | moderate | scalp), incl. tomorrow's autonomous schedule.
+    """Switch trading risk profile (default | moderate | scalp).
+
+    No headless schedule is swapped by this command — all launchd jobs
+    (com.quorum.daily, com.quorum.scalp) were removed while a different
+    scheduling approach is worked out; see CLAUDE.md. This only flips
+    which sizing/stop/cash-reserve knobs (PROFILES in
+    quorum/default_config.py) are active.
 
     Examples:
       quorum mode            # show current
-      quorum mode scalp      # aggressive day-trading + load 30-min scalp schedule
-      quorum mode default    # conservative council + load 6-cycle daily schedule
-      quorum mode moderate --no-schedule   # just flip the profile, leave launchd alone
+      quorum mode scalp      # switch to the scalp profile's knobs
+      quorum mode default    # switch back to the conservative profile
     """
     if name is None:
         file_profile = _read_profile()
@@ -559,15 +521,13 @@ def mode(
     _write_profile(name)
     console.print(f"[green]Profile set to '{name}'[/green] in {_profile_yaml_path()}")
 
-    if schedule:
-        _swap_schedule(_PROFILE_SCHEDULE[name])
-    else:
-        console.print("[dim]--no-schedule: launchd jobs untouched.[/dim]")
-
     if name == "scalp":
-        console.print("[dim]Scalp: tight stops, micro-trades, dynamic mover universe. Use /scalp-planner + /scalp-executor interactively.[/dim]")
-    else:
-        console.print("[dim]Restart any open Claude Code session so the MCP server reloads the profile.[/dim]")
+        console.print(
+            "[yellow]Note: scalp has no dedicated skill or schedule right now "
+            "(scalp-planner/scalp-executor were retired) — trade it via /pod-cycle "
+            "or /trading-planner once a scalp strategy exists.[/yellow]"
+        )
+    console.print("[dim]Restart any open Claude Code session so the MCP server reloads the profile.[/dim]")
 
 
 if __name__ == "__main__":

@@ -2,45 +2,37 @@
 
 ## What This Is
 
-**quorum** — an autonomous paper trading system that runs entirely through Claude Code via MCP tools. A council of analyst subagents debates and reaches a quorum, then trades. No LLM API keys needed — Claude (your subscription) is the analyst.
+**quorum** — an autonomous paper trading system, scoped to **TMT equities long/short** (technology, media, telecom), that runs entirely through Claude Code via MCP tools. Deterministic strategies (git-committed YAML) propose candidates; a **pod** — one PM + one analyst per strategy, modeled on a real multi-strategy hedge fund's pod structure — reviews and sizes them; a firm-wide **decision log** (SQLite) records every step from signal to fill so performance can actually be attributed. No LLM API keys needed — Claude (your subscription) is the analyst and the PM.
 
-> Naming note: this project was renamed from `tradingagents` to **quorum** end-to-end — the Python package, the `quorum` CLI command, the MCP server namespace (`mcp__quorum__*`), the `~/.quorum/` data dir, and the `QUORUM_*` env vars. The academic credit to the original [TradingAgents](https://github.com/TauricResearch/TradingAgents) paper (arXiv:2412.20138) that inspired the architecture is intentionally retained in the README, skill prompts, and source comments — quorum is a Claude-Code-harnessed reimagining, not that LLM-API framework.
+> Naming note: this project was renamed from `tradingagents` to **quorum** end-to-end — the Python package, the `quorum` CLI command, the MCP server namespace (`mcp__quorum__*`), the `~/.quorum/` data dir, and the `QUORUM_*` env vars. The academic credit to the original [TradingAgents](https://github.com/TauricResearch/TradingAgents) paper (arXiv:2412.20138) that inspired the architecture is intentionally retained in the README and source comments — quorum is a Claude-Code-harnessed reimagining, not that LLM-API framework.
 
 > ⚠️ Disclaimer: quorum is a personal, educational project that trades a simulated paper account only. It is not financial advice and carries no warranty. Use at your own risk.
 
 ## How to Trade
 
 ```
-/trading-planner    — Planner: full council analysis → writes plan file (recommended)
-/trading-executor   — Executor: mechanically executes active plan (no analysis)
-/trading-council    — Legacy monolithic council (use planner+executor instead)
-/scalp-planner      — SCALP mode: fast momentum plan from today's dynamic movers (aggressive, short-term)
-/scalp-executor     — SCALP mode: fast mechanical execution (tight stops, quick exits)
-/trading-cycle      — simpler single-agent mode
-/trading-day        — full day: immediate cycle + scheduled follow-ups
+/pod-cycle          — Auto mode (recommended): every pod's strategy proposes candidates,
+                       pod-analyst extracts evidence, pod-pm decides, approved trades execute.
+/trading-planner    — Full council analysis (broader watchlist, no strategy YAML required) → plan file
+/trading-executor   — Mechanically executes the active plan from /trading-planner
 /market-monitor     — background regime/position monitoring (use with /loop)
 ```
 
-Flow: `/trading-planner` → plan file → `/trading-executor` → trades
-Or just say: "Run my autonomous trading cycle"
+**`/pod-cycle`** is the primary path for any strategy with a committed `strategies/*.yaml` — currently just `regime_gate`. It decides and executes in one pass; there's no separate plan file to write or replay.
+
+**`/trading-planner` + `/trading-executor`** remain the fallback for tickers or theses outside what a committed strategy covers — broader watchlist, full 12-agent debate, still useful until more of the plan's four target strategies (`strategies/`) exist.
+
+Or just say: "Run my autonomous trading cycle."
+
+**No automation is currently scheduled.** The old launchd jobs (`com.quorum.daily`, `com.quorum.scalp`) were removed while a new scheduling approach is decided — see [Scheduling](#scheduling) below. Everything above is manual-invoke only for now.
 
 ### Risk profiles: default · moderate · scalp
 
-Three risk profiles share the paper account. Switch with **`quorum mode <name>`**
-(flips the profile AND swaps the headless launchd schedule), or by hand via the
-master toggle `~/.quorum/profile.yaml` / `QUORUM_PROFILE` env var (env wins).
-Defined in one place: `PROFILES` in `quorum/default_config.py` — flipping it
-changes sizing, stops, cash reserve, min-hold, and gates everywhere at once.
+Three risk profiles share the paper account, switched with **`quorum mode <name>`** (flips the profile; `--no-schedule` since there's no schedule to swap right now) or by hand via `~/.quorum/profile.yaml` / `QUORUM_PROFILE` env var (env wins). Defined in one place: `PROFILES` in `quorum/default_config.py`.
 
-- **`default`** — conservative swing council (7-day min-hold, earnings avoidance, 20% cash, 12-agent debate). `/trading-planner` + `/trading-executor`.
-- **`moderate`** — same full council, higher appetite (1-day min-hold, ~8% positions, 1.5× ATR stops, ~10% cash). `/trading-planner` + `/trading-executor`.
-- **`scalp`** — aggressive day-trading (no min-hold, trades earnings, 5% cash, ~12% positions, tight 1.25× ATR stops, dynamic universe of today's movers, 30-min schedule). `/scalp-planner` + `/scalp-executor`.
-
-```
-quorum mode scalp      # aggressive + 30-min autonomous schedule
-quorum mode default    # conservative council + 6-cycle schedule
-quorum mode            # show what's active
-```
+- **`default`** — conservative (7-day min-hold, earnings avoidance, 20% cash).
+- **`moderate`** — same council, higher appetite (1-day min-hold, ~8% positions, 1.5× ATR stops, ~10% cash).
+- **`scalp`** — aggressive day-trading knobs (no min-hold, trades earnings, 5% cash, tight 1.25× ATR stops). Its dedicated skill pair and 30-min launchd schedule have been **retired** — the profile itself still exists in `PROFILES` for whenever a scalp pod (its own `strategies/*.yaml` + `pod-cycle` cadence) gets built.
 
 **Full switching guide: [docs/MODES.md](docs/MODES.md).** Crypto is hard-banned in all profiles via `~/.quorum/rules.json`.
 
@@ -59,7 +51,7 @@ This ensures every trading session starts with current context, even if native m
 
 ## Account Constraints
 
-$5,000 paper account. Full rules in the trading-planner skill (Portfolio Rules section). Pre-trade hook enforces: 50% sector cap, 25% single-ticker cap, cash reserve (regime-conditional), blocked tickers, kill switch, plan matching. No artificial limits on position count, holding period, or averaging down — risk is managed via concentration, exposure, and sizing. Use Underweight (not Sell) for partial trims. This account should diversify beyond tech (e.g. to complement a large-cap-growth-heavy retirement portfolio).
+$5,000 paper account, TMT equities long/short only (no crypto, bonds, commodities, or futures — see `quorum/strategy/universe.py`'s `TMT_UNIVERSE`). Pre-trade hook (`quorum/execution/pretrade.py`) enforces: sector cap, single-ticker cap, cash reserve (regime-conditional), blocked tickers, kill switch. No artificial limits on position count, holding period, or averaging down — risk is managed via concentration, exposure, and sizing. A pod's own strategy YAML additionally declares `risk.max_single_ticker_pct`/`max_positions`/`stop_loss_atr_mult`/`max_holding_days`, enforced by the strategy engine and, live, by `get_pod_exits`.
 
 ## End-of-Day Report
 
@@ -71,88 +63,88 @@ After the final trading cycle each day (or when asked for a summary), produce:
 4. **Regime assessment** — current regime + any shifts during the day
 5. **Tomorrow's watchlist** — tickers approaching buy/sell thresholds, upcoming catalysts
 6. **Memory update** — update native memory files with end-of-day state
+7. **Decision-log recap** — run `quorum daily-recap` to persist the day's play-by-play (every run, any mode, with candidates/decisions/fills) for the dashboard backend, and `quorum fill-forward-returns` to keep the attribution pipeline current.
 
 ## Scheduling
 
-### Headless Mode (default) — Planner/Executor
-
-The system runs fully unattended via macOS launchd + `claude -p` (uses subscription, not API).
-Planner produces a plan file, Executor mechanically executes it. Plans live at `~/.quorum/plans/`.
+No launchd job is currently deployed — both `com.quorum.daily` and `com.quorum.scalp` were removed pending a different scheduling approach. `scripts/start-trading-day.sh` still reflects the intended cadence if/when scheduling is reinstated:
 
 ```
-09:30  Planner — morning plan (full council on all tickers)
-10:00  Executor — execute morning plan
-12:00  Planner (conditional) — replan only if regime/risk shifted
-13:30  Executor — execute latest active plan
-15:30  Executor — execute latest active plan
-16:15  Executor — final cycle + EOD report
+09:30  pod-cycle (full)   — exits, then entries: the day's one planning pass
+10:00  pod-cycle (exits)  — mechanical stop/exit reconciliation only
+12:00  pod-cycle (exits)  — mechanical stop/exit reconciliation only
+13:30  pod-cycle (exits)  — mechanical stop/exit reconciliation only
+15:30  pod-cycle (exits)  — mechanical stop/exit reconciliation only
+16:15  pod-cycle (exits) + EOD report + daily-recap + fill-forward-returns
 ```
 
-That's **6 cycles per trading day** (down from 15). The Planner runs the full council analysis and writes a structured plan with YAML frontmatter. The Executor reads the active plan and executes mechanically — it cannot improvise trades. If 3+ Executor steps skip (price drifted), it triggers a replan.
+Only one full entry-evaluation pass a day, by design — daily-bar entry signals can't change intraday, and the whole redesign exists partly to fix a churn problem (685 invocations/280 fills under the old 15-cycle schedule). Intraday cycles exist only to catch stop-loss/max-holding-day/rule-exit conditions, which do need to run repeatedly.
 
-Each cycle is an independent `claude -p` invocation. State persists via MCP (SQLite + wiki + plan files + memory files). Logs go to `~/.quorum/logs/trading-YYYY-MM-DD.log`.
-
-Pre-trade hook enforces plan adherence: `execute_paper_trade` is blocked if the trade doesn't match a step in `~/.quorum/plans/active.md`.
-
-Manage: `launchctl list | grep quorum` / `launchctl unload ~/Library/LaunchAgents/com.quorum.daily.plist`
+State persists via MCP (SQLite decision log). Logs would go to `~/.quorum/logs/trading-YYYY-MM-DD.log`.
 
 ### Interactive Mode
 
-For manual sessions, use `/trading-planner` then `/trading-executor`, or `/trading-day` for the legacy schedule.
+For manual sessions: `/pod-cycle` for strategy-covered tickers, or `/trading-planner` then `/trading-executor` for everything else.
 
 ## Architecture
 
 ```
-You (Chairman, Opus)
-  LAYER 1 — ANALYSTS (parallel, Sonnet, with MCP tools)
-  ├── Technical Analyst (Sonnet)   → MCP: get_stock_data, get_indicators_bulk
-  ├── Domain Analyst (Sonnet)      → Sector-specific (see below)
-  ├── Sentiment Analyst (Sonnet)   → MCP: get_reddit/stocktwits, get_insider_*, get_congress_trades
-  └── News/Macro Analyst (Sonnet)  → WebSearch + get_market_regime
-  
-  Domain analyst prompt is selected via get_asset_info(ticker), reading
-  quorum/council/prompts/<name>.md directly (no named skill invocation):
-    stock/tech       → sector_tech.md (R&D, margins, AI exposure)
-    stock/financials → sector_financials.md (NIM, credit, ROE)
-    stock/healthcare → sector_healthcare.md (pipeline, patents)
-    stock/consumer   → sector_consumer.md (brand, pricing power)
-    stock/cyclical   → sector_cyclical.md (capex, commodity exposure)
-    etf_bond         → bonds.md (yield curve, duration, credit spreads)
-    etf_commodity    → commodities.md (supply/demand, DXY, geopolitics)
-    unknown sector   → fundamental.md (generic valuation)
-  
-  All 4 run in PARALLEL → return structured reports with 1-5 scores
-  
-  peer review → score_council (deterministic) → DEBATE GATE
-  
-  LAYER 2 — DEBATE (conditional: score 2.8-4.2, analyst disagreement, new positions)
-  ├── Bull Researcher (Sonnet)    ─┐ PARALLEL: argue FOR/AGAINST using analyst reports
-  ├── Bear Researcher (Sonnet)    ─┘
-  ├── Research Manager (Sonnet)    → Judges debate, picks winner, produces plan
-  └── Trader Agent (Sonnet)        → Entry price, stop loss, position sizing
-  
-  LAYER 3 — RISK DEBATE (conditional: same trigger as Layer 2)
-  ├── Aggressive Analyst (Sonnet) ─┐
-  ├── Conservative Analyst (Sonnet) ├ PARALLEL: debate the trader's proposal
-  ├── Neutral Analyst (Sonnet)    ─┘
-  └── Portfolio Manager (Sonnet)   → Final decision (can override score_council)
-  
-  Layers 2-3 skip when consensus is clear (score <2.5 or >4.2, analysts agree)
-  
-  Self-reflection: get_trade_reflections → past outcome lessons injected into PM
-  Delta detection: get_ticker_deltas → skip unchanged tickers → 30-min loop
+strategies/*.yaml (git-committed, closed-grammar Pydantic schema)
+  │
+  ▼
+STRATEGY ENGINE (quorum/strategy/) — one streaming bar loop, shared by
+backtest / paper / shadow. Deterministic: features → entry/exit conditions
+→ vol-targeted sizing → regime-scaled weight. No LLM in this layer.
+  │
+  ▼
+get_pod_candidates (ranked entries) + get_pod_exits (mechanical exits)
+  │
+  ▼
+POD (one per strategy — Citadel/Millennium/Point72-style pod shop)
+  ├── pod-analyst (Sonnet) — evidence extraction ONLY: news/filing-delta/
+  │     earnings-proximity → structured, cited facts. No score, no
+  │     buy/sell recommendation (the published multi-agent trading
+  │     literature doesn't support LLM judgment on price/indicators).
+  └── pod-pm (Fable 5)     — approve at proposed weight / reduce / veto.
+        Never invents a trade the strategy didn't propose, never sizes
+        above the proposed weight. Every decision -> record_pod_decision
+        (journal table) for audit.
+  │
+  ▼
+execute_paper_trade (target_weight passed through from the strategy's own
+sizing — NOT re-derived from the account profile's legacy ATR/flat-pct
+sizer) → pre-trade hook (central risk desk, outside any pod) → fill
+  │
+  ▼
+DECISION LOG (SQLite: run/signal/target/order_intent/fill/journal/
+closed_trade/portfolio_snapshot/daily_recap) — same schema whether the
+run is backtest/paper/shadow/live, so a loss decomposes into bad alpha,
+bad sizing, or bad execution instead of one undifferentiated number.
+
+SHADOW SLEEVE (quorum/strategy/shadow.py) runs the same signals
+equal-weighted, no pod, in parallel — the answer to PortBench's finding
+that LLM portfolio construction loses to equal-weight in 27/30 tested
+configurations. If a pod doesn't beat its shadow sleeve over a rolling
+6 months, pod-pm's authority is meant to be cut to evidence-only.
+
+BACKTEST GATE (quorum/strategy/gate.py) — DSR, PBO (CSCV), walk-forward
+efficiency, cost-stress at 3x baseline slippage. Pure statistics, no LLM,
+required before a new strategy YAML is trusted with paper capital.
 ```
+
+**Legacy path** (`/trading-planner` + `/trading-executor`, for tickers outside any pod's strategy): a 12-agent council — 4 analysts in parallel (technical, domain-specific, sentiment, news/macro; domain prompt selected via `get_asset_info` from `quorum/council/prompts/`) → `score_council` (deterministic) → conditional bull/bear debate + research manager + trader → conditional risk debate + portfolio manager. Full detail: read `.claude/skills/trading-planner/SKILL.md` directly rather than duplicating it here — it's the source of truth for that flow, and restating it here is exactly the kind of drift that made an earlier duplicate (`quorum/council/skills/`) go stale and get deleted.
 
 ```
 quorum/
-  mcp/             — MCP server (49 tools: data, portfolio, execution, wiki, safety, state, asset info, reflections, congress)
-  council/         — Council skills + 19 analyst/debate prompts (4 universal + 7 domain + 8 debate) + compact_summary.py
+  mcp/             — MCP server (55+ tools: data, portfolio, execution, wiki, safety, state, pod shop, decision log)
+  strategy/        — v2 core: schema (closed-grammar YAML), engine (bar loop), features, candidates, shadow, gate, universe
+  execution/       — decision_log.py (run/signal/target/order/fill), paper broker, safety, pretrade, position sizer, contracts registry
+  council/         — Legacy council prompts (quorum/council/prompts/, read by trading-planner)
   wiki/            — Knowledge base (run pages, digests, ticker pages, regimes)
   dataflows/       — Market data with TTL caching (yfinance, Reddit, StockTwits, regime, sectors, congressional trades)
-  execution/       — Paper broker (with spread model + futures multiplier), safety (notional exposure + VaR + live intraday risk), contracts registry, ATR/Kelly position sizer
-  quant/           — Deterministic scoring layer (14 files): Altman Z, FCF yield, regime-conditional technicals, 9 sector-specific scorers, 12 hard vetoes
-  backtest/        — Quant score replay engine: historical IC computation, signal validation
-  api/             — Flask JSON API backend (14 /api/v1 endpoints) consumed by the Electron desktop app (desktop/); visualization lives in the desktop app, not here
+  quant/           — Deterministic scoring layer feeding the legacy council path (score_council)
+  api/             — Flask JSON API backend (/api/v1 endpoints, incl. daily-recap) consumed by the Electron desktop app (desktop/)
+strategies/        — Strategy YAML, one file per pod (git-committed)
 ```
 
 ## Key Files
@@ -163,35 +155,37 @@ quorum/
 | `.claude/settings.json` | Hooks, permissions, env vars (NOT MCP — that's in .mcp.json) |
 | `.claude/hooks/pre_trade_validate.py` | Pre-trade risk validation (deterministic, blocking) |
 | `.claude/hooks/post_tool_audit.py` | Audit trail for all MCP tool calls + subagent stops |
-| `.claude/skills/trading-planner/` | Planner skill — council analysis → plan file (no execution tools) |
-| `.claude/skills/trading-executor/` | Executor skill — reads plan, executes mechanically (no analysis tools) |
-| `.claude/skills/trading-council/` | Legacy monolithic council (superseded by planner+executor) |
-| `.claude/skills/trading-day/` | Full-day scheduling skill |
+| `.claude/skills/pod-cycle/` | Auto-mode coordinator — discovers pods, dispatches pod-analyst/pod-pm, executes |
+| `.claude/skills/pod-analyst/` | Pod analyst — evidence extraction only, no score |
+| `.claude/skills/pod-pm/` | Pod PM — approve/reduce/veto on a strategy-generated candidate |
+| `.claude/skills/trading-planner/` | Legacy full-council planner (no strategy YAML required) → plan file |
+| `.claude/skills/trading-executor/` | Legacy executor — reads plan, executes mechanically |
 | `.claude/skills/market-monitor/` | Background monitoring skill for /loop |
-| `quorum/council/prompts/` | Analyst/debate prompt text (4 universal + 7 domain analysts, bull/bear/research-manager/trader, 3 risk + PM) — read directly by trading-planner/trading-council, which spawn generic Agent subagents with this content rather than invoking named skills |
-| `quorum/execution/plan.py` | Plan file read/write/validate/metrics for Planner/Executor architecture |
+| `strategies/*.yaml` | One strategy (pod) per file — universe/features/signal/sizing/risk/execution, `extra="forbid"` Pydantic schema |
+| `quorum/strategy/engine.py` | The bar loop: same code path for backtest/paper/shadow, fills at next bar's open |
+| `quorum/strategy/candidates.py` | Live entry-candidate + exit-check generation (`generate_candidates`, `check_exits`) — the auto-mode coordination artifact |
+| `quorum/strategy/gate.py` | Backtest acceptance gate: DSR, PBO, WFE, cost stress |
+| `quorum/execution/decision_log.py` | run/signal/target/order/fill insertion + daily-recap build/save |
+| `quorum/execution/position_sizer.py` | Legacy account-profile sizer; `target_weight` param lets a pod's own sizing bypass it |
 | `quorum/execution/reflection.py` | Self-reflection engine: generates lessons from past trade outcomes |
-| `quorum/execution/contracts.py` | Futures contract spec registry (22 contracts: multiplier, margin, expiry) |
-| `~/.quorum/tickers.txt` | Your watchlist (one ticker per line) |
+| `~/.quorum/tickers.txt` | Legacy-path watchlist (one ticker per line) |
 | `~/.quorum/rules.json` | Trading restrictions (blocked tickers, max trade value) |
-| `~/.quorum/quorum.db` | SQLite: positions, trades, wiki, reports, ticker_state |
-| `~/.quorum/congress_trades.json` | Congressional trade cache (House clerk PTR filings, auto-synced daily) |
-| `~/.quorum/plans/` | Trading plan files (YAML frontmatter + markdown thesis) |
-| `~/.quorum/plans/active.md` | Symlink to latest approved plan (Executor reads this) |
-| `~/.quorum/wiki/` | Analysis pages, digests, ticker summaries |
-| `scripts/start-trading-day.sh` | Auto-start script (called by launchd at 9:30 AM) |
+| `~/.quorum/quorum.db` | SQLite: decision log, positions, trades, wiki, reports |
+| `scripts/start-trading-day.sh` | Scheduled-cycle script (not currently deployed — see Scheduling) |
 
-## MCP Tools (49)
+## MCP Tools
+
+Pod shop (Phase 4): `get_pod_candidates`, `get_pod_exits`, `record_pod_decision`
 
 Data: get_stock_data, get_indicators, get_indicators_bulk, get_fundamentals, get_financial_statements, get_news, get_global_news, get_reddit_sentiment, get_stocktwits_sentiment, get_insider_transactions, get_insider_clusters, get_congress_trades, get_congress_summary, get_market_regime, get_sector_rotation, get_earnings_calendar
 
 Portfolio: get_portfolio, get_trades, get_watchlist, add_to_watchlist, remove_from_watchlist
 
-Execution: execute_paper_trade (pre-trade hook validates risk rules)
+Execution: execute_paper_trade (pre-trade hook validates risk rules; accepts `target_weight` for pod-originated trades)
 
 Safety: kill_switch, get_rules
 
-Council: get_autonomous_tickers, get_full_ticker_data, save_analysis_to_wiki, save_trade_report, get_trade_reports, score_council
+Legacy council: get_autonomous_tickers, get_full_ticker_data, save_analysis_to_wiki, save_trade_report, get_trade_reports, score_council
 
 State & Cache: get_ticker_state, get_ticker_deltas, get_cache_stats, get_asset_info
 
@@ -201,22 +195,23 @@ Reflection: get_trade_reflections (past outcome lessons for PM prompt injection)
 
 Calendar: get_trading_calendar (current datetime, day of week, market open status, next trading day)
 
-Analytics: get_analyst_accuracy (per-analyst IC and directional accuracy — shows which analysts are predictive)
+Analytics: get_analyst_accuracy (legacy council's per-analyst IC — not applicable to pod-analyst, which produces no score)
 
-Transparency: save_council_reports (persist individual analyst reports from each council cycle), get_council_reports (retrieve past analyst reasoning for a ticker)
+Transparency: save_council_reports, get_council_reports (legacy council path)
 
 Maintenance: prune_wiki, get_analytics_summary, search_wiki, get_wiki_page
 
 ## Safety
 
 - Pre-trade hook enforces: concentration limits, cash reserve, blocked tickers, kill switch
-- `score_council` tool has hard veto conditions (domain score collapse, unanimous bearish, 2-2 split) — auto-detects asset type for context-aware veto messages
+- `score_council` (legacy path) has hard veto conditions (domain score collapse, unanimous bearish, 2-2 split)
+- `pod-pm`'s veto is a separate, independent check on the auto-mode path — logged via `record_pod_decision`, not a hard gate, but every override is auditable
 - `kill_switch` tool halts all trading immediately
 - `get_live_risk` tool: intraday circuit breakers (GREEN/YELLOW/ORANGE/RED) — daily P&L limits, ATR stop distances, VIX spike detection. RED auto-triggers kill switch.
+- `get_pod_exits` enforces stop-loss/max-holding-day/rule-exit on every currently-held pod position, every cycle — the direct fix for the account's original failure mode (winners cut, losers held for 10-22 days)
 - `rules.json` lets you block specific tickers (e.g. your employer's stock)
 - Audit trail logs every MCP tool call to `~/.quorum/audit/`
-- Spread/slippage model simulates realistic fill prices (feature-flagged)
-- Futures: notional exposure tracking, max leverage limit (default 3.0x), margin requirement checks, contract expiry warnings
+- Backtest acceptance gate (`quorum/strategy/gate.py`) blocks a new strategy from paper trading unless it clears DSR/PBO/WFE/cost-stress thresholds
 
 ## Testing
 
@@ -227,15 +222,18 @@ pytest tests/ -m unit
 ## CLI
 
 ```bash
-quorum                  # start the JSON API backend (the Electron desktop app connects to this)
-quorum mode scalp       # switch risk profile (default|moderate|scalp) + swap headless schedule
-quorum pipeline         # run the FULL pipeline end-to-end (ungated, even off-hours) + ntfy status
-quorum pipeline --dry-run  # test the plumbing + send a test notification (no trading)
-quorum health           # run 13-point system health check
-quorum reset -b 5000    # reset paper account to $5,000
-quorum regime           # market regime
-quorum wiki search X    # search wiki
-quorum mcp-server       # start MCP server manually
+quorum                        # start the JSON API backend (the Electron desktop app connects to this)
+quorum mode scalp             # switch risk profile (default|moderate|scalp)
+quorum daily-recap            # save today's decision-log play-by-play (backend for a future dashboard timeline view)
+quorum fill-forward-returns   # batch-fill forward returns on signal_scores rows old enough to score
+quorum shadow-sleeve <id>     # run a strategy's equal-weight benchmark sleeve on demand
+quorum pipeline                # run the FULL legacy pipeline end-to-end (ungated, even off-hours) + ntfy status
+quorum pipeline --dry-run      # test the plumbing + send a test notification (no trading)
+quorum health                  # run system health check
+quorum reset -b 5000           # reset paper account to $5,000
+quorum regime                  # market regime
+quorum wiki search X           # search wiki
+quorum mcp-server              # start MCP server manually
 quorum reset-kill-switch
 quorum db-status
 ```

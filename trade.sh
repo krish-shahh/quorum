@@ -16,14 +16,21 @@ case "${1:-start}" in
       echo "Global skills hidden."
     fi
 
-    # Copy trading skills to global so they show up
+    # Copy trading skills to global so they show up (each lives at
+    # .claude/skills/<name>/SKILL.md)
     mkdir -p "$GLOBAL_SKILLS"
-    cp "$(dirname "$0")/.claude/skills/"*.md "$GLOBAL_SKILLS/" 2>/dev/null
+    for skill in pod-cycle pod-analyst pod-pm trading-planner trading-executor; do
+      src="$(dirname "$0")/.claude/skills/$skill/SKILL.md"
+      if [ -f "$src" ]; then
+        mkdir -p "$GLOBAL_SKILLS/$skill"
+        cp "$src" "$GLOBAL_SKILLS/$skill/SKILL.md"
+      fi
+    done
 
     echo "Trading mode ON. Only trading skills visible."
     echo ""
-    echo "  /trading-council  — 4 parallel analyst subagents"
-    echo "  /trading-cycle    — simpler single-agent mode"
+    echo "  /pod-cycle        — auto mode: strategy proposes, pod reviews, executes"
+    echo "  /trading-planner  — legacy full-council analysis"
     echo ""
     echo "Run ./trade.sh stop when done to restore your global skills."
     echo ""
@@ -34,7 +41,9 @@ case "${1:-start}" in
 
   stop)
     # Remove trading-only skills
-    rm -f "$GLOBAL_SKILLS/trading-council.md" "$GLOBAL_SKILLS/trading-cycle.md"
+    for skill in pod-cycle pod-analyst pod-pm trading-planner trading-executor; do
+      rm -rf "$GLOBAL_SKILLS/$skill"
+    done
     rmdir "$GLOBAL_SKILLS" 2>/dev/null
 
     # Restore global skills

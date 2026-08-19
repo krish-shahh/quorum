@@ -124,13 +124,15 @@ CODE_EOF
     echo "  Created Claude Code settings."
 fi
 
-# 5. Copy skill files to global skills
+# 5. Copy skill files to global skills (each skill lives at
+#    .claude/skills/<name>/SKILL.md, not a flat <name>.md file)
 SKILLS_DIR="$HOME/.claude/skills"
 mkdir -p "$SKILLS_DIR"
-for skill in trading-council trading-cycle; do
-    if [ -f "$SCRIPT_DIR/.claude/skills/$skill.md" ]; then
-        cp "$SCRIPT_DIR/.claude/skills/$skill.md" "$SKILLS_DIR/$skill.md"
-        echo "  Skill installed: $SKILLS_DIR/$skill.md"
+for skill in pod-cycle pod-analyst pod-pm trading-planner trading-executor; do
+    if [ -f "$SCRIPT_DIR/.claude/skills/$skill/SKILL.md" ]; then
+        mkdir -p "$SKILLS_DIR/$skill"
+        cp "$SCRIPT_DIR/.claude/skills/$skill/SKILL.md" "$SKILLS_DIR/$skill/SKILL.md"
+        echo "  Skill installed: $SKILLS_DIR/$skill/SKILL.md"
     fi
 done
 
@@ -138,8 +140,8 @@ echo ""
 echo "Setup complete!"
 echo ""
 echo "Usage:"
-echo "  /trading-council   — 4 parallel analyst subagents (recommended)"
-echo "  /trading-cycle     — simpler single-agent mode"
+echo "  /pod-cycle          — auto mode: strategy proposes, pod reviews, executes (recommended)"
+echo "  /trading-planner    — legacy full-council analysis for tickers outside any pod's strategy"
 echo "  quorum      — open dashboard (separate terminal)"
 echo ""
 echo "Tickers file: $TICKERS_FILE"

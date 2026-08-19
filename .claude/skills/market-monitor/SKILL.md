@@ -16,7 +16,7 @@ Lightweight background check for regime changes and unusual price moves. Designe
 
 ## Actions
 
-- **Regime change detected**: Update `memory/market_regime.md`. Send PushNotification. Suggest running `/trading-council`.
+- **Regime change detected**: Update `memory/market_regime.md`. Send PushNotification. Suggest running `/pod-cycle`.
 - **Large position move (>3%)**: Send PushNotification with ticker and move. Suggest review.
 - **Kill switch tripped**: Send PushNotification immediately.
 - **Nothing notable**: Update `memory/portfolio_state.md` silently with current values.
@@ -27,7 +27,7 @@ Keep output minimal. One line if nothing happened:
 > Monitor 2:15 PM: All quiet. Regime: risk_on (VIX 15.2). Largest move: NVDA +1.2%.
 
 Multi-line if something notable:
-> ALERT: Regime changed risk_on -> volatile (VIX spiked to 22.1). Consider running /trading-council.
+> ALERT: Regime changed risk_on -> volatile (VIX spiked to 22.1). Consider running /pod-cycle.
 > ALERT: XOM down -4.2% since last check ($155 -> $148). Review position.
 
 ## Pacing
