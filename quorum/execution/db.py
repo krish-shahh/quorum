@@ -474,6 +474,27 @@ CREATE TABLE IF NOT EXISTS trace_event (
     text                TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_trace_event_cycle_ts ON trace_event(cycle_id, ts);
+
+-- Plannotator-style comment threads, but element-level (a KPI card, a run
+-- row, a table row, a chart series) rather than free-text-range selection
+-- on dynamically-rendered React data. anchor_json is the raw anchor the
+-- frontend attached the thread to (e.g. {"view":"performance","metric":
+-- "sharpe_ratio"} or {"run_id":"..."}); anchor_key is its canonical
+-- (sorted-key) JSON serialization, so "all threads on this exact anchor"
+-- is a plain equality lookup instead of a JSON-structural query. thread_json
+-- is a list of {author ('user'|'claude'), body, ts} — the whole
+-- conversation on that anchor, appended to on each reply.
+CREATE TABLE IF NOT EXISTS dashboard_annotation (
+    id           TEXT PRIMARY KEY,
+    anchor_type  TEXT NOT NULL CHECK(anchor_type IN ('kpi','run','table_row','chart_series')),
+    anchor_key   TEXT NOT NULL,
+    anchor_json  TEXT NOT NULL DEFAULT '{}',
+    status       TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open','resolved')),
+    created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+    thread_json  TEXT NOT NULL DEFAULT '[]'
+);
+CREATE INDEX IF NOT EXISTS idx_annotation_anchor ON dashboard_annotation(anchor_type, anchor_key);
+CREATE INDEX IF NOT EXISTS idx_annotation_status ON dashboard_annotation(status);
 """
 
 # ──────────────────────────────────────────────────────────────────────

@@ -1067,6 +1067,57 @@ def api_v1_cycle_detail(cycle_id):
     return jsonify(detail)
 
 
+@api_bp.route("/api/v1/annotations", methods=["GET", "POST"])
+def api_v1_annotations():
+    """GET lists threads (optionally filtered by anchor_type, anchor as a
+    JSON string, and/or status). POST starts a new thread on an anchor."""
+    from quorum.default_config import DEFAULT_CONFIG
+    from quorum.execution.annotations import create_annotation, list_annotations
+
+    if request.method == "POST":
+        payload = request.get_json(force=True) or {}
+        anchor_type = payload.get("anchor_type")
+        anchor = payload.get("anchor")
+        body = payload.get("body")
+        author = payload.get("author", "user")
+        if not anchor_type or anchor is None or not body:
+            return jsonify({"error": "anchor_type, anchor, and body are required"}), 400
+        return jsonify(create_annotation(DEFAULT_CONFIG, anchor_type=anchor_type, anchor=anchor, author=author, body=body)), 201
+
+    anchor_type = request.args.get("anchor_type") or None
+    status = request.args.get("status") or None
+    anchor_raw = request.args.get("anchor")
+    anchor = json.loads(anchor_raw) if anchor_raw else None
+    return jsonify({"annotations": list_annotations(DEFAULT_CONFIG, anchor_type=anchor_type, anchor=anchor, status=status)})
+
+
+@api_bp.route("/api/v1/annotations/<annotation_id>/reply", methods=["POST"])
+def api_v1_annotation_reply(annotation_id):
+    from quorum.default_config import DEFAULT_CONFIG
+    from quorum.execution.annotations import add_reply
+
+    payload = request.get_json(force=True) or {}
+    body = payload.get("body")
+    author = payload.get("author", "user")
+    if not body:
+        return jsonify({"error": "body is required"}), 400
+    annotation = add_reply(DEFAULT_CONFIG, annotation_id, author=author, body=body)
+    if annotation is None:
+        return jsonify({"error": f"no annotation {annotation_id}"}), 404
+    return jsonify(annotation)
+
+
+@api_bp.route("/api/v1/annotations/<annotation_id>/resolve", methods=["POST"])
+def api_v1_annotation_resolve(annotation_id):
+    from quorum.default_config import DEFAULT_CONFIG
+    from quorum.execution.annotations import resolve_annotation
+
+    annotation = resolve_annotation(DEFAULT_CONFIG, annotation_id)
+    if annotation is None:
+        return jsonify({"error": f"no annotation {annotation_id}"}), 404
+    return jsonify(annotation)
+
+
 @api_bp.route("/api/v1/portfolio-risk")
 def api_v1_portfolio_risk():
     """Notional exposure + historical VaR. Read-only — unlike live-risk,
