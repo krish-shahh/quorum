@@ -52,7 +52,7 @@ class _BacktestState:
     suppressed: List[Dict[str, Any]] = field(default_factory=list)
 
 
-def _size_weight(spec: StrategySpec, symbol: str, price: float, atr: Optional[float]) -> float:
+def size_weight(spec: StrategySpec, symbol: str, price: float, atr: Optional[float]) -> float:
     sizing = spec.sizing
     if sizing.method == "flat_pct":
         weight = sizing.flat_pct
@@ -75,7 +75,7 @@ def _size_weight(spec: StrategySpec, symbol: str, price: float, atr: Optional[fl
     return max(0.0, min(weight, sizing.max_position_pct))
 
 
-def _regime_multiplier(spec: StrategySpec, regime: Optional[str]) -> float:
+def regime_multiplier(spec: StrategySpec, regime: Optional[str]) -> float:
     gate = spec.risk.regime_gate
     if gate is None or regime is None:
         return 1.0
@@ -126,7 +126,7 @@ def run_bar_loop(
             raise ValueError(f"OHLCV index mismatch for '{symbol}' vs '{symbols[0]}'")
 
     state = _BacktestState(cash=starting_cash)
-    atr_feature_name = _find_atr_feature(spec, symbols)
+    atr_feature_name = find_atr_feature(spec, symbols)
 
     # Bar 0..n-2: decide at i, fill at i+1's open. The final bar can only
     # be decided on, never filled, so the loop stops one bar early.
@@ -134,7 +134,7 @@ def run_bar_loop(
         ts = index[i]
         fill_ts = index[i + 1]
         regime = str(regime_series.loc[ts]) if regime_series is not None and ts in regime_series.index else None
-        mult = _regime_multiplier(spec, regime)
+        mult = regime_multiplier(spec, regime)
 
         # 1. Exits (stop-loss and rule-based), oldest-open-position order.
         for symbol in list(state.positions.keys()):
@@ -173,7 +173,7 @@ def run_bar_loop(
 
             atr = all_features[atr_feature_name].iloc[i] if atr_feature_name else None
             price = ohlcv[symbol]["close"].iloc[i]
-            weight = _size_weight(spec, symbol, price, atr) * mult
+            weight = size_weight(spec, symbol, price, atr) * mult
             weight = min(weight, spec.risk.max_single_ticker_pct)
             if weight <= 0:
                 state.suppressed.append({"ts": str(ts), "symbol": symbol, "reason": "zero_weight"})
@@ -243,7 +243,7 @@ def run_bar_loop(
     }
 
 
-def _find_atr_feature(spec: StrategySpec, symbols: List[str]) -> Optional[str]:
+def find_atr_feature(spec: StrategySpec, symbols: List[str]) -> Optional[str]:
     """Find a feature computing ATR for the sizing stage's vol_target method.
 
     Single-strategy simplification: assumes at most one atr feature is
