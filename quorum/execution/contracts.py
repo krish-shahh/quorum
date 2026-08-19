@@ -213,15 +213,6 @@ def is_futures(ticker: str) -> bool:
     return get_contract_spec(ticker) is not None
 
 
-def get_notional_value(ticker: str, price: float, quantity: int) -> float:
-    """Calculate the notional value of a futures position.
-
-    For stocks/ETFs: notional = price * quantity
-    For futures: notional = price * quantity * multiplier
-    """
-    return price * quantity * get_multiplier(ticker)
-
-
 def estimate_expiry(ticker: str, reference_date: Optional[date] = None) -> Optional[date]:
     """Estimate the next quarterly expiry for a futures contract.
 

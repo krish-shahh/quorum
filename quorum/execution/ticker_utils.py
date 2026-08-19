@@ -1,9 +1,9 @@
-"""Ticker validation, autocomplete suggestions, and asset-type detection."""
+"""Asset-type detection and portfolio-book classification."""
 
 from __future__ import annotations
 
 import logging
-from typing import Dict, List, Tuple
+from typing import Dict
 
 logger = logging.getLogger(__name__)
 
@@ -124,21 +124,6 @@ EQUITY_TICKERS = [
     "SPY", "QQQ", "IWM", "DIA", "VTI", "VOO", "ARKK", "XLF", "XLE", "XLK",
 ]
 
-# Combined list for the dashboard dropdown (equities + bond ETFs + commodity ETFs + futures)
-def _build_common_tickers() -> List[str]:
-    from quorum.execution.contracts import FUTURES_TICKERS
-    return EQUITY_TICKERS + sorted(BOND_ETFS) + sorted(COMMODITY_ETFS) + FUTURES_TICKERS
-
-# Lazy init to avoid circular import at module level
-COMMON_TICKERS: List[str] = []
-
-def _ensure_common_tickers() -> List[str]:
-    global COMMON_TICKERS
-    if not COMMON_TICKERS:
-        COMMON_TICKERS = _build_common_tickers()
-    return COMMON_TICKERS
-
-
 def detect_asset_type(ticker: str) -> Dict[str, str | None]:
     """Detect asset class and sector from ticker symbol.
 
@@ -194,54 +179,6 @@ def detect_asset_type(ticker: str) -> Dict[str, str | None]:
         pass
 
     return {"asset_class": "stock", "sector": None}
-
-
-def validate_ticker(ticker: str) -> Tuple[bool, str]:
-    """Validate a ticker symbol via yfinance.
-
-    Returns (is_valid, message). Quick check — just verifies the ticker
-    has price data, doesn't run a full download. Includes asset type label.
-    """
-    ticker = ticker.strip().upper()
-    if not ticker:
-        return False, "Ticker cannot be empty"
-    if len(ticker) > 20:
-        return False, "Ticker too long"
-
-    try:
-        import yfinance as yf
-        info = yf.Ticker(ticker).fast_info
-        last = info.get("lastPrice") or info.get("previousClose")
-        if last and last > 0:
-            asset_info = detect_asset_type(ticker)
-            label_map = {
-                "etf_bond": "Bond ETF",
-                "etf_commodity": "Commodity ETF",
-                "etf_equity": "Equity ETF",
-                "future": "Future",
-            }
-            parts = []
-            ac_label = label_map.get(asset_info["asset_class"], "")
-            if ac_label:
-                parts.append(ac_label)
-            if asset_info["sector"]:
-                parts.append(asset_info["sector"].title())
-            suffix = f" [{', '.join(parts)}]" if parts else ""
-            return True, f"${last:.2f}{suffix}"
-        return False, f"No price data for '{ticker}'"
-    except Exception as exc:
-        return False, f"Could not validate '{ticker}': {exc}"
-
-
-def search_tickers(query: str, limit: int = 10) -> List[str]:
-    """Return tickers from the common list that match the query prefix."""
-    tickers = _ensure_common_tickers()
-    if not query:
-        return tickers[:limit]
-    q = query.strip().upper()
-    prefix = [t for t in tickers if t.startswith(q)]
-    contains = [t for t in tickers if q in t and t not in prefix]
-    return (prefix + contains)[:limit]
 
 
 # ── Portfolio book classification ──

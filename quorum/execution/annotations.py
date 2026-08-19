@@ -80,11 +80,6 @@ def _get_annotation_locked(config: Dict[str, Any], annotation_id: str) -> Option
     return _row_to_dict(row) if row else None
 
 
-def get_annotation(config: Dict[str, Any], annotation_id: str) -> Optional[Dict[str, Any]]:
-    with _lock:
-        return _get_annotation_locked(config, annotation_id)
-
-
 def list_annotations(
     config: Dict[str, Any], *, anchor_type: Optional[str] = None,
     anchor: Optional[Dict[str, Any]] = None, status: Optional[str] = None,

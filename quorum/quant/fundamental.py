@@ -16,20 +16,6 @@ from .data_quality import (
 from .models import QuantScore
 
 
-def _score_component(value: float, thresholds: list) -> float:
-    """Map a value to a 0–1 sub-score using threshold tiers.
-
-    *thresholds* is a list of ``(upper_bound, score)`` pairs, checked
-    in order. The first matching tier wins.
-    """
-    for bound, score in thresholds:
-        if bound is None:  # catch-all
-            return score
-        if value <= bound:
-            return score
-    return thresholds[-1][1]
-
-
 def compute_altman_z(info: Dict, financials: Dict) -> float | None:
     """Compute the Altman Z-score from quarterly statements + info.
 

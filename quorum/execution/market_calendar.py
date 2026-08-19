@@ -20,30 +20,6 @@ logger = logging.getLogger(__name__)
 
 ET = pytz.timezone("US/Eastern")
 
-# ── Exchange suffix -> exchange_calendars mic code ──
-# Covers all major exchanges. Unlisted suffixes fall back to NYSE.
-_SUFFIX_TO_MIC = {
-    "":    "XNYS",   # US (NYSE) — default
-    ".NS": "XNSE",   # NSE India
-    ".BO": "XBOM",   # BSE India
-    ".T":  "XTKS",   # Tokyo Stock Exchange
-    ".HK": "XHKG",   # Hong Kong
-    ".L":  "XLON",   # London Stock Exchange
-    ".TO": "XTSE",   # Toronto Stock Exchange
-    ".AX": "XASX",   # Australian Securities Exchange
-    ".PA": "XPAR",   # Euronext Paris
-    ".DE": "XFRA",   # Frankfurt Stock Exchange
-    ".MI": "XMIL",   # Borsa Italiana (Milan)
-    ".AS": "XAMS",   # Euronext Amsterdam
-    ".MC": "XMAD",   # Madrid Stock Exchange
-    ".SI": "XSES",   # Singapore Exchange
-    ".KS": "XKRX",   # Korea Exchange
-    ".TW": "XTAI",   # Taiwan Stock Exchange
-    ".SA": "BVMF",   # B3 (Brazil)
-    ".SZ": "XSHE",   # Shenzhen Stock Exchange
-    ".SS": "XSHG",   # Shanghai Stock Exchange
-}
-
 # Lazy-init calendars (keyed by MIC code)
 _calendars: dict = {}
 
@@ -61,15 +37,6 @@ def _get_cal(exchange: Optional[str] = None):
                 _calendars["XNYS"] = exchange_calendars.get_calendar("XNYS")
             _calendars[mic] = _calendars["XNYS"]
     return _calendars[mic]
-
-
-def exchange_for_ticker(ticker: str) -> str:
-    """Resolve the exchange_calendars MIC code from a ticker's suffix."""
-    ticker_upper = ticker.upper()
-    for suffix, mic in _SUFFIX_TO_MIC.items():
-        if suffix and ticker_upper.endswith(suffix.upper()):
-            return mic
-    return "XNYS"
 
 
 def is_market_open(dt: Optional[datetime] = None, exchange: Optional[str] = None) -> bool:
@@ -206,26 +173,6 @@ def next_trading_day(d: Optional[date] = None, exchange: Optional[str] = None) -
         return d
 
 
-def previous_trading_day(d: Optional[date] = None, exchange: Optional[str] = None) -> date:
-    """Return the most recent trading day on or before the given date."""
-    if d is None:
-        d = date.today()
-
-    if is_trading_day(d, exchange):
-        return d
-
-    cal = _get_cal(exchange)
-    try:
-        import pandas as pd
-        ts = pd.Timestamp(d)
-        prev_session = cal.previous_close(ts)
-        return prev_session.date()
-    except Exception:
-        while d.weekday() >= 5:
-            d -= timedelta(days=1)
-        return d
-
-
 def trading_days_between(start: date, end: date, exchange: Optional[str] = None) -> int:
     """Count of trading sessions after `start` up to and including `end`
     (0 if end <= start). Deterministic, holiday-aware alternative to raw
@@ -248,9 +195,3 @@ def trading_days_between(start: date, end: date, exchange: Optional[str] = None)
             if d.weekday() < 5:
                 days += 1
         return days
-
-
-def get_exchange_timezone(exchange: Optional[str] = None) -> pytz.BaseTzInfo:
-    """Return the timezone for the given exchange."""
-    cal = _get_cal(exchange)
-    return cal.tz

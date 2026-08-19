@@ -80,34 +80,6 @@ def normalize_trade(t: Dict[str, Any]) -> Dict[str, Any]:
     return t
 
 
-def format_trades_for_table(trades: List[Dict]) -> List[Dict]:
-    """Flatten trade records for table display.
-
-    ``trade_pnl`` shows realized P&L for sells only (FIFO-matched, from the
-    ``realized_pnl`` column) — buys have nothing realized yet, so they show
-    blank rather than the account-value delta (which is ~0 for a sell and
-    misleading for a buy).
-    """
-    formatted = []
-    for raw in trades:
-        t = normalize_trade(raw)
-        pnl = t.get("realized_pnl") if t.get("side") == "sell" else None
-        acct_after = t.get("account_after")
-        formatted.append({
-            "timestamp": str(t.get("timestamp", ""))[:19],
-            "ticker": t.get("ticker", ""),
-            "signal": t.get("signal", ""),
-            "action_taken": t.get("action_taken", ""),
-            "side": (t.get("side") or "").upper(),
-            "quantity": t.get("quantity", ""),
-            "fill_price": f"${t['fill_price']:.2f}" if t.get("fill_price") else "",
-            "trade_pnl": f"${pnl:+,.2f}" if pnl is not None else "",
-            "account_after": f"${acct_after:,.0f}" if acct_after else "",
-            "reason": t.get("reason", ""),
-        })
-    return formatted
-
-
 # ──────────────────────────────────────────────────────────────────
 # Computed stats
 # ──────────────────────────────────────────────────────────────────
@@ -174,20 +146,6 @@ def compute_signal_distribution(trades: List[Dict]) -> Dict[str, int]:
     return dict(Counter(signals).most_common())
 
 
-def compute_allocation(positions: list, account_value: float) -> List[Dict]:
-    """Compute portfolio allocation percentages."""
-    if not positions or account_value <= 0:
-        return []
-    alloc = []
-    pos_total = sum(p.market_value for p in positions)
-    cash_pct = (account_value - pos_total) / account_value
-    for p in positions:
-        alloc.append({"asset": p.ticker, "value": p.market_value,
-                      "pct": p.market_value / account_value})
-    alloc.append({"asset": "Cash", "value": account_value - pos_total, "pct": cash_pct})
-    return sorted(alloc, key=lambda x: x["value"], reverse=True)
-
-
 def compute_pnl_by_ticker(trades: List[Dict]) -> List[Dict]:
     """Realized P&L breakdown grouped by ticker, sorted by absolute P&L.
 
@@ -218,31 +176,6 @@ def compute_pnl_by_ticker(trades: List[Dict]) -> List[Dict]:
                        "trades": total,
                        "win_rate": round(data["wins"] / total, 4) if total > 0 else 0.0})
     return sorted(result, key=lambda x: abs(x["pnl"]), reverse=True)
-
-
-def load_reasoning_logs(config: Dict[str, Any], limit: int = 20) -> List[Dict]:
-    """Load agent reasoning logs from the results directory."""
-    results_dir = Path(config.get("results_dir", "~/.quorum/logs")).expanduser()
-    if not results_dir.exists():
-        return []
-
-    entries = []
-    for ticker_dir in sorted(results_dir.iterdir()):
-        if not ticker_dir.is_dir():
-            continue
-        logs_dir = ticker_dir / "quorumStrategy_logs"
-        if not logs_dir.exists():
-            continue
-        for log_file in sorted(logs_dir.glob("full_states_log_*.json"), reverse=True):
-            trade_date = log_file.stem.replace("full_states_log_", "")
-            try:
-                data = json.loads(log_file.read_text())
-            except (json.JSONDecodeError, OSError):
-                continue
-            entries.append({"ticker": ticker_dir.name, "trade_date": trade_date, "data": data})
-            if len(entries) >= limit:
-                return entries
-    return entries
 
 
 # ──────────────────────────────────────────────────────────────────

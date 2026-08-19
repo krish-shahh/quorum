@@ -100,31 +100,6 @@ def finish_run(
     save_run_recap(config, run_id)
 
 
-def new_sweep(
-    config: Dict[str, Any],
-    *,
-    strategy_id: str,
-    hypothesis: str = "",
-    search_space: Optional[Dict[str, Any]] = None,
-    n_trials: int = 0,
-    n_trials_cumulative: int = 0,
-    effective_k: Optional[float] = None,
-) -> str:
-    sweep_id = _new_id()
-    conn = db.get_db(config)
-    with conn:
-        conn.execute(
-            "INSERT INTO sweep "
-            "(sweep_id, strategy_id, hypothesis, search_space_json, n_trials, "
-            " n_trials_cumulative, effective_k) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (
-                sweep_id, strategy_id, hypothesis, _json(search_space),
-                n_trials, n_trials_cumulative, effective_k,
-            ),
-        )
-    return sweep_id
-
-
 # ── signal / target ──────────────────────────────────────────────────
 
 
@@ -230,24 +205,6 @@ def record_order(
             ),
         )
     return order_id
-
-
-def update_order_status(
-    config: Dict[str, Any],
-    order_id: str,
-    status: str,
-    *,
-    broker_order_id: Optional[str] = None,
-    reject_reason: Optional[str] = None,
-) -> None:
-    conn = db.get_db(config)
-    with conn:
-        conn.execute(
-            "UPDATE order_intent SET status = ?, "
-            "broker_order_id = COALESCE(?, broker_order_id), "
-            "reject_reason = COALESCE(?, reject_reason) WHERE order_id = ?",
-            (status, broker_order_id, reject_reason, order_id),
-        )
 
 
 def record_fill(

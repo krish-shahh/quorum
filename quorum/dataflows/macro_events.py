@@ -123,31 +123,3 @@ class MacroEventCalendar:
                 return 0.85
             return 1.0
 
-
-def get_macro_events(trade_date: str = "", horizon_days: int = 10) -> str:
-    """Convenience function for use as a dataflow tool."""
-    if not trade_date:
-        trade_date = datetime.now().strftime("%Y-%m-%d")
-
-    cal = MacroEventCalendar()
-    upcoming = cal.get_upcoming_events(trade_date, horizon_days)
-    adj = cal.volatility_adjustment(trade_date)
-
-    lines = [
-        f"Macro Event Calendar — {trade_date}",
-        f"{'=' * 50}",
-        f"Position Size Adjustment: {adj:.0%}",
-        "",
-    ]
-
-    if not upcoming:
-        lines.append(f"No high-impact events in the next {horizon_days} days.")
-    else:
-        lines.append(f"{'Event':<25} {'Date':>12} {'Days':>6} {'Impact':>8}")
-        lines.append(f"{'-' * 55}")
-        for event in upcoming:
-            lines.append(
-                f"{event['event']:<25} {event['date']:>12} {event['days_until']:>6} {event['impact']:>8}"
-            )
-
-    return "\n".join(lines)
