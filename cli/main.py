@@ -317,6 +317,60 @@ def shadow_sleeve(
 
 
 @app.command()
+def screen(
+    screen_id: str = typer.Argument(..., help="Filename stem under screens/, e.g. 'ai_quality'"),
+    as_of: str = typer.Option(None, "--as-of", help="YYYY-MM-DD to screen as of (default: today)"),
+):
+    """Run a screen (screens/<screen_id>.yaml) and print its ranked table.
+
+    Research only — never trades, never writes to the decision log's
+    run/signal/target chain. Results are a starting point for the
+    dashboard's watchlist or Strategy Lab, not a signal.
+    """
+    import json
+
+    from quorum.screen.engine import run_screen
+    from quorum.screen.schema import load_screen
+
+    screen_path = Path(__file__).resolve().parent.parent / "screens" / f"{screen_id}.yaml"
+    if not screen_path.exists():
+        console.print(f"[red]No screen file at screens/{screen_id}.yaml[/red]")
+        raise typer.Exit(1)
+
+    spec = load_screen(screen_path)
+    result = run_screen(spec, as_of=as_of)
+
+    table = Table(title=f"Screen: {screen_id} (as of {result.as_of})", box=box.ROUNDED)
+    table.add_column("Symbol", style="bold")
+    table.add_column("Score", justify="right")
+    table.add_column("Coverage", justify="right")
+    for row in result.rows:
+        table.add_row(
+            row.symbol,
+            f"{row.rank_score:.3f}" if row.rank_score is not None else "—",
+            f"{row.coverage:.0%}",
+        )
+    console.print(table)
+
+    if result.warnings:
+        console.print("[yellow]Warnings:[/yellow]")
+        for w in result.warnings:
+            console.print(f"  [yellow]•[/yellow] {w}")
+
+    print("---SCREEN_RESULT---" + json.dumps({
+        "screen_id": result.screen_id,
+        "as_of": result.as_of,
+        "universe_size": result.universe_size,
+        "fetched": result.fetched,
+        "warnings": result.warnings,
+        "rows": [
+            {"symbol": r.symbol, "metrics": r.metrics, "rank_score": r.rank_score, "coverage": r.coverage}
+            for r in result.rows
+        ],
+    }) + "---SCREEN_RESULT---")
+
+
+@app.command()
 def backtest(
     strategy_id: str = typer.Argument(..., help="Filename stem under strategies/, e.g. 'regime_gate'"),
     start: str = typer.Option("2018-01-01", "--start", help="Backtest start date (YYYY-MM-DD)"),

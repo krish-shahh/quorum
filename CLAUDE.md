@@ -222,6 +222,7 @@ quorum daily-recap            # save today's decision-log play-by-play, backing 
 quorum run-recap <run_id>     # manually (re-)save one run's recap (normally automatic — see decision_log.save_run_recap)
 quorum fill-forward-returns   # batch-fill forward returns on signal_scores rows old enough to score
 quorum shadow-sleeve <id>     # run a strategy's equal-weight benchmark sleeve on demand
+quorum screen <id>            # run a screens/<id>.yaml screen, print its ranked table (research only, never trades)
 quorum health                  # run system health check
 quorum reset -b 5000           # reset paper account to $5,000
 quorum regime                  # market regime
