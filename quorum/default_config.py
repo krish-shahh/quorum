@@ -264,7 +264,18 @@ DEFAULT_CONFIG = _apply_profile(_apply_env_overrides({
     # Paper-trading starting cash balance
     "paper_starting_balance": 5000.0,
     # Position sizing
-    "max_position_pct": 0.25,           # 25% of portfolio per new trade (matches single-ticker cap)
+    # Naive flat-percent sizing — a backstop cap, not the primary sizing
+    # mechanism. It contradicted every skill's documented "~5% per new
+    # position (~$250)" Portfolio Rules section and PositionSizer's own
+    # fallback default (0.05) by being set to 0.25 here, which is what
+    # actually ran (config always provides this key, so the 0.05 fallbacks
+    # never fired) — live trades have been sized up to 5x larger than
+    # documented. Matches moderate (0.08) and scalp (0.12), which were
+    # already correctly set per CLAUDE.md's per-profile sizing. Proper
+    # volatility-targeted + correlation-budget sizing is planned for the
+    # v2 redesign's Phase 2 strategy-engine rebuild; this is a default
+    # profile flat-cap fix, not that redesign.
+    "max_position_pct": 0.05,           # 5% of portfolio per new trade
     "max_single_ticker_pct": 0.25,      # 25% cap in any single ticker
     "max_open_positions": 6,
     # Minimum cash reserve floor (fraction of account). Used as the base
