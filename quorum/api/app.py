@@ -891,6 +891,17 @@ def api_v1_ticker_trades(ticker):
         return jsonify({"trades": []})
 
 
+@api_bp.route("/api/v1/refresh", methods=["POST"])
+def api_v1_refresh():
+    """Manually bust the regime cache (the status strip's only TTL-cached
+    field — P&L and plan status are already computed live on every
+    request) so a user-triggered refresh doesn't have to wait out the
+    5-minute cache_ttls.regime window."""
+    from quorum.dataflows.cache import invalidate
+
+    return jsonify({"cleared": invalidate("detect")})
+
+
 @api_bp.route("/api/v1/dashboard")
 def api_v1_dashboard():
     """Aggregated dashboard data — single endpoint for 30s polling."""

@@ -319,6 +319,12 @@ export function fetchChart(ticker: string, days = 90): Promise<{ ticker: string;
   return fetchJson(`/api/v1/chart/${ticker}?days=${days}`);
 }
 
+export async function refreshRegime(): Promise<{ cleared: number }> {
+  const res = await fetch(`${BASE_URL}/api/v1/refresh`, { method: "POST" });
+  if (!res.ok) throw new Error("Refresh failed");
+  return res.json();
+}
+
 export async function toggleKillSwitch(): Promise<{ active: boolean }> {
   const res = await fetch(`${BASE_URL}/api/v1/kill-switch`, { method: "POST" });
   if (!res.ok) throw new Error("Kill switch toggle failed");

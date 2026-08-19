@@ -1,5 +1,8 @@
+import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { RefreshCw } from "lucide-react";
 import { cn, riskColor, regimeColor, formatSignedUsd, formatSignedPct } from "@/lib/utils";
-import type { StatusData } from "@/lib/api";
+import { refreshRegime, type StatusData } from "@/lib/api";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 interface Props {
@@ -8,9 +11,35 @@ interface Props {
 
 export default function StatusStrip({ status }: Props) {
   const { live_risk, plan, regime } = status;
+  const [refreshing, setRefreshing] = useState(false);
+  const queryClient = useQueryClient();
+
+  async function handleRefresh() {
+    setRefreshing(true);
+    try {
+      await refreshRegime();
+      await queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+    } finally {
+      setRefreshing(false);
+    }
+  }
 
   return (
     <div className="flex items-center gap-2.5 px-4 py-2 rounded-lg border bg-card text-xs">
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            onClick={handleRefresh}
+            disabled={refreshing}
+            className="text-muted-foreground hover:text-foreground disabled:opacity-50"
+            aria-label="Refresh regime data"
+          >
+            <RefreshCw className={cn("w-3 h-3", refreshing && "animate-spin")} />
+          </button>
+        </TooltipTrigger>
+        <TooltipContent>Force-refresh VIX/DXY/10Y (bypasses the 5-min cache)</TooltipContent>
+      </Tooltip>
+
       {/* Risk level */}
       <Tooltip>
         <TooltipTrigger asChild>
