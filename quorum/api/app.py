@@ -89,15 +89,6 @@ def get_account_data():
                 "book": get_book(p.ticker),
             })
 
-        # Overlay signals from council
-        try:
-            from quorum.execution.db import get_all_latest_states
-            sig_map = {s["ticker"]: s["council_signal"] for s in get_all_latest_states(config)}
-            for pos in positions:
-                pos["signal"] = sig_map.get(pos["ticker"], "---")
-        except Exception:
-            pass
-
         # Allocation
         allocation = [{"asset": p["ticker"], "value": p["weight"]} for p in positions]
         cash_pct = round((acct_val - sum(pp.market_value for pp in positions_raw)) / acct_val * 100, 1)
@@ -223,226 +214,29 @@ def get_regime():
         return {"regime": "UNKNOWN", "confidence": "0%", "vix": "N/A", "dxy": "N/A", "yield_10y": "N/A"}
 
 
-def get_ticker_states():
+def get_watchlist_view():
+    """Basic per-ticker info (asset class, sector) for the watchlist table.
+
+    No live price fetch here deliberately — a per-ticker network call on
+    every 30s dashboard poll is exactly the cost Phase 6 removed from
+    trades.analytics; asset-class/sector classification is static/free.
+    """
     try:
         config = _cfg()
-        from quorum.execution.db import get_all_latest_states
+        from quorum.execution.trade_data import load_watchlist
         from quorum.execution.ticker_utils import detect_asset_type
+        tickers = load_watchlist(config).get("tickers", [])
         results = []
-        for s in get_all_latest_states(config):
-            asset_info = detect_asset_type(s["ticker"])
+        for ticker in tickers:
+            asset_info = detect_asset_type(ticker)
             results.append({
-                "ticker": s["ticker"],
-                "technical": round(s["technical_score"], 1),
-                "fundamental": round(s["fundamental_score"], 1),
-                "sentiment": round(s["sentiment_score"], 1),
-                "news": round(s["news_score"], 1),
-                "signal": s["council_signal"],
-                "confidence": round(s["confidence"], 2),
-                "weighted": round(s["weighted_score"], 2),
-                "price": round(s["price_at_analysis"], 2) if s.get("price_at_analysis") else 0,
-                "regime": s.get("regime_at_analysis", ""),
-                "analyzed_at": s["analyzed_at"][:16],
+                "ticker": ticker,
                 "asset_class": asset_info["asset_class"],
                 "sector": asset_info["sector"],
-                "debate_triggered": bool(s.get("debate_triggered", 0)),
             })
         return results
     except Exception as e:
-        print(f"[v3] ticker states error: {e}")
-        return []
-
-
-def get_ticker_detail(ticker):
-    try:
-        config = _cfg()
-        from quorum.execution.db import get_ticker_state
-        from quorum.execution.ticker_utils import detect_asset_type
-        asset_info = detect_asset_type(ticker)
-        history = get_ticker_state(config, ticker, limit=4)
-        rows = [
-            {
-                "technical": round(h["technical_score"], 1),
-                "fundamental": round(h["fundamental_score"], 1),
-                "sentiment": round(h["sentiment_score"], 1),
-                "news": round(h["news_score"], 1),
-                "signal": h["council_signal"],
-                "confidence": round(h["confidence"], 2),
-                "weighted": round(h["weighted_score"], 2),
-                "price": round(h["price_at_analysis"], 2) if h.get("price_at_analysis") else 0,
-                "analyzed_at": h["analyzed_at"][:16],
-                "asset_class": asset_info["asset_class"],
-                "sector": asset_info["sector"],
-                "debate_triggered": bool(h.get("debate_triggered", 0)),
-            }
-            for h in history
-        ]
-        # Fetch latest quant scores if available
-        quant = {}
-        try:
-            conn = get_db(config)
-            qrow = conn.execute(
-                "SELECT * FROM quant_scores WHERE ticker = ? ORDER BY scored_at DESC LIMIT 1",
-                (ticker,),
-            ).fetchone()
-            if qrow:
-                quant = {
-                    "fundamental": round(qrow["fundamental_score"], 2),
-                    "technical": round(qrow["technical_score"], 2),
-                    "data_quality": round(qrow["data_quality"], 2),
-                    "scored_at": qrow["scored_at"][:16],
-                }
-        except Exception:
-            pass
-
-        return {"detail": rows[0] if rows else {}, "history": rows, "quant": quant}
-    except Exception as e:
-        print(f"[v3] ticker detail error: {e}")
-        return {"detail": {}, "history": [], "quant": {}}
-
-
-def get_analyst_reports(ticker):
-    """Get persisted analyst reports from council cycles."""
-    try:
-        config = _cfg()
-        from quorum.execution.db import get_council_analyst_reports
-        return get_council_analyst_reports(config, ticker, limit=3)
-    except Exception as e:
-        print(f"[v3] analyst reports error: {e}")
-        return []
-
-
-def get_trade_reports_for_ticker(ticker):
-    """Get pre-trade reports with analyst summaries for a ticker."""
-    try:
-        config = _cfg()
-        conn = get_db(config)
-        rows = conn.execute(
-            """SELECT trade_date, report_type, signal, confidence,
-                      technicals, fundamentals, sentiment, news_catalyst,
-                      risk_factors, reasoning
-               FROM trade_reports
-               WHERE ticker = ? AND report_type = 'pre'
-               ORDER BY created_at DESC LIMIT 5""",
-            (ticker.upper(),),
-        ).fetchall()
-        return [dict(r) for r in rows]
-    except Exception as e:
-        print(f"[v3] trade reports error: {e}")
-        return []
-
-
-def get_plan_steps_for_ticker(ticker):
-    """Get active plan steps for a specific ticker."""
-    try:
-        from pathlib import Path
-        import yaml
-        plan_path = Path.home() / ".quorum" / "plans" / "active.md"
-        if not plan_path.exists():
-            return None
-        text = plan_path.resolve().read_text()
-        if not text.startswith("---"):
-            return None
-        yaml_end = text.index("---", 3)
-        fm = yaml.safe_load(text[3:yaml_end])
-        if not fm or "steps" not in fm:
-            return None
-        ticker_upper = ticker.upper()
-        plan_info = {
-            "plan_id": fm.get("plan_id", ""),
-            "created_at": fm.get("created_at", ""),
-            "regime": fm.get("regime", ""),
-            "risk_level": fm.get("risk_level", ""),
-            "expired": False,
-        }
-        # Check if plan is expired
-        from datetime import date
-        for step in fm.get("steps", []):
-            expiry = step.get("expiry", "")
-            if expiry and expiry < date.today().isoformat():
-                plan_info["expired"] = True
-                break
-        # Find steps for this ticker
-        steps = [s for s in fm.get("steps", []) if s.get("ticker", "").upper() == ticker_upper]
-        if not steps:
-            return None
-        plan_info["steps"] = steps
-        return plan_info
-    except Exception as e:
-        print(f"[v3] plan steps error: {e}")
-        return None
-
-
-def get_ticker_reflections(ticker):
-    """Get trade reflections for a ticker, parsed into sections."""
-    try:
-        config = _cfg()
-        from quorum.execution.learning import LearningEngine
-        from quorum.execution.reflection import ReflectionEngine
-        learner = LearningEngine(config)
-        reflector = ReflectionEngine(learner, config)
-        raw = reflector.get_reflections(ticker, include_sector=True, limit=5)
-        if not raw:
-            return None
-        # Parse into sections
-        sections = {}
-        current_section = None
-        current_lines = []
-        for line in raw.strip().split("\n"):
-            stripped = line.strip()
-            if stripped.startswith("## "):
-                if current_section:
-                    sections[current_section] = "\n".join(current_lines).strip()
-                current_section = stripped[3:].strip()
-                current_lines = []
-            elif stripped.startswith("# "):
-                continue  # skip the title line
-            else:
-                current_lines.append(stripped)
-        if current_section:
-            sections[current_section] = "\n".join(current_lines).strip()
-        return sections if sections else {"Raw": raw}
-    except Exception as e:
-        print(f"[v3] reflections error: {e}")
-        return ""
-
-
-def get_trade_reports(limit=30):
-    try:
-        config = _cfg()
-        from quorum.execution.db import get_db
-        from quorum.execution.ticker_utils import detect_asset_type
-        conn = get_db(config)
-        rows = conn.execute(
-            "SELECT * FROM trade_reports ORDER BY created_at DESC LIMIT ?", (limit,)
-        ).fetchall()
-        results = []
-        for r in rows:
-            ai = detect_asset_type(r["ticker"])
-            results.append({
-                "id": r["id"],
-                "ticker": r["ticker"],
-                "trade_date": r["trade_date"],
-                "report_type": r["report_type"],
-                "signal": r["signal"],
-                "confidence": round(r["confidence"], 2),
-                "technicals": r["technicals"],
-                "fundamentals": r["fundamentals"],
-                "sentiment": r["sentiment"],
-                "news_catalyst": r["news_catalyst"],
-                "risk_factors": r["risk_factors"],
-                "reasoning": r["reasoning"],
-                "fill_price": r["fill_price"],
-                "quantity": r["quantity"],
-                "side": r["side"] or "",
-                "pnl": r["pnl"],
-                "created_at": r["created_at"],
-                "asset_class": ai["asset_class"],
-                "sector": ai["sector"],
-            })
-        return results
-    except Exception as e:
-        print(f"[v3] trade reports error: {e}")
+        print(f"[v3] watchlist view error: {e}")
         return []
 
 
@@ -474,67 +268,15 @@ def get_insider_clusters(positions, watchlist):
 
 
 def get_plan_status_data():
-    """Get active plan status for the trading page plan bar."""
-    try:
-        from quorum.execution.plan import read_active_plan, get_plan_metrics
-        plan = read_active_plan()
-        if plan is None:
-            return {"active": False}
+    """Plan status for the trading page status strip.
 
-        steps = plan.get("steps", [])
-        exec_log = _load_exec_log(plan.get("plan_id", ""))
-
-        buy_actions = {"buy", "strong buy"}
-        sell_actions = {"sell", "strong sell"}
-
-        enriched_steps = []
-        for s in steps:
-            ticker = str(s.get("ticker", ""))
-            action = str(s.get("action", "Hold"))
-            entry = s.get("entry")
-            log_entry = exec_log.get(ticker)
-            enriched_steps.append({
-                "ticker": ticker,
-                "action": action,
-                "entry": entry,
-                "exec_status": log_entry["status"] if log_entry else "PENDING",
-            })
-
-        metrics = get_plan_metrics(plan.get("plan_id"))
-
-        return {
-            "active": True,
-            "plan_id": plan.get("plan_id", ""),
-            "plan_type": plan.get("plan_type", ""),
-            "regime": plan.get("regime", ""),
-            "risk_level": plan.get("risk_level", ""),
-            "created_at": plan.get("created_at", ""),
-            "steps": enriched_steps,
-            "buy_count": sum(1 for s in steps if str(s.get("action", "")).lower() in buy_actions),
-            "sell_count": sum(1 for s in steps if str(s.get("action", "")).lower() in sell_actions),
-            "hold_count": sum(1 for s in steps if str(s.get("action", "")).lower() == "hold"),
-            "adherence_rate": metrics.get("adherence_rate"),
-        }
-    except Exception:
-        return {"active": False}
-
-
-def _load_exec_log(plan_id: str) -> dict:
-    """Load execution log entries keyed by ticker."""
-    if not plan_id:
-        return {}
-    try:
-        from pathlib import Path
-        import os
-        plans_dir = Path(os.environ.get("QUORUM_HOME", Path.home() / ".quorum")) / "plans"
-        log_path = plans_dir / f"{plan_id}.execlog.json"
-        if not log_path.exists():
-            return {}
-        entries = json.loads(log_path.read_text())
-        # Key by ticker (last entry wins if multiple)
-        return {e["ticker"]: e for e in entries}
-    except Exception:
-        return {}
+    Always inactive: the legacy planner's markdown plan files (the only
+    writer this ever read from) are gone -- the pod-cycle path has no
+    plan file, the candidate list itself is the coordination artifact.
+    Kept as a stub (rather than removed) so StatusStrip's "no active
+    plan" state keeps rendering instead of the field disappearing.
+    """
+    return {"active": False}
 
 
 def get_trading_status_data():
@@ -707,33 +449,15 @@ def api_v1_dashboard():
     trades = get_trades_data()
     regime = get_regime()
     market = get_market_status()
-    states = get_ticker_states()
+    watchlist = get_watchlist_view()
     status = get_trading_status_data()
     return jsonify({
         "account": acct,
         "trades": trades,
         "regime": regime,
         "market": market,
-        "states": states,
+        "watchlist": watchlist,
         "status": status,
-    })
-
-
-@api_bp.route("/api/v1/council/<ticker>")
-def api_v1_council_detail(ticker):
-    """Full council detail for a ticker (on-demand)."""
-    detail = get_ticker_detail(ticker)
-    reflections = get_ticker_reflections(ticker)
-    analyst_reports = get_analyst_reports(ticker)
-    trade_reports = get_trade_reports_for_ticker(ticker)
-    plan = get_plan_steps_for_ticker(ticker)
-    return jsonify({
-        "ticker": ticker,
-        "detail": detail,
-        "reflections": reflections,
-        "analyst_reports": analyst_reports,
-        "trade_reports": trade_reports,
-        "plan": plan,
     })
 
 
@@ -893,18 +617,6 @@ def api_v1_annotation_resolve(annotation_id):
     return jsonify(annotation)
 
 
-@api_bp.route("/api/v1/analyst-accuracy")
-def api_v1_analyst_accuracy():
-    """Legacy council per-analyst IC/directional accuracy."""
-    try:
-        config = _cfg()
-        from quorum.execution.db import compute_analyst_accuracy
-        return jsonify(compute_analyst_accuracy(config))
-    except Exception as e:
-        print(f"[v3] analyst-accuracy error: {e}")
-        return jsonify({"error": str(e)}), 500
-
-
 @api_bp.route("/api/v1/daily-recap")
 def api_v1_daily_recap_list():
     """Recent daily-recap summaries, newest first — backs the Activity
@@ -927,12 +639,6 @@ def api_v1_daily_recap_detail(recap_date):
     if recap is None:
         return jsonify({"error": f"no recap saved for {recap_date}"}), 404
     return jsonify(recap)
-
-
-@api_bp.route("/api/v1/reports")
-def api_v1_reports():
-    """All trade reports (pre + post trade analysis)."""
-    return jsonify({"reports": get_trade_reports(limit=100)})
 
 
 @api_bp.route("/api/v1/kill-switch", methods=["POST"])

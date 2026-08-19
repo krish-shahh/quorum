@@ -208,9 +208,12 @@ class ExecutionEngine:
             dl.save_run_recap(self.config, run_id)
 
         # 10. Learning engine — record entry for buy, exit for sell
-        from .confidence import compute_confidence_score
         if order.side == OrderSide.BUY and result.filled_price:
-            confidence = compute_confidence_score(final_state)
+            # No per-trade confidence signal exists on the pod path (that was
+            # a council-debate-derived score); a neutral fixed value keeps
+            # LearningEngine's confidence-bucket analysis from crashing on
+            # a missing field without pretending to measure something real.
+            confidence = 0.5
             self.learner.record_entry(
                 ticker=ticker,
                 signal=signal,

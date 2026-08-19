@@ -107,23 +107,6 @@ class ExecutionRecord(BaseModel):
     realized_pnl: Optional[float] = None
 
 
-class DiscoveryStatus(str, Enum):
-    PENDING = "pending"
-    APPROVED = "approved"
-    REJECTED = "rejected"
-
-
-class DiscoveredTicker(BaseModel):
-    """A ticker discovered by the autonomous scanning system."""
-
-    ticker: str
-    source: str = Field(description="Scanner that found this ticker (e.g. 'macro', 'top_movers', 'unusual_volume', 'news_driven')")
-    reason: str = Field(description="Human-readable explanation of why this ticker was flagged")
-    signal_strength: float = Field(ge=0.0, le=1.0, description="Confidence score from 0 (weak) to 1 (strong)")
-    discovered_at: datetime = Field(default_factory=datetime.now)
-    status: DiscoveryStatus = DiscoveryStatus.PENDING
-
-
 # ── Politician trade tracking ──
 
 

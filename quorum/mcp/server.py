@@ -75,45 +75,30 @@ def create_server():
         Tool(name="kill_switch", description="EMERGENCY: Activate the kill switch to halt ALL trading immediately. Use when something is wrong. Reset with quorum reset-kill-switch.", inputSchema={"type": "object", "properties": {"reason": {"type": "string", "description": "Why you're killing trading"}}, "required": ["reason"]}),
         Tool(name="get_rules", description="View your trading rules (blocked tickers, max trade value, etc.) from ~/.quorum/rules.json", inputSchema={"type": "object", "properties": {}}),
         # Execution
-        Tool(name="execute_paper_trade", description="Execute a paper trade (BUY or SELL). Paper mode only. Pre-trade hook validates risk rules before execution.", inputSchema={"type": "object", "properties": {"ticker": {"type": "string"}, "signal": {"type": "string", "enum": ["Buy", "Sell", "Overweight", "Underweight", "Hold"]}, "reasoning": {"type": "string", "description": "Brief reasoning for the trade"}, "target_weight": {"type": "number", "description": "For pod-originated Buy candidates only: the strategy engine's final, already-regime-scaled position weight (from get_pod_candidates, after pod-pm's approve/reduce). When given, this overrides the account profile's own ATR/flat-percent/Kelly sizing entirely — only the single-ticker cap and margin check still apply. Omit for the legacy council flow, which sizes from the account profile as before."}, "run_id": {"type": "string", "description": "For pod-originated trades: the run_id from get_pod_candidates/get_pod_exits, so this fill's decision-log entry links back to the signal that produced it and FIFO P&L matching stays correct across cycles. Omit for the legacy council flow — a shared manual run is used instead."}, "signal_id": {"type": "string", "description": "For pod-originated trades: the signal_id from get_pod_candidates/get_pod_exits, alongside run_id."}}, "required": ["ticker", "signal"]}),
-        # Autonomous cycle (subscription-powered — YOU are the analyst)
+        Tool(name="execute_paper_trade", description="Execute a paper trade (BUY or SELL). Paper mode only. Pre-trade hook validates risk rules before execution.", inputSchema={"type": "object", "properties": {"ticker": {"type": "string"}, "signal": {"type": "string", "enum": ["Buy", "Sell", "Overweight", "Underweight", "Hold"]}, "reasoning": {"type": "string", "description": "Brief reasoning for the trade"}, "target_weight": {"type": "number", "description": "For pod-originated Buy candidates only: the strategy engine's final, already-regime-scaled position weight (from get_pod_candidates, after pod-pm's approve/reduce). When given, this overrides the account profile's own ATR/flat-percent/Kelly sizing entirely — only the single-ticker cap and margin check still apply. Omit for an ad-hoc trade outside any pod, which sizes from the account profile as before."}, "run_id": {"type": "string", "description": "For pod-originated trades: the run_id from get_pod_candidates/get_pod_exits, so this fill's decision-log entry links back to the signal that produced it and FIFO P&L matching stays correct across cycles. Omit for an ad-hoc trade outside any pod — a shared manual run is used instead."}, "signal_id": {"type": "string", "description": "For pod-originated trades: the signal_id from get_pod_candidates/get_pod_exits, alongside run_id."}}, "required": ["ticker", "signal"]}),
         Tool(name="get_full_ticker_data", description="Get ALL data for a ticker in one call: price history (30d), key technicals (RSI, MACD, SMA50, SMA200, Bollinger, ATR), fundamentals, recent news, Reddit sentiment, StockTwits sentiment, insider activity, and earnings calendar. Use this to analyze a ticker yourself instead of calling the multi-agent pipeline.", inputSchema={"type": "object", "properties": {"ticker": {"type": "string", "description": "Stock ticker symbol"}}, "required": ["ticker"]}),
-        Tool(name="get_autonomous_tickers", description="Start an autonomous trading cycle. Returns your watchlist tickers, current portfolio (positions + cash), and market regime. Your job is to actively manage the portfolio: BUY tickers with strong setups, SELL positions whose thesis has deteriorated, and HOLD the rest. The watchlist is what you monitor — the portfolio is what you own.", inputSchema={"type": "object", "properties": {}}),
         Tool(name="save_analysis_to_wiki", description="Save your analysis of a ticker to the wiki knowledge base. Call this after you analyze a ticker so the dashboard can display it and future analyses can reference it. When debate ran, include the debate fields to populate wiki debate sections.", inputSchema={"type": "object", "properties": {"ticker": {"type": "string"}, "signal": {"type": "string", "enum": ["Buy", "Sell", "Overweight", "Underweight", "Hold"]}, "confidence": {"type": "number", "description": "Your confidence 0.0-1.0"}, "reasoning": {"type": "string", "description": "Your full analysis reasoning"}, "bull_case": {"type": "string", "description": "Bull researcher output (from debate)"}, "bear_case": {"type": "string", "description": "Bear researcher output (from debate)"}, "research_plan": {"type": "string", "description": "Research Manager plan (from debate)"}, "trader_proposal": {"type": "string", "description": "Trader Agent proposal (from debate)"}, "risk_debate": {"type": "string", "description": "Combined risk debate output (from debate)"}, "debate_triggered": {"type": "boolean", "description": "Whether the debate was triggered for this ticker", "default": False}}, "required": ["ticker", "signal", "reasoning"]}),
-        Tool(name="save_trade_report", description="Save a structured pre-trade or post-trade report. Call with report_type='pre' BEFORE executing a trade (your analysis), and report_type='post' AFTER execution (fill details + P&L). These show up in the dashboard Research page.", inputSchema={"type": "object", "properties": {"ticker": {"type": "string"}, "report_type": {"type": "string", "enum": ["pre", "post"], "description": "pre = before trade (analysis), post = after trade (execution details)"}, "signal": {"type": "string", "enum": ["Buy", "Sell", "Overweight", "Underweight", "Hold"]}, "confidence": {"type": "number", "description": "0.0-1.0"}, "technicals": {"type": "string", "description": "Technical analysis summary (RSI, MACD, SMA, etc.)"}, "fundamentals": {"type": "string", "description": "Fundamental analysis summary (PE, revenue, margins)"}, "sentiment": {"type": "string", "description": "Sentiment summary (Reddit, StockTwits %)"}, "news_catalyst": {"type": "string", "description": "Key news or catalyst driving the decision"}, "risk_factors": {"type": "string", "description": "Risks: earnings proximity, regime, correlation, etc."}, "reasoning": {"type": "string", "description": "Overall reasoning for the decision"}, "fill_price": {"type": "number", "description": "(post only) Execution fill price"}, "quantity": {"type": "integer", "description": "(post only) Shares traded"}, "side": {"type": "string", "description": "(post only) buy or sell"}, "pnl": {"type": "number", "description": "(post only) P&L impact on account"}}, "required": ["ticker", "report_type", "signal", "reasoning"]}),
-        Tool(name="get_trade_reports", description="Get pre-trade and post-trade reports for display. Filter by ticker or get all recent reports.", inputSchema={"type": "object", "properties": {"ticker": {"type": "string", "description": "Filter by ticker (optional)"}, "limit": {"type": "integer", "default": 20}}}),
         # Wiki
         Tool(name="search_wiki", description="Search the trading wiki for past analyses by ticker, tag, or signal.", inputSchema={"type": "object", "properties": {"query": {"type": "string"}, "limit": {"type": "integer", "default": 10}}, "required": ["query"]}),
         Tool(name="get_wiki_page", description="Read a specific wiki page by path.", inputSchema={"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}),
-        # Council scoring (deterministic — runs as code, not prompt)
-        Tool(name="score_council", description="Deterministic council scoring. Pass the 4 analyst scores (and optional quant scores from get_quant_scores) and it returns the final signal. When quant scores are provided, they are blended with analyst scores based on data quality. Hard veto conditions and tiebreaker rules cannot be overridden.", inputSchema={"type": "object", "properties": {"ticker": {"type": "string"}, "technical_score": {"type": "number", "description": "Technical analyst score 1-5"}, "fundamental_score": {"type": "number", "description": "Domain analyst score 1-5"}, "sentiment_score": {"type": "number", "description": "Sentiment analyst score 1-5"}, "news_score": {"type": "number", "description": "News/macro analyst score 1-5"}, "is_held": {"type": "boolean", "description": "True if you currently hold this ticker", "default": False}, "quant_fundamental_score": {"type": "number", "description": "Quant fundamental score from get_quant_scores (optional)"}, "quant_technical_score": {"type": "number", "description": "Quant technical score from get_quant_scores (optional)"}, "quant_data_quality": {"type": "number", "description": "Data quality 0-1 from get_quant_scores (optional)"}}, "required": ["ticker", "technical_score", "fundamental_score", "sentiment_score", "news_score"]}),
         # Wiki maintenance
         Tool(name="prune_wiki", description="Archive wiki pages older than N days. Keeps the injected context sharp by removing stale analyses. Returns count of archived pages.", inputSchema={"type": "object", "properties": {"max_age_days": {"type": "integer", "default": 30, "description": "Archive pages older than this (default 30)"}}}),
         # Analytics
         Tool(name="get_analytics_summary", description="Get portfolio analytics: Sharpe ratio, Sortino ratio, drawdown, win rate, alpha vs SPY.", inputSchema={"type": "object", "properties": {}}),
-        Tool(name="get_analyst_accuracy", description="Get per-analyst Information Coefficient (IC) and directional accuracy. Shows which of the 4 analysts (technical, fundamental, sentiment, news) are most predictive based on forward 5-day returns. Requires 20+ scored tickers with filled forward returns.", inputSchema={"type": "object", "properties": {}}),
-        # Council analyst reports (transparency/audit)
-        Tool(name="save_council_reports", description="Save individual analyst reports from a council cycle. Call this after score_council to persist what each subagent said. This enables transparency, audit trails, and trade reflections.", inputSchema={"type": "object", "properties": {"ticker": {"type": "string"}, "technical_report": {"type": "string", "description": "Technical analyst's full summary"}, "fundamental_report": {"type": "string", "description": "Domain/fundamental analyst's full summary"}, "sentiment_report": {"type": "string", "description": "Sentiment analyst's full summary"}, "news_report": {"type": "string", "description": "News/macro analyst's full summary"}, "bull_case": {"type": "string", "default": "", "description": "Bull researcher output (if debate ran)"}, "bear_case": {"type": "string", "default": "", "description": "Bear researcher output (if debate ran)"}, "pm_decision": {"type": "string", "default": "", "description": "Portfolio Manager decision rationale (if debate ran)"}, "council_signal": {"type": "string", "default": ""}, "weighted_score": {"type": "number"}, "debate_triggered": {"type": "boolean", "default": False}}, "required": ["ticker", "technical_report", "fundamental_report", "sentiment_report", "news_report"]}),
-        Tool(name="get_council_reports", description="Get past analyst reports for a ticker — shows what each subagent (technical, fundamental, sentiment, news, bull, bear, PM) said in recent council cycles. Use for transparency and understanding past decisions.", inputSchema={"type": "object", "properties": {"ticker": {"type": "string"}, "limit": {"type": "integer", "default": 3}}, "required": ["ticker"]}),
         # Trade reflections (self-reflection for Portfolio Manager)
         Tool(name="get_trade_reflections", description="Get past trade outcomes and lessons for a ticker. Returns resolved trades, win/loss patterns, and generated insights. Used by the Portfolio Manager to learn from past decisions and avoid repeating mistakes.", inputSchema={"type": "object", "properties": {"ticker": {"type": "string", "description": "Ticker symbol to get reflections for"}, "include_sector": {"type": "boolean", "default": True, "description": "Include same-sector pattern analysis"}, "limit": {"type": "integer", "default": 5, "description": "Max outcomes to show per section"}}, "required": ["ticker"]}),
         # Cache stats
         Tool(name="get_cache_stats", description="Get data cache hit/miss stats per function and active entry counts. Use to verify caching is working and identify expensive fetches.", inputSchema={"type": "object", "properties": {}}),
-        # Ticker state (delta-aware cycles)
-        Tool(name="get_ticker_state", description="Get stored council state for a ticker: last 4 analyst scores, signals, confidence, price at analysis time. Use to check if re-analysis is needed.", inputSchema={"type": "object", "properties": {"ticker": {"type": "string"}}, "required": ["ticker"]}),
-        Tool(name="get_ticker_deltas", description="Get what changed since last analysis for all tickers: price movement, news staleness, regime shift. Returns which tickers need re-analysis vs carry-forward.", inputSchema={"type": "object", "properties": {}}),
         # Asset info (sector-aware routing)
-        Tool(name="get_asset_info", description="Detect asset class and sector for a ticker. Returns asset_class (stock, etf_bond, etf_commodity, etf_equity) and sector (tech, financials, healthcare, consumer, cyclical). Used by the council to pick the right domain analyst.", inputSchema={"type": "object", "properties": {"ticker": {"type": "string", "description": "Ticker symbol"}}, "required": ["ticker"]}),
-        # Quantitative scoring
-        Tool(name="get_quant_scores", description="Compute deterministic quantitative scores for a ticker. Returns fundamental and technical quant scores (1-5), data quality (0-1), component breakdowns, and hard vetoes. Asset-type aware: uses sector-specific scoring (banks, healthcare, tech, bonds, commodities). These are auditable, math-based scores — not LLM judgment.", inputSchema={"type": "object", "properties": {"ticker": {"type": "string", "description": "Stock/ETF/futures ticker"}, "regime": {"type": "string", "description": "Current regime (risk_on/risk_off/volatile/transition). Auto-detected if omitted.", "default": ""}}, "required": ["ticker"]}),
+        Tool(name="get_asset_info", description="Detect asset class and sector for a ticker. Returns asset_class (stock, etf_bond, etf_commodity, etf_equity) and sector (tech, financials, healthcare, consumer, cyclical). Used to pick the right pod-analyst grounding.", inputSchema={"type": "object", "properties": {"ticker": {"type": "string", "description": "Ticker symbol"}}, "required": ["ticker"]}),
         Tool(name="get_portfolio_risk", description="Compute portfolio-level risk metrics: historical VaR (95%, 1-day), total notional exposure, position correlation, sector concentration. Use before new buys to check portfolio health.", inputSchema={"type": "object", "properties": {}}),
-        Tool(name="get_live_risk", description="Live intraday risk check. Returns daily P&L, drawdown, ATR stop distances, cash reserve, VIX, and circuit breaker status (GREEN/YELLOW/ORANGE/RED). Call at the start of every trading council cycle.", inputSchema={"type": "object", "properties": {}}),
+        Tool(name="get_live_risk", description="Live intraday risk check. Returns daily P&L, drawdown, ATR stop distances, cash reserve, VIX, and circuit breaker status (GREEN/YELLOW/ORANGE/RED). Call at the start of every trading cycle.", inputSchema={"type": "object", "properties": {}}),
         # Calendar / datetime (prevents LLM day-of-week hallucination)
         Tool(name="get_trading_calendar", description="Get current date, time, day of week, and whether the market is open. ALWAYS call this instead of guessing the day of week or market status. Returns timezone-aware datetime, trading day status, market open/close times, and next trading day.", inputSchema={"type": "object", "properties": {"exchange": {"type": "string", "description": "Exchange MIC code (default: XNYS/NYSE)", "default": "XNYS"}}}),
         # Pod shop (Phase 4 auto mode — strategy engine proposes, pod PM decides)
         Tool(name="get_pod_candidates", description="Run one pod's strategy (strategies/<strategy_id>.yaml) against the latest market data and return today's ranked candidates — the Phase 4 auto-mode coordination artifact, replacing the plan file. Every symbol's entry condition is logged to the decision log (fired or suppressed) under a new run row, whether or not it becomes a candidate. Call once per pod per cycle; each candidate then goes to pod-analyst for evidence and pod-pm for the veto/size call.", inputSchema={"type": "object", "properties": {"strategy_id": {"type": "string", "description": "Filename stem under strategies/, e.g. 'regime_gate'"}, "lookback_days": {"type": "integer", "description": "Calendar days of history to fetch for feature computation (default 400 — covers a 252-day window plus buffer)", "default": 400}}, "required": ["strategy_id"]}),
         Tool(name="get_pod_exits", description="Check whether any currently-held position opened by this pod should exit now — stop-loss, max_holding_days, or the strategy's own exit rule (same priority order as the backtest engine). The counterpart to get_pod_candidates for the sell side; call it every cycle alongside get_pod_candidates so open positions aren't left to drift once entered ('winners get cut, losers get held' was the account's original failure mode). Exits found here should be executed as a plain 'Sell' (full unwind) — no pod-pm review needed, these are mechanical risk-desk rules, not judgment calls.", inputSchema={"type": "object", "properties": {"strategy_id": {"type": "string", "description": "Filename stem under strategies/, e.g. 'regime_gate'"}}, "required": ["strategy_id"]}),
-        Tool(name="record_pod_decision", description="Record a pod PM's decision on a strategy-generated candidate: approve at proposed size, reduce size, or veto entirely. Every override MUST be logged here with a reason — this is the audit trail the plan requires ('every override is written to journal with a reason'). Not for use with the legacy full council (trading-planner/trading-council) — those use save_council_reports instead.", inputSchema={"type": "object", "properties": {"ticker": {"type": "string"}, "decision": {"type": "string", "enum": ["approve", "reduce", "veto"]}, "proposed_weight": {"type": "number", "description": "The candidate's proposed position weight from the strategy engine"}, "final_weight": {"type": "number", "description": "The weight after this decision (0 if veto, < proposed_weight if reduce, == proposed_weight if approve)"}, "reason": {"type": "string", "description": "Why — cite the pod-analyst findings that drove this decision"}, "run_id": {"type": "string", "description": "The decision-log run_id this candidate came from, if known"}}, "required": ["ticker", "decision", "reason"]}),
+        Tool(name="record_pod_decision", description="Record a pod PM's decision on a strategy-generated candidate: approve at proposed size, reduce size, or veto entirely. Every override MUST be logged here with a reason — this is the audit trail the plan requires ('every override is written to journal with a reason').", inputSchema={"type": "object", "properties": {"ticker": {"type": "string"}, "decision": {"type": "string", "enum": ["approve", "reduce", "veto"]}, "proposed_weight": {"type": "number", "description": "The candidate's proposed position weight from the strategy engine"}, "final_weight": {"type": "number", "description": "The weight after this decision (0 if veto, < proposed_weight if reduce, == proposed_weight if approve)"}, "reason": {"type": "string", "description": "Why — cite the pod-analyst findings that drove this decision"}, "run_id": {"type": "string", "description": "The decision-log run_id this candidate came from, if known"}}, "required": ["ticker", "decision", "reason"]}),
         Tool(name="save_pod_evidence", description="Persist pod-analyst's structured, cited evidence for one ticker to the wiki so future cycles (this pod or another) can build on it instead of re-deriving from scratch. Call this at the end of your evidence-extraction pass, with your exact facts list — never a score or recommendation.", inputSchema={"type": "object", "properties": {"ticker": {"type": "string"}, "pod_id": {"type": "string", "description": "The pod/strategy_id this evidence is for, e.g. 'regime_gate'"}, "evidence": {"type": "array", "description": "Your facts list, unmodified", "items": {"type": "object", "properties": {"claim": {"type": "string"}, "source": {"type": "string"}, "directional_tag": {"type": "string", "enum": ["bullish", "bearish", "neutral"]}}, "required": ["claim", "directional_tag"]}}, "strategy_rationale": {"type": "string", "description": "Why the strategy's candidate fired, if given to you"}}, "required": ["ticker", "pod_id", "evidence"]}),
         Tool(name="get_pod_evidence", description="Retrieve prior pod-analyst evidence for a ticker from earlier cycles (today's is excluded — you already have that in context). Check this before deciding so evidence already on record isn't silently ignored.", inputSchema={"type": "object", "properties": {"ticker": {"type": "string"}, "limit": {"type": "integer", "default": 5}}, "required": ["ticker"]}),
     ]
@@ -471,172 +456,6 @@ def _handle_tool(name: str, args: dict) -> str:
         )
         return header + "\n\n" + "\n\n".join(sections)
 
-    if name == "get_autonomous_tickers":
-        from quorum.execution.trade_data import load_watchlist
-        from quorum.execution.broker.paper_client import PaperBrokerClient
-
-        wl = load_watchlist(config)
-        tickers = list(wl.get("tickers", []))
-
-        # Dynamic discovery: scan for movers and merge into watchlist
-        discovered = []
-        try:
-            from quorum.execution.discovery import DiscoveryEngine
-            engine = DiscoveryEngine(config)
-            candidates = engine.run_scan(today)
-            for c in candidates:
-                if c.ticker.upper() not in {t.upper() for t in tickers}:
-                    tickers.append(c.ticker.upper())
-                    discovered.append(f"{c.ticker} ({c.source}: {c.reason})")
-        except Exception:
-            pass
-
-        # Current portfolio
-        broker = PaperBrokerClient(config)
-        account = broker.get_account_info()
-        positions = broker.get_positions()
-        held_tickers = {p.ticker.upper() for p in positions if p.quantity > 0}
-        watchlist_only = [t for t in tickers if t.upper() not in held_tickers]
-        held_in_watchlist = [t for t in tickers if t.upper() in held_tickers]
-        held_not_in_watchlist = [p.ticker for p in positions if p.quantity > 0 and p.ticker.upper() not in {t.upper() for t in tickers}]
-
-        lines = [
-            "# Autonomous Trading Cycle",
-            "",
-            f"**Account Value:** ${account.account_value:,.2f}",
-            f"**Cash Available:** ${account.cash_balance:,.2f}",
-            f"**Positions:** {len(held_tickers)}",
-            "",
-        ]
-
-        # Current holdings — need review (sell or hold?)
-        if positions:
-            lines.append("## Current Positions (review: HOLD or SELL?)")
-            lines.append("")
-            lines.append("These are stocks you OWN. Analyze each to decide if the thesis still holds or if it's time to exit.")
-            lines.append("")
-            lines.append(f"| Ticker | Qty | Avg Cost | Current Value | P&L | P&L % |")
-            lines.append(f"|--------|-----|----------|---------------|-----|-------|")
-            for p in positions:
-                if p.quantity <= 0:
-                    continue
-                pnl_pct = (p.unrealized_pnl / (p.avg_cost * p.quantity) * 100) if p.avg_cost and p.quantity else 0
-                lines.append(f"| {p.ticker} | {p.quantity} | ${p.avg_cost:,.2f} | ${p.market_value:,.2f} | ${p.unrealized_pnl:+,.2f} | {pnl_pct:+.1f}% |")
-            lines.append("")
-
-        # Discovered tickers (dynamic — from market scanners)
-        if discovered:
-            lines.append(f"## Discovered Today ({len(discovered)} new)")
-            lines.append("")
-            lines.append("Tickers found by market scanners (top movers, unusual volume, news-driven). Not on your static watchlist — evaluate for potential BUY.")
-            lines.append("")
-            for d in discovered:
-                lines.append(f"- {d}")
-            lines.append("")
-
-        # Watchlist tickers not held — potential buys
-        if watchlist_only:
-            lines.append(f"## Watchlist — Not Held ({len(watchlist_only)} tickers: potential BUY)")
-            lines.append("")
-            lines.append("These are on your watchlist but you don't own them yet. Analyze each to decide if it's time to open a position.")
-            lines.append("")
-            lines.append(f"Tickers: {', '.join(watchlist_only)}")
-            lines.append("")
-
-        # Market regime
-        try:
-            from quorum.dataflows.regime import get_market_regime
-            regime = get_market_regime(today)
-            lines.append(f"## Market Regime\n{regime}")
-            lines.append("")
-        except Exception:
-            pass
-
-        lines.append(
-            "## How to Run This Cycle\n"
-            "\n"
-            "**For each HELD position** — call `get_full_ticker_data`, re-evaluate:\n"
-            "  - Has the thesis changed? Bad earnings, broken technicals, negative news?\n"
-            "  - Is P&L deeply negative with no recovery catalyst? → SELL\n"
-            "  - Has price hit your target or become overvalued? → SELL\n"
-            "  - Thesis intact, still has upside? → HOLD\n"
-            "  - Very strong momentum + thesis? → OVERWEIGHT (add more)\n"
-            "\n"
-            "**For each WATCHLIST ticker you don't hold** — call `get_full_ticker_data`, evaluate:\n"
-            "  - Strong technical setup (RSI oversold, MACD crossover, above SMA)?\n"
-            "  - Solid fundamentals (reasonable PE, growing revenue, good margins)?\n"
-            "  - Positive sentiment and news catalyst?\n"
-            "  - If yes → BUY. If mixed → HOLD (wait). If weak → skip.\n"
-            "\n"
-            "**After each decision**, call `execute_paper_trade` for Buy/Sell actions,\n"
-            "then `save_analysis_to_wiki` to record your reasoning.\n"
-            "\n"
-            "**Portfolio rules:**\n"
-            "- Max ~5% of portfolio per new position\n"
-            "- Max ~25% in any single ticker\n"
-            "- Max 6 concurrent positions\n"
-            "- Be defensive in risk_off regime (fewer new buys, tighter stops)\n"
-            "- Reduce size if earnings within 3 days\n"
-            f"- You have ${account.cash_balance:,.2f} cash available for new positions"
-        )
-        return "\n".join(lines)
-
-    # ── Council Analyst Reports (transparency) ────────────────────────
-    if name == "save_council_reports":
-        from quorum.execution.db import save_council_analyst_reports
-        ticker = args["ticker"].upper()
-        reports = {
-            "technical": args.get("technical_report", ""),
-            "fundamental": args.get("fundamental_report", ""),
-            "sentiment": args.get("sentiment_report", ""),
-            "news": args.get("news_report", ""),
-            "bull_case": args.get("bull_case", ""),
-            "bear_case": args.get("bear_case", ""),
-            "pm_decision": args.get("pm_decision", ""),
-        }
-        save_council_analyst_reports(
-            config, ticker, reports,
-            signal=args.get("council_signal", ""),
-            weighted_score=args.get("weighted_score"),
-            debate_triggered=bool(args.get("debate_triggered", False)),
-        )
-        return f"Council analyst reports saved for {ticker}"
-
-    if name == "get_council_reports":
-        from quorum.execution.db import get_council_analyst_reports
-        ticker = args["ticker"].upper()
-        limit = int(args.get("limit", 3))
-        reports = get_council_analyst_reports(config, ticker, limit)
-        if not reports:
-            return f"No council reports found for {ticker}"
-        lines = [f"# Council Analyst Reports: {ticker}", ""]
-        for r in reports:
-            lines.append(f"## {r['analysis_date']} — {r['council_signal']} (score: {r['weighted_score']})")
-            if r['debate_triggered']:
-                lines.append("*Debate was triggered*")
-            lines.append("")
-            for label, key in [("Technical", "technical_report"), ("Fundamental", "fundamental_report"),
-                               ("Sentiment", "sentiment_report"), ("News/Macro", "news_report")]:
-                text = r.get(key, "").strip()
-                if text:
-                    lines.append(f"### {label}")
-                    lines.append(text[:500])  # Cap at 500 chars per section
-                    lines.append("")
-            if r.get("bull_case", "").strip():
-                lines.append("### Bull Case")
-                lines.append(r["bull_case"][:500])
-                lines.append("")
-            if r.get("bear_case", "").strip():
-                lines.append("### Bear Case")
-                lines.append(r["bear_case"][:500])
-                lines.append("")
-            if r.get("pm_decision", "").strip():
-                lines.append("### PM Decision")
-                lines.append(r["pm_decision"][:500])
-                lines.append("")
-            lines.append("---")
-        return "\n".join(lines)
-
     if name == "save_analysis_to_wiki":
         from quorum.wiki import WikiWriter
         wiki = WikiWriter(config)
@@ -676,8 +495,11 @@ def _handle_tool(name: str, args: dict) -> str:
 
         # Mark the ticker_state as debate-triggered for dashboard tracking
         if debate_triggered:
-            from quorum.execution.db import mark_debate_triggered
-            mark_debate_triggered(config, ticker)
+            try:
+                from quorum.execution.db import mark_debate_triggered
+                mark_debate_triggered(config, ticker)
+            except Exception:
+                logger.debug("mark_debate_triggered failed (no ticker_state row/table)", exc_info=True)
 
         # Include reflections in the wiki page if debate ran
         if debate_triggered:
@@ -698,84 +520,6 @@ def _handle_tool(name: str, args: dict) -> str:
         return f"Analysis saved to wiki: {path}" + (
             " (with debate sections)" if debate_triggered else ""
         )
-
-    if name == "save_trade_report":
-        from quorum.execution.db import get_db
-        conn = get_db(config)
-        ticker = args["ticker"].upper()
-        report_type = args["report_type"]
-        conn.execute(
-            """INSERT INTO trade_reports
-               (ticker, trade_date, report_type, signal, confidence,
-                technicals, fundamentals, sentiment, news_catalyst,
-                risk_factors, reasoning, fill_price, quantity, side,
-                account_before, account_after, pnl)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (
-                ticker,
-                today,
-                report_type,
-                args.get("signal", ""),
-                float(args.get("confidence", 0)),
-                args.get("technicals", ""),
-                args.get("fundamentals", ""),
-                args.get("sentiment", ""),
-                args.get("news_catalyst", ""),
-                args.get("risk_factors", ""),
-                args.get("reasoning", ""),
-                args.get("fill_price"),
-                args.get("quantity"),
-                args.get("side"),
-                args.get("account_before"),
-                args.get("account_after"),
-                args.get("pnl"),
-            ),
-        )
-        conn.commit()
-        label = "Pre-trade analysis" if report_type == "pre" else "Post-trade report"
-        return f"{label} saved for {ticker}"
-
-    if name == "get_trade_reports":
-        from quorum.execution.db import get_db
-        conn = get_db(config)
-        ticker = args.get("ticker")
-        limit = args.get("limit", 20)
-        if ticker:
-            rows = conn.execute(
-                "SELECT * FROM trade_reports WHERE ticker = ? ORDER BY created_at DESC LIMIT ?",
-                (ticker.upper(), limit),
-            ).fetchall()
-        else:
-            rows = conn.execute(
-                "SELECT * FROM trade_reports ORDER BY created_at DESC LIMIT ?",
-                (limit,),
-            ).fetchall()
-
-        if not rows:
-            return "No trade reports found."
-
-        lines = ["# Trade Reports", ""]
-        for r in rows:
-            rtype = "PRE-TRADE" if r["report_type"] == "pre" else "POST-TRADE"
-            lines.append(f"## {rtype}: {r['ticker']} ({r['trade_date']})")
-            lines.append(f"**Signal:** {r['signal']} | **Confidence:** {r['confidence']:.0%}")
-            if r["technicals"]:
-                lines.append(f"**Technicals:** {r['technicals']}")
-            if r["fundamentals"]:
-                lines.append(f"**Fundamentals:** {r['fundamentals']}")
-            if r["sentiment"]:
-                lines.append(f"**Sentiment:** {r['sentiment']}")
-            if r["news_catalyst"]:
-                lines.append(f"**Catalyst:** {r['news_catalyst']}")
-            if r["risk_factors"]:
-                lines.append(f"**Risks:** {r['risk_factors']}")
-            lines.append(f"**Reasoning:** {r['reasoning']}")
-            if r["report_type"] == "post" and r["fill_price"]:
-                lines.append(f"**Execution:** {r['side'].upper()} {r['quantity']} @ ${r['fill_price']:,.2f}")
-                if r["pnl"] is not None:
-                    lines.append(f"**P&L Impact:** ${r['pnl']:+,.2f}")
-            lines.append("")
-        return "\n".join(lines)
 
     # ── Wiki ─────────────────────────────────────────────────────
     if name == "search_wiki":
@@ -840,7 +584,7 @@ def _handle_tool(name: str, args: dict) -> str:
         empyrical_section = ""
         if len(returns_series) >= 2:
             try:
-                from quorum.quant.analytics import compute_portfolio_analytics
+                from quorum.execution.portfolio_analytics import compute_portfolio_analytics
                 metrics = compute_portfolio_analytics(returns_series)
                 engine = metrics.get("engine", "unknown")
 
@@ -915,256 +659,6 @@ def _handle_tool(name: str, args: dict) -> str:
         return "\n".join(lines)
 
     # ── Council Scoring (deterministic) ──────────────────────────
-    if name == "score_council":
-        ticker = args["ticker"].upper()
-        t = float(args["technical_score"])
-        f = float(args["fundamental_score"])
-        s = float(args["sentiment_score"])
-        n = float(args["news_score"])
-        is_held = bool(args.get("is_held", False))
-
-        # Quant blending (optional, backward-compatible)
-        qf = args.get("quant_fundamental_score")
-        qt = args.get("quant_technical_score")
-        qdq = float(args.get("quant_data_quality", 1.0))
-        if qf is not None or qt is not None:
-            from quorum.quant.integration import blend_quant_and_analyst
-            if qf is not None:
-                f = blend_quant_and_analyst(float(qf), f, qdq)
-            if qt is not None:
-                t = blend_quant_and_analyst(float(qt), t, qdq)
-
-        # Detect asset type for domain-aware labels and adjustments
-        from quorum.execution.ticker_utils import detect_asset_type
-        asset_info = detect_asset_type(ticker)
-        asset_class = asset_info["asset_class"]
-        sector = asset_info["sector"]
-
-        # Domain analyst label (displayed in output table)
-        domain_labels = {
-            "etf_bond": "Bond",
-            "etf_commodity": "Commodity",
-        }
-        sector_labels = {
-            "tech": "Tech",
-            "financials": "Financials",
-            "healthcare": "Healthcare",
-            "consumer": "Consumer",
-            "cyclical": "Cyclical",
-        }
-        domain_label = domain_labels.get(asset_class) or sector_labels.get(sector or "") or "Fundamental"
-        is_equity = asset_class in ("stock", "etf_equity")
-
-        scores = {"technical": t, "fundamental": f, "sentiment": s, "news": n}
-
-        # ── Veto conditions (hard blocks, no override) ──
-        vetoes = []
-        if t <= 1.0 and n <= 2.0:
-            vetoes.append("VETO: Technical collapse (1) + negative news (<=2) = forced Hold/Sell")
-        if f <= 1.0:
-            if is_equity:
-                vetoes.append("VETO: Domain score 1 = serious financial concern, no new buys")
-            else:
-                vetoes.append("VETO: Domain score 1 = strong headwinds, no new buys")
-        if all(v <= 2.0 for v in scores.values()):
-            vetoes.append("VETO: All 4 analysts scored <=2 = unanimous bearish, forced Sell if held")
-
-        # ── Weighted average ──
-        weights = {"technical": 0.25, "fundamental": 0.25, "sentiment": 0.20, "news": 0.20}
-        raw_score = sum(scores[k] * weights[k] for k in weights)
-        # Risk adjustment (remaining 10% weight)
-        risk_adj = 0.0
-
-        # Regime check
-        try:
-            from quorum.dataflows.regime import CrossAssetRegimeDetector
-            regime_data = CrossAssetRegimeDetector().detect(today)
-            regime = regime_data.get("regime", "")
-            if regime in ("risk_off", "volatile"):
-                risk_adj -= 0.3
-        except Exception:
-            regime = "unknown"
-
-        # Earnings proximity (equities only — bonds/commodities don't have earnings).
-        # Skipped entirely when earnings avoidance is off (e.g. the scalp profile,
-        # where earnings volatility is the opportunity, not a risk to dodge).
-        if is_equity and config.get("earnings_avoidance_enabled", True):
-            try:
-                from quorum.dataflows.earnings_calendar import EarningsCalendar
-                if EarningsCalendar().should_reduce_size(ticker, 3):
-                    risk_adj -= 0.5
-            except Exception:
-                pass
-
-        # Position count penalty for new buys
-        if not is_held:
-            try:
-                from quorum.execution.broker.paper_client import PaperBrokerClient
-                positions = PaperBrokerClient(config).get_positions()
-                if len([p for p in positions if p.quantity > 0]) >= 5:
-                    risk_adj -= 0.3
-            except Exception:
-                pass
-
-        final_score = raw_score + risk_adj
-
-        # ── Tiebreaker rules ──
-        # 2-2 split detection: if tech+fund disagree with sent+news
-        bullish = sum(1 for v in scores.values() if v >= 3.5)
-        bearish = sum(1 for v in scores.values() if v <= 2.5)
-
-        split_note = ""
-        if bullish == 2 and bearish == 2:
-            split_note = "SPLIT 2-2: Analysts evenly divided. Defaulting to HOLD (no edge)."
-            final_score = 3.0  # Force neutral
-
-        # Extreme outlier: if one analyst is 2+ points from the mean, cap its influence
-        mean_score = sum(scores.values()) / 4
-        outlier_notes = []
-        for name_k, v in scores.items():
-            label = domain_label if name_k == "fundamental" else name_k
-            if abs(v - mean_score) >= 2.0:
-                outlier_notes.append(f"{label} is an outlier ({v:.1f} vs mean {mean_score:.1f})")
-
-        # ── Regime-conditional thresholds ──
-        regime_key = regime.lower() if regime else "risk_on"
-        regime_strategies = config.get("regime_strategy", {})
-        strat = regime_strategies.get(regime_key, regime_strategies.get("risk_on", {}))
-        buy_thresh = strat.get("buy_threshold", 3.5)
-        sell_thresh = strat.get("sell_threshold", 2.5)
-
-        # ── Holding period check (anti-whipsaw) ──
-        holding_note = ""
-        if is_held:
-            try:
-                from quorum.execution.db import get_db
-                min_hold = int(config.get("min_holding_days", 7))
-                conn_hold = get_db(config)
-                buy_row = conn_hold.execute(
-                    "SELECT timestamp FROM trades WHERE ticker = ? AND signal IN ('Buy', 'Overweight') "
-                    "AND action_taken = 'executed' ORDER BY timestamp DESC LIMIT 1",
-                    (ticker,),
-                ).fetchone()
-                if buy_row:
-                    buy_ts = buy_row["timestamp"]
-                    buy_time = datetime.fromisoformat(buy_ts.replace("Z", "+00:00")) if "T" in buy_ts else datetime.strptime(buy_ts, "%Y-%m-%d %H:%M:%S")
-                    days_held = (datetime.now() - buy_time.replace(tzinfo=None)).days
-                    if days_held < min_hold:
-                        holding_note = f"COOLDOWN: Position opened {days_held}d ago (min {min_hold}d). Sell/Underweight blocked unless stop-loss."
-            except Exception:
-                pass
-
-        # ── Determine signal ──
-        if vetoes:
-            if is_held:
-                signal = "Sell"
-            else:
-                signal = "Hold"
-            confidence = 0.2
-        elif split_note:
-            signal = "Hold"
-            confidence = 0.3
-        elif final_score > buy_thresh:
-            signal = "Overweight" if is_held else "Buy"
-            confidence = min(1.0, (final_score - 1) / 4)
-        elif final_score < sell_thresh:
-            signal = "Sell" if is_held else "Hold"
-            confidence = min(1.0, (5 - final_score) / 4)
-        else:
-            signal = "Hold"
-            confidence = 0.4
-
-        asset_tag = f" [{domain_label}]" if domain_label != "Fundamental" else ""
-        lines = [
-            f"# Council Score: {ticker}{asset_tag}",
-            f"",
-            f"| Analyst | Score | Weight |",
-            f"|---------|-------|--------|",
-            f"| Technical | {t:.1f}/5 | 25% |",
-            f"| {domain_label} | {f:.1f}/5 | 25% |",
-            f"| Sentiment | {s:.1f}/5 | 20% |",
-            f"| News/Macro | {n:.1f}/5 | 20% |",
-            f"| Risk Adjustment | {risk_adj:+.1f} | 10% |",
-            f"",
-            f"**Weighted Score:** {raw_score:.2f} (raw) → {final_score:.2f} (adjusted)",
-            f"**Signal:** {signal}",
-            f"**Confidence:** {confidence:.0%}",
-        ]
-        if vetoes:
-            lines.append(f"")
-            for v in vetoes:
-                lines.append(f"**{v}**")
-        if split_note:
-            lines.append(f"")
-            lines.append(f"**{split_note}**")
-        if outlier_notes:
-            lines.append(f"")
-            lines.append(f"**Outliers:** {'; '.join(outlier_notes)}")
-        if holding_note:
-            lines.append(f"")
-            lines.append(f"**{holding_note}**")
-
-        # Persist ticker state for delta-aware cycles
-        try:
-            from quorum.execution.db import save_ticker_state
-            from quorum.execution.broker.paper_client import PaperBrokerClient
-            price = PaperBrokerClient(config).get_quote(ticker).last
-            save_ticker_state(config, ticker, scores, signal, confidence, final_score, price, regime)
-        except Exception as exc:
-            logger.warning("Failed to save ticker state: %s", exc)
-
-        # Save signal scores for IC tracking (enables adaptive weights after 50+ trades)
-        try:
-            from quorum.execution.db import save_signal_score
-            save_signal_score(config, ticker, {
-                "technical": t, "fundamental": f,
-                "sentiment": s, "news": n,
-            }, final_score)
-        except Exception as exc:
-            logger.warning("Failed to save signal score: %s", exc)
-
-        return "\n".join(lines)
-
-    # ── Analyst Accuracy ────────────────────────────────────────────
-    if name == "get_analyst_accuracy":
-        from quorum.execution.db import compute_analyst_accuracy, fill_forward_returns
-        # Fill any pending forward returns first
-        try:
-            filled = fill_forward_returns(config)
-            if filled > 0:
-                logger.info("Filled %d forward return rows", filled)
-        except Exception:
-            pass
-
-        result = compute_analyst_accuracy(config)
-        if result["status"] == "insufficient_data":
-            return (
-                f"# Analyst Accuracy\n\n"
-                f"Insufficient data: {result['sample_size']} scored tickers "
-                f"(need {result['min_required']}+). "
-                f"Accuracy tracking will activate after more council cycles complete."
-            )
-
-        lines = [
-            "# Analyst Accuracy (IC & Directional)",
-            f"Sample: {result['sample_size']} scored tickers with 5-day forward returns",
-            "",
-            "| Analyst | IC (rank corr) | Bullish Acc | Bearish Acc | N |",
-            "|---------|---------------|-------------|-------------|---|",
-        ]
-        for analyst in ["technical", "fundamental", "sentiment", "news", "council"]:
-            a = result.get(analyst, {})
-            ic = f"{a['ic']:+.4f}" if a.get("ic") is not None else "N/A"
-            bull = f"{a['bullish_accuracy']:.0%}" if a.get("bullish_accuracy") is not None else "N/A"
-            bear = f"{a['bearish_accuracy']:.0%}" if a.get("bearish_accuracy") is not None else "N/A"
-            n = a.get("n", 0)
-            lines.append(f"| {analyst.title()} | {ic} | {bull} | {bear} | {n} |")
-
-        lines.append("")
-        lines.append("IC > 0.05 = predictive. IC < -0.05 = contrarian signal. IC ~ 0 = noise.")
-        lines.append("Use these to weight analyst scores — higher IC analysts should have more influence.")
-        return "\n".join(lines)
-
     # ── Cache Stats ─────────────────────────────────────────────────
     if name == "get_cache_stats":
         from quorum.dataflows.cache import cache_stats
@@ -1185,86 +679,6 @@ def _handle_tool(name: str, args: dict) -> str:
         return "\n".join(lines)
 
     # ── Ticker State ────────────────────────────────────────────────
-    if name == "get_ticker_state":
-        from quorum.execution.db import get_ticker_state as _get_ts
-        ticker = args["ticker"].upper()
-        states = _get_ts(config, ticker)
-        if not states:
-            return f"No stored state for {ticker}. Run score_council first."
-        lines = [f"# Ticker State: {ticker}", "", "| Analyzed | Signal | Score | Tech | Fund | Sent | News | Price | Regime |"]
-        lines.append("|----------|--------|-------|------|------|------|------|-------|--------|")
-        for s in states:
-            lines.append(
-                f"| {s['analyzed_at'][:16]} | {s['council_signal']} | {s['weighted_score']:.2f} | "
-                f"{s['technical_score']:.1f} | {s['fundamental_score']:.1f} | "
-                f"{s['sentiment_score']:.1f} | {s['news_score']:.1f} | "
-                f"${s['price_at_analysis']:,.2f} | {s['regime_at_analysis']} |"
-            )
-        return "\n".join(lines)
-
-    if name == "get_ticker_deltas":
-        from quorum.execution.db import get_all_latest_states
-        from quorum.execution.broker.paper_client import PaperBrokerClient
-        from quorum.dataflows.regime import CrossAssetRegimeDetector
-
-        states = get_all_latest_states(config)
-        if not states:
-            return "No prior ticker states. All tickers need full analysis."
-
-        # Current regime
-        try:
-            current_regime = CrossAssetRegimeDetector().detect(today).get("regime", "unknown")
-        except Exception:
-            current_regime = "unknown"
-
-        # News TTL from config
-        news_ttl = config.get("cache_ttls", {}).get("news", 3600)
-
-        lines = ["# Ticker Deltas (since last analysis)", ""]
-        lines.append("| Ticker | Last Signal | Price Then | Price Now | Change | News Stale | Regime Changed | Action |")
-        lines.append("|--------|------------|-----------|----------|--------|-----------|----------------|--------|")
-
-        full_analysis = []
-        carry_forward = []
-
-        broker = PaperBrokerClient(config)
-        for s in states:
-            ticker = s["ticker"]
-            try:
-                current_price = broker.get_quote(ticker).last
-            except Exception:
-                current_price = s["price_at_analysis"] or 0
-
-            old_price = s["price_at_analysis"] or current_price
-            price_change = ((current_price - old_price) / old_price * 100) if old_price else 0
-
-            # Check news staleness
-            analyzed = datetime.fromisoformat(s["analyzed_at"])
-            news_stale = (datetime.now() - analyzed).total_seconds() > news_ttl
-
-            # Check regime change
-            regime_changed = s["regime_at_analysis"] != current_regime
-
-            # Classify
-            material = abs(price_change) > 1.0 or news_stale or regime_changed
-            action = "RE-ANALYZE" if material else "CARRY FORWARD"
-
-            if material:
-                full_analysis.append(ticker)
-            else:
-                carry_forward.append(ticker)
-
-            lines.append(
-                f"| {ticker} | {s['council_signal']} | ${old_price:,.2f} | ${current_price:,.2f} | "
-                f"{price_change:+.1f}% | {'YES' if news_stale else 'no'} | "
-                f"{'YES' if regime_changed else 'no'} | **{action}** |"
-            )
-
-        lines.append("")
-        lines.append(f"**Re-analyze ({len(full_analysis)}):** {', '.join(full_analysis) or 'none'}")
-        lines.append(f"**Carry forward ({len(carry_forward)}):** {', '.join(carry_forward) or 'none'}")
-        return "\n".join(lines)
-
     # ── Asset Info ──────────────────────────────────────────────
     if name == "get_asset_info":
         from quorum.execution.ticker_utils import detect_asset_type
@@ -1315,55 +729,6 @@ def _handle_tool(name: str, args: dict) -> str:
         )
 
     # ── Quantitative Scoring ──────────────────────────────────────
-    if name == "get_quant_scores":
-        from quorum.quant import get_quant_scores as _quant_scores
-        result = _quant_scores(args["ticker"], regime=args.get("regime", ""))
-        d = result.to_dict()
-        lines = [
-            f"# Quant Scores: {result.ticker} [{result.asset_class}{('/' + result.sector) if result.sector else ''}]",
-            f"",
-            f"## Fundamental (Domain) Score: {result.fundamental.score:.2f}/5 (data quality: {result.fundamental.data_quality:.0%})",
-            f"| Component | Score |",
-            f"|-----------|-------|",
-        ]
-        for k, v in result.fundamental.components.items():
-            lines.append(f"| {k} | {v:.3f} |")
-        if result.fundamental.flags:
-            lines.append(f"\n**Flags:** {', '.join(result.fundamental.flags)}")
-
-        lines.extend([
-            f"",
-            f"## Technical Score: {result.technical.score:.2f}/5 (data quality: {result.technical.data_quality:.0%})",
-            f"| Component | Score |",
-            f"|-----------|-------|",
-        ])
-        for k, v in result.technical.components.items():
-            lines.append(f"| {k} | {v:.3f} |")
-
-        if result.vetoes:
-            lines.extend([f"", f"## HARD VETOES ({len(result.vetoes)})"])
-            for v in result.vetoes:
-                lines.append(f"- **{v.rule_name}**: {v.description} (blocks: {v.blocks})")
-
-        # Persist to DB
-        try:
-            from quorum.execution.db import get_db
-            conn = get_db(config)
-            conn.execute(
-                "INSERT INTO quant_scores (ticker, fundamental_score, technical_score, data_quality, "
-                "asset_class, sector, components_json, flags_json, vetoes_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (result.ticker, result.fundamental.score, result.technical.score,
-                 result.data_quality, result.asset_class, result.sector,
-                 json.dumps({**result.fundamental.components, **{"tech_" + k: v for k, v in result.technical.components.items()}}),
-                 json.dumps(result.fundamental.flags + [f"tech:{f}" for f in result.technical.flags]),
-                 json.dumps([v.to_dict() for v in result.vetoes])),
-            )
-            conn.commit()
-        except Exception as exc:
-            logger.warning("Failed to save quant scores: %s", exc)
-
-        return "\n".join(lines)
-
     if name == "get_portfolio_risk":
         from quorum.execution.safety import compute_portfolio_risk
         risk = compute_portfolio_risk(config)

@@ -7,7 +7,7 @@ installed.
 Usage::
 
     import pandas as pd
-    from quorum.quant.analytics import compute_portfolio_analytics
+    from quorum.execution.portfolio_analytics import compute_portfolio_analytics
 
     returns = pd.Series([0.01, -0.005, 0.008, ...])  # daily fractional returns
     bench   = pd.Series([0.002, -0.001, 0.003, ...])  # benchmark daily returns

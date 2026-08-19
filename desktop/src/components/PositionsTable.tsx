@@ -6,10 +6,9 @@ import type { Position, BookData } from "@/lib/api";
 interface Props {
   positions: Position[];
   books: BookData[];
-  onSelectTicker: (ticker: string) => void;
 }
 
-export default function PositionsTable({ positions, books, onSelectTicker }: Props) {
+export default function PositionsTable({ positions, books }: Props) {
   const [expandedBooks, setExpandedBooks] = useState<Set<string>>(new Set(books.map(b => b.name)));
 
   const toggleBook = (name: string) => {
@@ -82,8 +81,7 @@ export default function PositionsTable({ positions, books, onSelectTicker }: Pro
                       {book.positions.map((p) => (
                         <tr
                           key={p.ticker}
-                          onClick={() => onSelectTicker(p.ticker)}
-                          className="border-b last:border-0 hover:bg-muted/30 cursor-pointer transition-colors"
+                          className="border-b last:border-0 hover:bg-muted/30 transition-colors"
                         >
                           <td className="px-4 pl-10 py-2.5">
                             <div className="flex items-center gap-2">

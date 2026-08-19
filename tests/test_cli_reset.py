@@ -8,6 +8,9 @@ portfolio_snapshot/sweep) survived, so a reset account still had a
 decision log pointing at wiped history. This exercises the command
 end-to-end against an isolated DB (via QUORUM_HOME) to confirm both the
 default full wipe and --keep-history behave as documented.
+
+trade_reports itself was later dropped from the account tables (the
+legacy council removal made it write-orphaned) -- only `trades` remains.
 """
 import json
 
@@ -55,7 +58,7 @@ def _decision_log_row_counts(config):
 def _account_row_counts(conn):
     return {
         t: conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]
-        for t in ("trades", "trade_reports")
+        for t in ("trades",)
     }
 
 
@@ -63,10 +66,6 @@ def _seed_account_tables(conn):
     conn.execute(
         "INSERT INTO trades (timestamp, ticker, signal, side, quantity, fill_price) "
         "VALUES ('2026-08-01', 'NVDA', 'Buy', 'buy', 10, 100.0)"
-    )
-    conn.execute(
-        "INSERT INTO trade_reports (ticker, trade_date, report_type, signal, reasoning) "
-        "VALUES ('NVDA', '2026-08-01', 'pre', 'Buy', 'test')"
     )
     conn.commit()
 

@@ -13,7 +13,7 @@ export interface DashboardData {
   trades: TradesData;
   regime: RegimeData;
   market: MarketStatus;
-  states: TickerState[];
+  watchlist: WatchlistEntry[];
   status: StatusData;
 }
 
@@ -98,21 +98,10 @@ export interface MarketStatus {
   text: string;
 }
 
-export interface TickerState {
+export interface WatchlistEntry {
   ticker: string;
-  technical: number;
-  fundamental: number;
-  sentiment: number;
-  news: number;
-  signal: string;
-  confidence: number;
-  weighted: number;
-  price: number;
-  regime: string;
-  analyzed_at: string;
   asset_class: string;
   sector: string;
-  debate_triggered: boolean;
 }
 
 export interface StatusData {
@@ -159,64 +148,10 @@ export interface LiveRisk {
   stops_breached: unknown[];
 }
 
-export interface CouncilDetail {
-  ticker: string;
-  detail: {
-    detail: Record<string, unknown>;
-    history: Record<string, unknown>[];
-    quant: Record<string, unknown>;
-  };
-  reflections: Record<string, string> | null;
-  analyst_reports: AnalystReport[];
-  trade_reports: TradeReport[];
-  plan: PlanInfo | null;
-}
-
-export interface AnalystReport {
-  ticker: string;
-  analysis_date: string;
-  council_signal: string;
-  weighted_score: number;
-  debate_triggered: boolean;
-  technical_report: string;
-  fundamental_report: string;
-  sentiment_report: string;
-  news_report: string;
-  bull_case: string | null;
-  bear_case: string | null;
-  pm_decision: string | null;
-}
-
-export interface TradeReport {
-  trade_date: string;
-  report_type: string;
-  signal: string;
-  confidence: number;
-  technicals: string;
-  fundamentals: string;
-  sentiment: string;
-  news_catalyst: string;
-  risk_factors: string;
-  reasoning: string;
-}
-
-export interface PlanInfo {
-  plan_id: string;
-  created_at: string;
-  regime: string;
-  risk_level: string;
-  expired: boolean;
-  steps: { ticker: string; action: string; entry: number | null }[];
-}
-
 // ── API Functions ──
 
 export function fetchDashboard(): Promise<DashboardData> {
   return fetchJson("/api/v1/dashboard");
-}
-
-export function fetchCouncilDetail(ticker: string): Promise<CouncilDetail> {
-  return fetchJson(`/api/v1/council/${ticker}`);
 }
 
 export function fetchSectors(): Promise<{ sectors: unknown[]; direction: string }> {
@@ -229,32 +164,6 @@ export function fetchInsiders(): Promise<{ clusters: unknown[] }> {
 
 export function fetchCongress(): Promise<{ trades: unknown[] }> {
   return fetchJson("/api/v1/scans/congress");
-}
-
-export interface FullTradeReport {
-  id: number;
-  ticker: string;
-  trade_date: string;
-  report_type: string;
-  signal: string;
-  confidence: number;
-  technicals: string;
-  fundamentals: string;
-  sentiment: string;
-  news_catalyst: string;
-  risk_factors: string;
-  reasoning: string;
-  fill_price: number | null;
-  quantity: number | null;
-  side: string;
-  pnl: number | null;
-  created_at: string;
-  asset_class: string;
-  sector: string;
-}
-
-export function fetchReports(): Promise<{ reports: FullTradeReport[] }> {
-  return fetchJson("/api/v1/reports");
 }
 
 export interface CandleData {
@@ -577,10 +486,4 @@ export async function resolveAnnotation(id: string): Promise<Annotation> {
   const res = await fetch(`${BASE_URL}/api/v1/annotations/${id}/resolve`, { method: "POST" });
   if (!res.ok) throw new Error(`API error: ${res.status} ${res.statusText}`);
   return res.json();
-}
-
-// ── Analyst accuracy ──
-
-export function fetchAnalystAccuracy(): Promise<Record<string, unknown>> {
-  return fetchJson("/api/v1/analyst-accuracy");
 }

@@ -143,13 +143,10 @@ class WikiWriter:
         narratives = extract_narratives(all_text)
         related = extract_related_tickers(all_text, exclude=ticker)
 
-        # Confidence
+        # No per-page confidence signal exists on the pod path (that was a
+        # council-debate-derived score) -- 0.0 matches this module's own
+        # convention for pages with nothing to compute it from.
         confidence = 0.0
-        try:
-            from quorum.execution.confidence import compute_confidence_score
-            confidence = compute_confidence_score(final_state)
-        except Exception:
-            pass
 
         # Regime
         regime = self._regime.classify(trade_date)

@@ -1,10 +1,7 @@
 import { useState } from "react";
 import { useDashboard } from "@/hooks/use-dashboard";
 import Header from "@/components/Header";
-import CouncilDetailModal from "@/components/CouncilDetailModal";
-import PlanMetrics from "@/components/PlanMetrics";
 import ScansPanel from "@/components/ScansPanel";
-import ReportsPanel from "@/components/ReportsPanel";
 import PortfolioView from "@/components/PortfolioView";
 import PerformanceView from "@/components/PerformanceView";
 import ActivityView from "@/components/ActivityView";
@@ -17,7 +14,6 @@ import type { View } from "@/lib/views";
 export default function App() {
   const [live, setLive] = useState(true);
   const [view, setView] = useState<View>("portfolio");
-  const [selectedTicker, setSelectedTicker] = useState<string | null>(null);
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [pendingRunId, setPendingRunId] = useState<string | null>(null);
   const { data, dataUpdatedAt, isLoading, error } = useDashboard(live);
@@ -78,9 +74,7 @@ export default function App() {
       />
 
       <main className="px-6 pb-8 pt-4 space-y-4 max-w-[1600px] mx-auto">
-        {view === "portfolio" && (
-          <PortfolioView data={data} onSelectTicker={setSelectedTicker} />
-        )}
+        {view === "portfolio" && <PortfolioView data={data} />}
 
         {view === "performance" && <PerformanceView />}
 
@@ -99,19 +93,10 @@ export default function App() {
                 setView("activity");
               }}
             />
-            <ReportsPanel />
-            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-              <PlanMetrics status={data.status.plan} />
-              <ScansPanel />
-            </div>
+            <ScansPanel />
           </>
         )}
       </main>
-
-      <CouncilDetailModal
-        ticker={selectedTicker}
-        onClose={() => setSelectedTicker(null)}
-      />
 
       <CommentsDrawer
         open={commentsOpen}

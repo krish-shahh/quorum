@@ -25,10 +25,8 @@ const DASHBOARD_QA_ALLOWED_TOOLS = [
   "mcp__quorum__get_reddit_sentiment", "mcp__quorum__get_stocktwits_sentiment",
   "mcp__quorum__get_insider_transactions", "mcp__quorum__get_insider_clusters",
   "mcp__quorum__get_congress_trades", "mcp__quorum__get_congress_summary",
-  "mcp__quorum__get_quant_scores", "mcp__quorum__get_portfolio_risk", "mcp__quorum__get_live_risk",
-  "mcp__quorum__get_trade_reflections", "mcp__quorum__get_ticker_state", "mcp__quorum__get_ticker_deltas",
-  "mcp__quorum__get_asset_info", "mcp__quorum__get_analyst_accuracy", "mcp__quorum__get_autonomous_tickers",
-  "mcp__quorum__get_full_ticker_data", "mcp__quorum__get_trade_reports", "mcp__quorum__get_council_reports",
+  "mcp__quorum__get_portfolio_risk", "mcp__quorum__get_live_risk", "mcp__quorum__get_trade_reflections",
+  "mcp__quorum__get_asset_info", "mcp__quorum__get_full_ticker_data",
   "mcp__quorum__get_cache_stats", "mcp__quorum__get_analytics_summary", "mcp__quorum__get_rules",
   "mcp__quorum__get_wiki_page", "mcp__quorum__search_wiki", "mcp__quorum__get_trading_calendar",
   "mcp__quorum__get_13f_holdings", "mcp__quorum__get_consensus_estimates", "mcp__quorum__get_sec_filings",
@@ -38,8 +36,7 @@ const DASHBOARD_QA_DISALLOWED_TOOLS = [
   "Bash", "Write", "Edit",
   "mcp__quorum__execute_paper_trade", "mcp__quorum__kill_switch",
   "mcp__quorum__add_to_watchlist", "mcp__quorum__remove_from_watchlist",
-  "mcp__quorum__save_analysis_to_wiki", "mcp__quorum__save_trade_report", "mcp__quorum__save_council_reports",
-  "mcp__quorum__prune_wiki",
+  "mcp__quorum__save_analysis_to_wiki", "mcp__quorum__prune_wiki",
 ].join(",");
 
 // Strategy codegen only ever needs to read schema.py + example YAML files

@@ -446,38 +446,6 @@ def backtest(
 
 
 @app.command()
-def scan(
-    mode: str = typer.Option(
-        "advisory", "--mode", "-m",
-        help="Discovery mode: 'advisory' (review candidates) or 'autonomous' (auto-approve strong signals)",
-    ),
-):
-    """Run the discovery scanner to find opportunities beyond your watchlist."""
-    from quorum.execution.discovery import DiscoveryEngine
-
-    config = DEFAULT_CONFIG.copy()
-    config["discovery_mode"] = mode
-
-    console.print(f"\n[bold]Running discovery scan (mode: {mode})...[/bold]")
-    engine = DiscoveryEngine(config)
-    engine.run_scan()
-
-    candidates = engine.candidates.get_pending()
-    if not candidates:
-        console.print("[yellow]No new candidates discovered.[/yellow]")
-        return
-
-    table = Table(title=f"Discovered Candidates ({len(candidates)})", box=box.SIMPLE)
-    table.add_column("Ticker", style="bold")
-    table.add_column("Source")
-    table.add_column("Strength", justify="right")
-    table.add_column("Reason")
-    for c in candidates:
-        table.add_row(c.ticker, c.source, f"{c.signal_strength:.2f}", c.reason[:60])
-    console.print(table)
-
-
-@app.command()
 def politicians(
     days: int = typer.Option(45, "--days", "-d", help="Lookback window in days"),
 ):
@@ -574,29 +542,6 @@ def regime():
     console.print(result)
 
 
-@app.command()
-def pipeline(
-    dry_run: bool = typer.Option(
-        False, "--dry-run",
-        help="Validate plumbing and send a test notification without trading.",
-    ),
-):
-    """Run the full trading pipeline end-to-end (ungated), then ntfy the status.
-
-    Unlike the scheduled launchd cycles, this runs front-to-back regardless of
-    whether the market is open or it's a trading day. Set QUORUM_NTFY_TOPIC in
-    .env to receive the status push notification.
-    """
-    import subprocess
-    script = Path(__file__).resolve().parent.parent / "scripts" / "run-pipeline.sh"
-    if not script.exists():
-        console.print(f"[red]Pipeline script not found: {script}[/red]")
-        raise typer.Exit(1)
-    cmd = ["bash", str(script)] + (["--dry-run"] if dry_run else [])
-    console.print(f"[bold]Running quorum pipeline{' (dry run)' if dry_run else ''}…[/bold]")
-    raise typer.Exit(subprocess.run(cmd).returncode)
-
-
 @app.command(name="mcp-server")
 def mcp_server():
     """Start the quorum MCP server (stdio transport)."""
@@ -633,7 +578,7 @@ def reset(
     history" the confirmation prompt promises) — pass --keep-history to
     reset the paper account/trades but preserve the run/signal/target/
     order_intent/fill/closed_trade/journal/daily_recap/run_recap/
-    trace_event/portfolio_snapshot/sweep tables, e.g. to keep backtest
+    trace_event/portfolio_snapshot tables, e.g. to keep backtest
     research history across an account reset.
     """
     import json
@@ -641,7 +586,7 @@ def reset(
     import sqlite3
 
     # QUORUM_HOME override, matching the convention used elsewhere
-    # (plan.py, sec_filings.py, congress.py) — lets tests point this at a
+    # (sec_filings.py, congress.py) — lets tests point this at a
     # tmp dir instead of the real ~/.quorum.
     home = Path(os.environ.get("QUORUM_HOME", str(Path.home() / ".quorum")))
 
@@ -683,7 +628,7 @@ def reset(
     if db_path.exists():
         conn = sqlite3.connect(str(db_path))
         account_tables = [
-            "trades", "trade_reports", "paper_positions", "paper_account",
+            "trades", "paper_positions", "paper_account",
         ]
         decision_log_tables = [
             "trace_event", "fill", "order_intent", "target", "signal",

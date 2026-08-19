@@ -69,23 +69,6 @@ def check_portfolio_file() -> CheckResult:
         return ("Paper portfolio", False, str(e))
 
 
-def check_watchlist() -> CheckResult:
-    """tickers.txt is only consumed by the legacy /trading-planner path —
-    a pod-only setup (strategies/*.yaml define their own universe) has no
-    use for it, so its absence is informational, not a failure."""
-    path = _HOME / "tickers.txt"
-    if not path.exists():
-        return ("Watchlist (tickers.txt)", True, "not set — pod strategies define their own universe")
-    tickers = [
-        line.strip()
-        for line in path.read_text().splitlines()
-        if line.strip() and not line.strip().startswith("#")
-    ]
-    if not tickers:
-        return ("Watchlist (tickers.txt)", True, "empty — pod strategies define their own universe")
-    return ("Watchlist (tickers.txt)", True, f"{len(tickers)} tickers: {', '.join(tickers[:8])}{'...' if len(tickers) > 8 else ''}")
-
-
 def check_rules_file() -> CheckResult:
     path = _HOME / "rules.json"
     if not path.exists():
@@ -117,7 +100,7 @@ def check_database() -> CheckResult:
             ).fetchall()
         ]
         conn.close()
-        expected = {"trades", "wiki_pages", "trade_reports"}
+        expected = {"trades", "wiki_pages"}
         present = expected & set(tables)
         missing = expected - set(tables)
         if missing:
@@ -231,7 +214,6 @@ def run_all_checks() -> List[CheckResult]:
         check_core_dependencies,
         check_data_directory,
         check_portfolio_file,
-        check_watchlist,
         check_rules_file,
         check_database,
         check_kill_switch,

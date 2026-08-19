@@ -101,64 +101,6 @@ CREATE INDEX IF NOT EXISTS idx_wiki_ticker ON wiki_pages(ticker);
 CREATE INDEX IF NOT EXISTS idx_wiki_date ON wiki_pages(trade_date);
 CREATE INDEX IF NOT EXISTS idx_wiki_type ON wiki_pages(page_type);
 
-CREATE TABLE IF NOT EXISTS trade_reports (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    ticker        TEXT    NOT NULL,
-    trade_date    TEXT    NOT NULL,
-    report_type   TEXT    NOT NULL DEFAULT 'pre',
-    signal        TEXT    NOT NULL DEFAULT '',
-    confidence    REAL    DEFAULT 0.0,
-    technicals    TEXT    NOT NULL DEFAULT '',
-    fundamentals  TEXT    NOT NULL DEFAULT '',
-    sentiment     TEXT    NOT NULL DEFAULT '',
-    news_catalyst TEXT    NOT NULL DEFAULT '',
-    risk_factors  TEXT    NOT NULL DEFAULT '',
-    reasoning     TEXT    NOT NULL DEFAULT '',
-    fill_price    REAL,
-    quantity      INTEGER,
-    side          TEXT,
-    account_before REAL,
-    account_after  REAL,
-    pnl           REAL,
-    created_at    TEXT    NOT NULL DEFAULT (datetime('now'))
-);
-CREATE INDEX IF NOT EXISTS idx_reports_ticker ON trade_reports(ticker);
-CREATE INDEX IF NOT EXISTS idx_reports_date ON trade_reports(trade_date);
-
-CREATE TABLE IF NOT EXISTS ticker_state (
-    id                INTEGER PRIMARY KEY AUTOINCREMENT,
-    ticker            TEXT    NOT NULL,
-    technical_score   REAL    NOT NULL,
-    fundamental_score REAL    NOT NULL,
-    sentiment_score   REAL    NOT NULL,
-    news_score        REAL    NOT NULL,
-    council_signal    TEXT    NOT NULL DEFAULT 'Hold',
-    confidence        REAL    NOT NULL DEFAULT 0.0,
-    weighted_score    REAL    NOT NULL DEFAULT 3.0,
-    price_at_analysis REAL,
-    regime_at_analysis TEXT   NOT NULL DEFAULT '',
-    debate_triggered  INTEGER NOT NULL DEFAULT 0,
-    analyzed_at       TEXT    NOT NULL DEFAULT (datetime('now')),
-    UNIQUE(ticker, analyzed_at)
-);
-CREATE INDEX IF NOT EXISTS idx_ts_ticker ON ticker_state(ticker);
-CREATE INDEX IF NOT EXISTS idx_ts_analyzed ON ticker_state(analyzed_at);
-
-CREATE TABLE IF NOT EXISTS quant_scores (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    ticker          TEXT    NOT NULL,
-    fundamental_score REAL  NOT NULL DEFAULT 3.0,
-    technical_score REAL    NOT NULL DEFAULT 3.0,
-    data_quality    REAL    NOT NULL DEFAULT 1.0,
-    asset_class     TEXT    NOT NULL DEFAULT 'stock',
-    sector          TEXT,
-    components_json TEXT    NOT NULL DEFAULT '{}',
-    flags_json      TEXT    NOT NULL DEFAULT '[]',
-    vetoes_json     TEXT    NOT NULL DEFAULT '[]',
-    scored_at       TEXT    NOT NULL DEFAULT (datetime('now'))
-);
-CREATE INDEX IF NOT EXISTS idx_qs_ticker ON quant_scores(ticker);
-
 CREATE TABLE IF NOT EXISTS intraday_risk (
     date        TEXT PRIMARY KEY,
     open_value  REAL NOT NULL,
@@ -171,6 +113,11 @@ CREATE TABLE IF NOT EXISTS intraday_risk (
     updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Write-orphaned since the legacy council's score_council was removed
+-- (its only writer). Kept intentionally: select_active_analysts /
+-- compute_analyst_accuracy / `quorum fill-forward-returns` still read
+-- this table and were deliberately kept (zero maintenance cost either
+-- way) rather than deleted alongside the rest of quorum/quant/.
 CREATE TABLE IF NOT EXISTS signal_scores (
     id                  INTEGER PRIMARY KEY AUTOINCREMENT,
     ticker              TEXT NOT NULL,
@@ -188,25 +135,6 @@ CREATE TABLE IF NOT EXISTS signal_scores (
 CREATE INDEX IF NOT EXISTS idx_ss_ticker ON signal_scores(ticker);
 CREATE INDEX IF NOT EXISTS idx_ss_date ON signal_scores(score_date);
 
-CREATE TABLE IF NOT EXISTS council_analyst_reports (
-    id                INTEGER PRIMARY KEY AUTOINCREMENT,
-    ticker            TEXT    NOT NULL,
-    analysis_date     TEXT    NOT NULL,
-    technical_report  TEXT    NOT NULL DEFAULT '',
-    fundamental_report TEXT   NOT NULL DEFAULT '',
-    sentiment_report  TEXT    NOT NULL DEFAULT '',
-    news_report       TEXT    NOT NULL DEFAULT '',
-    bull_case         TEXT    NOT NULL DEFAULT '',
-    bear_case         TEXT    NOT NULL DEFAULT '',
-    pm_decision       TEXT    NOT NULL DEFAULT '',
-    debate_triggered  INTEGER NOT NULL DEFAULT 0,
-    council_signal    TEXT    NOT NULL DEFAULT '',
-    weighted_score    REAL,
-    created_at        TEXT    NOT NULL DEFAULT (datetime('now'))
-);
-CREATE INDEX IF NOT EXISTS idx_car_ticker ON council_analyst_reports(ticker);
-CREATE INDEX IF NOT EXISTS idx_car_date ON council_analyst_reports(analysis_date);
-
 -- ────────────────────────────────────────────────────────────────────
 -- Decision log (v2 redesign, Phase 1) — signal -> target -> order -> fill.
 -- Written identically by backtest, walkforward, paper, shadow, and live
@@ -215,8 +143,8 @@ CREATE INDEX IF NOT EXISTS idx_car_date ON council_analyst_reports(analysis_date
 --
 -- Naming note: `signal` here is a per-decision alpha signal (this table),
 -- distinct from the older, ticker-level `signal_scores` table above (the
--- quant layer's IC-tracking table, scheduled for removal alongside
--- quorum/quant/ in the broader v2 cleanup). `order_intent` is used instead
+-- quant layer's IC-tracking table -- write-orphaned but deliberately kept,
+-- see the comment at its own CREATE TABLE). `order_intent` is used instead
 -- of `order` since ORDER is a SQL reserved word.
 -- ────────────────────────────────────────────────────────────────────
 
@@ -855,39 +783,6 @@ def db_table_counts(config: Optional[Dict[str, Any]] = None) -> Dict[str, int]:
 # Ticker state helpers
 # ──────────────────────────────────────────────────────────────────────
 
-def save_ticker_state(
-    config: Optional[Dict[str, Any]],
-    ticker: str,
-    scores: Dict[str, float],
-    signal: str,
-    confidence: float,
-    weighted_score: float,
-    price: Optional[float],
-    regime: str,
-) -> None:
-    """Insert a ticker_state row after each score_council call."""
-    conn = get_db(config)
-    conn.execute(
-        "INSERT INTO ticker_state "
-        "(ticker, technical_score, fundamental_score, sentiment_score, news_score, "
-        " council_signal, confidence, weighted_score, price_at_analysis, regime_at_analysis) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        (
-            ticker,
-            scores.get("technical", 3.0),
-            scores.get("fundamental", 3.0),
-            scores.get("sentiment", 3.0),
-            scores.get("news", 3.0),
-            signal,
-            confidence,
-            weighted_score,
-            price,
-            regime,
-        ),
-    )
-    conn.commit()
-
-
 def mark_debate_triggered(
     config: Optional[Dict[str, Any]], ticker: str
 ) -> None:
@@ -900,114 +795,6 @@ def mark_debate_triggered(
         (ticker,),
     )
     conn.commit()
-
-
-def get_ticker_state(
-    config: Optional[Dict[str, Any]], ticker: str, limit: int = 4
-) -> List[Dict[str, Any]]:
-    """Return last N analyses for a ticker, most recent first."""
-    conn = get_db(config)
-    rows = conn.execute(
-        "SELECT * FROM ticker_state WHERE ticker = ? ORDER BY analyzed_at DESC LIMIT ?",
-        (ticker, limit),
-    ).fetchall()
-    return [dict(r) for r in rows]
-
-
-def get_all_latest_states(
-    config: Optional[Dict[str, Any]],
-) -> List[Dict[str, Any]]:
-    """Return the most recent state for each analyzed ticker."""
-    conn = get_db(config)
-    rows = conn.execute(
-        "SELECT ts.* FROM ticker_state ts "
-        "INNER JOIN ("
-        "  SELECT ticker, MAX(analyzed_at) as max_at "
-        "  FROM ticker_state GROUP BY ticker"
-        ") latest ON ts.ticker = latest.ticker AND ts.analyzed_at = latest.max_at "
-        "ORDER BY ts.weighted_score DESC",
-    ).fetchall()
-    return [dict(r) for r in rows]
-
-
-# ──────────────────────────────────────────────────────────────────────
-# Signal score helpers
-# ──────────────────────────────────────────────────────────────────────
-
-def save_signal_score(
-    config: Optional[Dict[str, Any]],
-    ticker: str,
-    scores: Dict[str, float],
-    council_score: float,
-) -> None:
-    """Save council analysis scores for future IC computation."""
-    from datetime import date
-    conn = get_db(config)
-    conn.execute(
-        """INSERT INTO signal_scores
-           (ticker, score_date, council_score, technical_score, fundamental_score,
-            sentiment_score, news_score)
-           VALUES (?, ?, ?, ?, ?, ?, ?)""",
-        (
-            ticker,
-            date.today().isoformat(),
-            council_score,
-            scores.get("technical", None),
-            scores.get("fundamental", None),
-            scores.get("sentiment", None),
-            scores.get("news", None),
-        ),
-    )
-    conn.commit()
-
-
-def save_council_analyst_reports(
-    config: Optional[Dict[str, Any]],
-    ticker: str,
-    reports: Dict[str, str],
-    signal: str = "",
-    weighted_score: Optional[float] = None,
-    debate_triggered: bool = False,
-) -> None:
-    """Persist individual analyst reports from a council cycle."""
-    from datetime import date
-    conn = get_db(config)
-    conn.execute(
-        """INSERT INTO council_analyst_reports
-           (ticker, analysis_date, technical_report, fundamental_report,
-            sentiment_report, news_report, bull_case, bear_case,
-            pm_decision, debate_triggered, council_signal, weighted_score)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        (
-            ticker,
-            date.today().isoformat(),
-            reports.get("technical", ""),
-            reports.get("fundamental", ""),
-            reports.get("sentiment", ""),
-            reports.get("news", ""),
-            reports.get("bull_case", ""),
-            reports.get("bear_case", ""),
-            reports.get("pm_decision", ""),
-            1 if debate_triggered else 0,
-            signal,
-            weighted_score,
-        ),
-    )
-    conn.commit()
-
-
-def get_council_analyst_reports(
-    config: Optional[Dict[str, Any]],
-    ticker: str,
-    limit: int = 3,
-) -> List[Dict[str, Any]]:
-    """Return recent analyst reports for a ticker, most recent first."""
-    conn = get_db(config)
-    rows = conn.execute(
-        "SELECT * FROM council_analyst_reports WHERE ticker = ? ORDER BY created_at DESC LIMIT ?",
-        (ticker, limit),
-    ).fetchall()
-    return [dict(r) for r in rows]
 
 
 def fill_forward_returns(config: Optional[Dict[str, Any]] = None) -> int:
