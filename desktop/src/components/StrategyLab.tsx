@@ -1,11 +1,11 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Play, Save, Sparkles } from "lucide-react";
 import { cn, formatPct, formatUsd, gateColor } from "@/lib/utils";
-import { generateValidatedSpec, type SpecAttempt } from "@/lib/codegen";
-import GenerationProgress, { type ToolEvent } from "@/components/GenerationProgress";
+import { useSpecGenerator } from "@/hooks/use-spec-generator";
+import GenerationProgress from "@/components/GenerationProgress";
 
-const AVAILABLE = typeof window !== "undefined" && !!window.electronAPI?.runQuorumCommand;
-const GENERATE_AVAILABLE = typeof window !== "undefined" && !!window.electronAPI?.generateSpecYaml;
+const AVAILABLE = typeof window !== "undefined" && !!window.electronAPI && !window.electronAPI.bridgeError;
+const GENERATE_AVAILABLE = AVAILABLE;
 
 const TEMPLATE = `# strategy_id must match this file's name (strategies/<strategy_id>.yaml).
 # Closed-grammar schema (quorum/strategy/schema.py) — every field below is
@@ -117,12 +117,15 @@ export default function StrategyLab({
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState<{ text: string; ok: boolean } | null>(null);
 
-  const [description, setDescription] = useState("");
-  const [generating, setGenerating] = useState(false);
-  const [attempts, setAttempts] = useState<SpecAttempt[]>([]);
-  const [toolEvents, setToolEvents] = useState<ToolEvent[]>([]);
-  const [expandedAttempt, setExpandedAttempt] = useState<number | null>(null);
-  const streamingAttemptRef = useRef(0);
+  const {
+    description, setDescription,
+    generating,
+    attempts,
+    toolEvents,
+    expandedAttempt, setExpandedAttempt,
+    isValidId,
+    generate: generateSpec,
+  } = useSpecGenerator("strategy");
 
   const [runMode, setRunMode] = useState<"backtest" | "shadow">("backtest");
   const [start, setStart] = useState("2018-01-01");
@@ -179,39 +182,8 @@ export default function StrategyLab({
     }
   }
 
-  async function generate() {
-    if (!description.trim() || !/^[a-z][a-z0-9_]{1,63}$/.test(strategyId)) return;
-    const existingYaml = selected ? yamlText : undefined;
-    setGenerating(true);
-    setAttempts([]);
-    setToolEvents([]);
-    setExpandedAttempt(null);
-    setYamlText("");
-    streamingAttemptRef.current = 0;
-    try {
-      const result = await generateValidatedSpec({
-        kind: "strategy",
-        specId: strategyId,
-        description: description.trim(),
-        existingYaml,
-        onAttempt: (attempt) => setAttempts((prev) => [...prev, attempt]),
-        onChunk: (attempt, chunk) => {
-          // A new attempt starting replaces the editor's content instead of
-          // appending to the previous attempt's draft.
-          if (attempt !== streamingAttemptRef.current) {
-            streamingAttemptRef.current = attempt;
-            setYamlText(chunk);
-          } else {
-            setYamlText((prev) => prev + chunk);
-          }
-        },
-        onToolUse: (attempt, name, input) =>
-          setToolEvents((prev) => [...prev, { attempt, name, input }]),
-      });
-      setYamlText(result.finalText);
-    } finally {
-      setGenerating(false);
-    }
+  function generate() {
+    return generateSpec(strategyId, selected ? yamlText : undefined, setYamlText);
   }
 
   async function run() {
@@ -270,7 +242,7 @@ export default function StrategyLab({
             />
             <button
               onClick={save}
-              disabled={saving || !/^[a-z][a-z0-9_]{1,63}$/.test(strategyId)}
+              disabled={saving || !isValidId(strategyId)}
               className="inline-flex items-center gap-1 text-[11px] font-medium px-2.5 py-1 rounded bg-accent text-accent-foreground disabled:opacity-50"
             >
               <Save className="w-3 h-3" /> Save
@@ -291,7 +263,7 @@ export default function StrategyLab({
               />
               <button
                 onClick={generate}
-                disabled={generating || !description.trim() || !/^[a-z][a-z0-9_]{1,63}$/.test(strategyId)}
+                disabled={generating || !description.trim() || !isValidId(strategyId)}
                 title="Claude reads the schema + an example, writes the YAML below for you to review"
                 className="inline-flex items-center gap-1 text-[11px] font-medium px-2.5 py-1 rounded bg-accent text-accent-foreground disabled:opacity-50 shrink-0"
               >
@@ -322,7 +294,7 @@ export default function StrategyLab({
           {saveMsg && (
             <p className={cn("text-[11px]", saveMsg.ok ? "text-profit" : "text-loss")}>{saveMsg.text}</p>
           )}
-          {!/^[a-z][a-z0-9_]{1,63}$/.test(strategyId) && strategyId.length > 0 && (
+          {!isValidId(strategyId) && strategyId.length > 0 && (
             <p className="text-[11px] text-loss">
               strategy_id must start with a letter and contain only lowercase letters, digits, underscores.
             </p>

@@ -1,13 +1,13 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { ListPlus, Play, Save, Sparkles } from "lucide-react";
 import { cn, formatPct } from "@/lib/utils";
 import { fetchScreens, postWatchlist, runScreen, type ScreenRunResult } from "@/lib/api";
-import { generateValidatedSpec, type SpecAttempt } from "@/lib/codegen";
-import GenerationProgress, { type ToolEvent } from "@/components/GenerationProgress";
+import { useSpecGenerator } from "@/hooks/use-spec-generator";
+import GenerationProgress from "@/components/GenerationProgress";
 
-const AVAILABLE = typeof window !== "undefined" && !!window.electronAPI?.flaskPort;
-const EDIT_AVAILABLE = typeof window !== "undefined" && !!window.electronAPI?.saveStrategy;
-const GENERATE_AVAILABLE = typeof window !== "undefined" && !!window.electronAPI?.generateSpecYaml;
+const AVAILABLE = typeof window !== "undefined" && !!window.electronAPI && !window.electronAPI.bridgeError;
+const EDIT_AVAILABLE = AVAILABLE;
+const GENERATE_AVAILABLE = AVAILABLE;
 
 const TEMPLATE = `# screen_id must match this file's name (screens/<screen_id>.yaml).
 # Closed-grammar schema (quorum/screen/schema.py) — every field below is
@@ -50,12 +50,15 @@ export default function ScreenerPanel({ onSendToStrategyLab }: { onSendToStrateg
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState<{ text: string; ok: boolean } | null>(null);
 
-  const [description, setDescription] = useState("");
-  const [generating, setGenerating] = useState(false);
-  const [attempts, setAttempts] = useState<SpecAttempt[]>([]);
-  const [toolEvents, setToolEvents] = useState<ToolEvent[]>([]);
-  const [expandedAttempt, setExpandedAttempt] = useState<number | null>(null);
-  const streamingAttemptRef = useRef(0);
+  const {
+    description, setDescription,
+    generating,
+    attempts,
+    toolEvents,
+    expandedAttempt, setExpandedAttempt,
+    isValidId,
+    generate: generateSpec,
+  } = useSpecGenerator("screen");
 
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<ScreenRunResult | null>(null);
@@ -104,37 +107,8 @@ export default function ScreenerPanel({ onSendToStrategyLab }: { onSendToStrateg
     }
   }
 
-  async function generate() {
-    if (!description.trim() || !/^[a-z][a-z0-9_]{1,63}$/.test(screenId)) return;
-    const existingYaml = selected ? yamlText : undefined;
-    setGenerating(true);
-    setAttempts([]);
-    setToolEvents([]);
-    setExpandedAttempt(null);
-    setYamlText("");
-    streamingAttemptRef.current = 0;
-    try {
-      const result = await generateValidatedSpec({
-        kind: "screen",
-        specId: screenId,
-        description: description.trim(),
-        existingYaml,
-        onAttempt: (attempt) => setAttempts((prev) => [...prev, attempt]),
-        onChunk: (attempt, chunk) => {
-          if (attempt !== streamingAttemptRef.current) {
-            streamingAttemptRef.current = attempt;
-            setYamlText(chunk);
-          } else {
-            setYamlText((prev) => prev + chunk);
-          }
-        },
-        onToolUse: (attempt, name, input) =>
-          setToolEvents((prev) => [...prev, { attempt, name, input }]),
-      });
-      setYamlText(result.finalText);
-    } finally {
-      setGenerating(false);
-    }
+  function generate() {
+    return generateSpec(screenId, selected ? yamlText : undefined, setYamlText);
   }
 
   async function run() {
@@ -214,7 +188,7 @@ export default function ScreenerPanel({ onSendToStrategyLab }: { onSendToStrateg
             />
             <button
               onClick={save}
-              disabled={saving || !/^[a-z][a-z0-9_]{1,63}$/.test(screenId)}
+              disabled={saving || !isValidId(screenId)}
               className="inline-flex items-center gap-1 text-[11px] font-medium px-2.5 py-1 rounded bg-accent text-accent-foreground disabled:opacity-50"
             >
               <Save className="w-3 h-3" /> Save
@@ -235,7 +209,7 @@ export default function ScreenerPanel({ onSendToStrategyLab }: { onSendToStrateg
               />
               <button
                 onClick={generate}
-                disabled={generating || !description.trim() || !/^[a-z][a-z0-9_]{1,63}$/.test(screenId)}
+                disabled={generating || !description.trim() || !isValidId(screenId)}
                 title="Claude reads the schema + an example, writes the YAML below for you to review"
                 className="inline-flex items-center gap-1 text-[11px] font-medium px-2.5 py-1 rounded bg-accent text-accent-foreground disabled:opacity-50 shrink-0"
               >
@@ -266,7 +240,7 @@ export default function ScreenerPanel({ onSendToStrategyLab }: { onSendToStrateg
           {saveMsg && (
             <p className={cn("text-[11px]", saveMsg.ok ? "text-profit" : "text-loss")}>{saveMsg.text}</p>
           )}
-          {!/^[a-z][a-z0-9_]{1,63}$/.test(screenId) && screenId.length > 0 && (
+          {!isValidId(screenId) && screenId.length > 0 && (
             <p className="text-[11px] text-loss">
               screen_id must start with a letter and contain only lowercase letters, digits, underscores.
             </p>

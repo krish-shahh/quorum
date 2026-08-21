@@ -3,6 +3,11 @@ export {};
 declare global {
   interface Window {
     electronAPI: {
+      /** Set when preload.ts's own setup threw (see main/preload.ts); the
+       * one signal for "is the bridge broken", instead of guessing from
+       * whether an individual method happens to be present. Null when
+       * preload initialized cleanly. */
+      bridgeError: string | null;
       flaskPort: number;
       platform: string;
       askClaude(
