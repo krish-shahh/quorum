@@ -8,7 +8,14 @@ import pytest
 from pydantic import ValidationError
 
 from quorum.screen.metrics import METRIC_NAMES
-from quorum.screen.schema import MetricName, load_screen
+from quorum.screen.schema import (
+    InvalidScreenIdError,
+    MetricName,
+    ScreenNotFoundError,
+    list_screen_ids,
+    load_screen,
+    resolve_screen,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -143,3 +150,26 @@ def test_unknown_universe_tag_produces_resolve_tags_error():
 
     with pytest.raises(ValidationError, match="unknown universe tag"):
         load_screen(raw)
+
+
+def test_list_screen_ids_includes_the_golden_ai_quality_screen():
+    assert "ai_quality" in list_screen_ids(REPO_ROOT)
+
+
+def test_resolve_screen_loads_the_golden_ai_quality_screen():
+    spec = resolve_screen("ai_quality", REPO_ROOT)
+
+    assert spec.screen_id == "ai_quality"
+
+
+def test_resolve_screen_rejects_a_path_traversal_id():
+    """The shape check the MCP tool handler previously skipped entirely
+    (quorum/mcp/server.py) — closed by routing both adapters through
+    resolve_screen's single SCREEN_ID_RE check."""
+    with pytest.raises(InvalidScreenIdError):
+        resolve_screen("../../../etc/passwd", REPO_ROOT)
+
+
+def test_resolve_screen_raises_not_found_for_a_well_formed_missing_id():
+    with pytest.raises(ScreenNotFoundError):
+        resolve_screen("not_a_real_screen", REPO_ROOT)

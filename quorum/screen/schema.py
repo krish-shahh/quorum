@@ -14,6 +14,7 @@ extension of it.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import List, Literal, Optional, Union
 
@@ -21,6 +22,11 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from ..strategy.schema import UniverseSpec
+
+# Single source of truth for the screen_id shape, shared by every adapter
+# that resolves a screen_id to a file (MCP tools, Flask routes) via
+# resolve_screen/list_screen_ids below.
+SCREEN_ID_RE = re.compile(r"^[a-z][a-z0-9_]{1,63}$")
 
 # Hand-written to mirror quorum/screen/metrics.py's PRICE_METRICS +
 # FUNDAMENTAL_METRICS keys exactly; tests/test_screen_schema.py asserts
@@ -104,3 +110,36 @@ def load_screen(source: Union[str, Path, dict]) -> ScreenSpec:
     else:
         raw = source
     return ScreenSpec.model_validate(raw)
+
+
+class ScreenIdError(ValueError):
+    """Base for resolve_screen failures — catch this for either subtype."""
+
+
+class InvalidScreenIdError(ScreenIdError):
+    """screen_id doesn't match SCREEN_ID_RE."""
+
+
+class ScreenNotFoundError(ScreenIdError):
+    """screen_id is well-formed but no screens/<screen_id>.yaml exists."""
+
+
+def list_screen_ids(project_root: Union[str, Path]) -> List[str]:
+    """Filename stems under screens/*.yaml, the git-committed screens
+    available to resolve_screen."""
+    screens_dir = Path(project_root) / "screens"
+    if not screens_dir.exists():
+        return []
+    return sorted(p.stem for p in screens_dir.glob("*.yaml"))
+
+
+def resolve_screen(screen_id: str, project_root: Union[str, Path]) -> ScreenSpec:
+    """Validate screen_id's shape, locate screens/<screen_id>.yaml, and
+    load+validate it. Raises InvalidScreenIdError or ScreenNotFoundError
+    (both ScreenIdError) so each adapter can format its own error response."""
+    if not screen_id or not SCREEN_ID_RE.match(screen_id):
+        raise InvalidScreenIdError(f"invalid screen_id: {screen_id!r}")
+    screen_path = Path(project_root) / "screens" / f"{screen_id}.yaml"
+    if not screen_path.exists():
+        raise ScreenNotFoundError(f"no screen file at screens/{screen_id}.yaml")
+    return load_screen(screen_path)

@@ -5,7 +5,6 @@ functions.  Templates use Jinja2 + Tailwind CDN + Chart.js + htmx.
 """
 
 import json
-import re
 import sys
 from datetime import date, datetime
 from pathlib import Path
@@ -665,17 +664,13 @@ def api_v1_watchlist():
     return jsonify({"tickers": tickers, "schedule_time": schedule_time})
 
 
-_SCREEN_ID_RE = re.compile(r"^[a-z][a-z0-9_]{1,63}$")
-
-
 @api_bp.route("/api/v1/screens")
 def api_v1_screens_list():
     """Filename stems under screens/*.yaml — backs the screener panel's
     picker, same shape as desktop/main/quorumCli.ts's listStrategies()."""
-    screens_dir = Path(_project_root) / "screens"
-    if not screens_dir.exists():
-        return jsonify({"screens": []})
-    return jsonify({"screens": sorted(p.stem for p in screens_dir.glob("*.yaml"))})
+    from quorum.screen.schema import list_screen_ids
+
+    return jsonify({"screens": list_screen_ids(_project_root)})
 
 
 @api_bp.route("/api/v1/screen/run", methods=["POST"])
@@ -687,19 +682,21 @@ def api_v1_screen_run():
     every re-run into a ~60-120s cold fetch instead of near-instant after
     the first."""
     from quorum.screen.engine import run_screen
-    from quorum.screen.schema import load_screen
+    from quorum.screen.schema import InvalidScreenIdError, ScreenNotFoundError, resolve_screen
 
     payload = request.get_json(force=True) or {}
     screen_id = payload.get("screen_id")
     as_of = payload.get("as_of")
-    if not screen_id or not _SCREEN_ID_RE.match(screen_id):
+    if not screen_id:
         return jsonify({"error": "a valid screen_id is required"}), 400
 
-    screen_path = Path(_project_root) / "screens" / f"{screen_id}.yaml"
-    if not screen_path.exists():
+    try:
+        spec = resolve_screen(screen_id, _project_root)
+    except InvalidScreenIdError:
+        return jsonify({"error": "a valid screen_id is required"}), 400
+    except ScreenNotFoundError:
         return jsonify({"error": f"no screen file at screens/{screen_id}.yaml"}), 404
 
-    spec = load_screen(screen_path)
     result = run_screen(spec, as_of=as_of)
     return jsonify({
         "screen_id": result.screen_id,

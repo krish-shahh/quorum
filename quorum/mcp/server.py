@@ -1033,26 +1033,25 @@ def _handle_tool(name: str, args: dict) -> str:
         return context if context else f"No prior pod evidence found for {ticker}."
 
     if name == "list_screens":
-        from pathlib import Path
-        screens_dir = Path(_project_root) / "screens"
-        stems = sorted(p.stem for p in screens_dir.glob("*.yaml")) if screens_dir.exists() else []
+        from quorum.screen.schema import list_screen_ids
+        stems = list_screen_ids(_project_root)
         if not stems:
             return "No screens found under screens/."
         return f"Screens ({len(stems)}): {', '.join(stems)}"
 
     if name == "run_screen":
-        from pathlib import Path
-
         from quorum.screen.engine import run_screen as _run_screen
-        from quorum.screen.schema import load_screen
+        from quorum.screen.schema import InvalidScreenIdError, ScreenNotFoundError, resolve_screen
 
         screen_id = args["screen_id"]
         limit = args.get("limit")
-        screen_path = Path(_project_root) / "screens" / f"{screen_id}.yaml"
-        if not screen_path.exists():
+        try:
+            spec = resolve_screen(screen_id, _project_root)
+        except InvalidScreenIdError:
+            return f"Invalid screen_id: {screen_id!r}"
+        except ScreenNotFoundError:
             return f"No screen file at screens/{screen_id}.yaml"
 
-        spec = load_screen(screen_path)
         result = _run_screen(spec)
         rows = result.rows[:limit] if limit else result.rows
         if not rows:
