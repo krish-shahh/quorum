@@ -52,6 +52,50 @@ interface SpawnResult {
   sessionId: string | null;
 }
 
+/** One normalized event extracted from a single `claude -p --output-format
+ * stream-json` line. A line can carry a session_id alongside assistant
+ * content, and assistant content can carry several blocks, so parsing one
+ * line can yield zero or more events — order matches the order `runHeadless`
+ * must apply them in (session id before content, blocks in array order). */
+export type StreamJsonEvent =
+  | { type: "session"; sessionId: string }
+  | { type: "text"; text: string }
+  | { type: "tool_use"; name: string; input: Record<string, unknown> }
+  | { type: "result"; text: string };
+
+/** Pure parse of one stream-json line into normalized events — no I/O, no
+ * subprocess, so it's unit-testable against canned transcript lines.
+ * Mirrors quorum/execution/trace_parser.py's parse_stream_json_line, kept
+ * separate from the subprocess lifecycle for the same reason: an
+ * unparseable or unrecognized line is simply skipped (empty result) rather
+ * than raising, so one odd line doesn't kill the rest of a stream. */
+export function parseStreamJsonLine(line: string): StreamJsonEvent[] {
+  let obj: any;
+  try {
+    obj = JSON.parse(line);
+  } catch {
+    return [];
+  }
+
+  const events: StreamJsonEvent[] = [];
+  if (typeof obj.session_id === "string") {
+    events.push({ type: "session", sessionId: obj.session_id });
+  }
+  if (obj.type === "assistant") {
+    const content = obj.message?.content ?? [];
+    for (const block of content) {
+      if (block?.type === "text" && block.text) {
+        events.push({ type: "text", text: block.text });
+      } else if (block?.type === "tool_use" && typeof block.name === "string") {
+        events.push({ type: "tool_use", name: block.name, input: block.input ?? {} });
+      }
+    }
+  } else if (obj.type === "result" && typeof obj.result === "string") {
+    events.push({ type: "result", text: obj.result });
+  }
+  return events;
+}
+
 /** Shared spawn-and-parse core for both headless bridges: streams text
  * chunks to `onChunk` as they arrive, forwards each tool call (Read/Glob/
  * Grep) to `onToolUse` as its own event so a caller can render "reading
@@ -82,25 +126,22 @@ function runHeadless(
       buffer = lines.pop() ?? "";
       for (const line of lines) {
         if (!line.trim()) continue;
-        let obj: any;
-        try {
-          obj = JSON.parse(line);
-        } catch {
-          continue;
-        }
-        if (typeof obj.session_id === "string") sessionId = obj.session_id;
-        if (obj.type === "assistant") {
-          const content = obj.message?.content ?? [];
-          for (const block of content) {
-            if (block?.type === "text" && block.text) {
-              finalText += block.text;
-              onChunk(block.text);
-            } else if (block?.type === "tool_use" && typeof block.name === "string") {
-              onToolUse?.(block.name, block.input ?? {});
-            }
+        for (const event of parseStreamJsonLine(line)) {
+          switch (event.type) {
+            case "session":
+              sessionId = event.sessionId;
+              break;
+            case "text":
+              finalText += event.text;
+              onChunk(event.text);
+              break;
+            case "tool_use":
+              onToolUse?.(event.name, event.input);
+              break;
+            case "result":
+              finalText = event.text;
+              break;
           }
-        } else if (obj.type === "result" && typeof obj.result === "string") {
-          finalText = obj.result;
         }
       }
     });
