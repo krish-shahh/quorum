@@ -76,26 +76,31 @@ fi
 log "=== Cycle triggered at $TIMESTAMP ==="
 
 # ── Classify cycle type (full pod-cycle, or exits-only reconciliation) ──
-if [ "$MINS_TODAY" -eq 570 ]; then
-    # 09:30 — the day's one planning pass: exits, then entries
+# Ranges, not exact-minute matches: launchd fires "close to" the scheduled
+# time, not necessarily on the dot (e.g. Mac waking from sleep after 9:30).
+# An exact -eq here silently downgrades a late 09:30 fire to exits-only,
+# skipping the day's only entry-evaluation pass — confirmed to have
+# actually happened (09:42 fire on 2026-08-20 was misclassified this way).
+if [ "$MINS_TODAY" -ge 570 ] && [ "$MINS_TODAY" -le 585 ]; then
+    # 09:30-09:45 window — the day's one planning pass: exits, then entries
     CYCLE="pod-cycle-full"
     PROMPT='Follow the Session Start Protocol (check portfolio + regime), then run /pod-cycle in full — Step 3a (exits) and Step 3b (entries) for every pod. This is the day'"'"'s one entry-evaluation pass.
 
-At the very end, output a push notification summary between "--- NOTIFICATION ---" markers. Max 4000 chars. Include: exits executed, entries executed (ticker, weight, pod-pm decision), vetoes, portfolio snapshot (positions, cash%, P&L), regime, risk level. This block is extracted and sent as a mobile notification — make it scannable.'
+At the very end, output ONE push notification summary, wrapped in exactly these two literal marker lines (nothing else on those lines, and do not use them anywhere else in your response): "--- NOTIFICATION START ---" then the content then "--- NOTIFICATION END ---". Max 4000 chars. Include: exits executed, entries executed (ticker, weight, pod-pm decision), vetoes, portfolio snapshot (positions, cash%, P&L), regime, risk level. This block is extracted verbatim and sent as a mobile notification — make it scannable.'
 
-elif [ "$MINS_TODAY" -eq 975 ]; then
-    # 16:15 — Final exits-only reconciliation + EOD report + daily recap
+elif [ "$MINS_TODAY" -ge 975 ] && [ "$MINS_TODAY" -le "$LATEST" ]; then
+    # 16:15-16:30 window — Final exits-only reconciliation + EOD report + daily recap
     CYCLE="pod-cycle-eod"
     PROMPT='Run /pod-cycle but only Step 3a (mechanical exits) for every pod — skip Step 3b (new entries), this is a reconciliation pass, not the daily planning pass. After that, produce the End-of-Day Report as described in CLAUDE.md, then run `quorum daily-recap` and `quorum fill-forward-returns` via Bash to persist the day'"'"'s decision-log play-by-play and backfill any forward-return rows old enough to score. Update the memory files (portfolio_state.md, trading_decisions.md, watchlist_notes.md) with end-of-day state.
 
-At the very end, output a push notification summary between "--- NOTIFICATION ---" markers. Max 4000 chars. Include: exits executed today, portfolio snapshot (all positions with P&L%), daily P&L, regime, and tomorrow watchlist. This block is extracted and sent as a mobile notification — make it scannable.'
+At the very end, output ONE push notification summary, wrapped in exactly these two literal marker lines (nothing else on those lines, and do not use them anywhere else in your response): "--- NOTIFICATION START ---" then the content then "--- NOTIFICATION END ---". Max 4000 chars. Include: exits executed today, portfolio snapshot (all positions with P&L%), daily P&L, regime, and tomorrow watchlist. This block is extracted verbatim and sent as a mobile notification — make it scannable.'
 
 else
     # 10:00, 12:00, 13:30, 15:30 — exits-only reconciliation
     CYCLE="pod-cycle-exits"
     PROMPT='Run /pod-cycle but only Step 3a (mechanical exits) for every pod — skip Step 3b (new entries); daily-bar entry signals cannot have changed since the 09:30 pass, so re-evaluating them here would just churn. Stop-loss/max-holding-day/rule-exit checks still need to run every cycle.
 
-At the very end, output a push notification summary between "--- NOTIFICATION ---" markers. Max 4000 chars. Include: exits executed (ticker, reason, shares, price), portfolio cash%, and any alerts. This block is extracted and sent as a mobile notification — make it scannable.'
+At the very end, output ONE push notification summary, wrapped in exactly these two literal marker lines (nothing else on those lines, and do not use them anywhere else in your response): "--- NOTIFICATION START ---" then the content then "--- NOTIFICATION END ---". Max 4000 chars. Include: exits executed (ticker, reason, shares, price), portfolio cash%, and any alerts. This block is extracted verbatim and sent as a mobile notification — make it scannable.'
 fi
 
 log "Cycle: $CYCLE ($TIMESTAMP)"
@@ -129,8 +134,17 @@ fi
 
 # ── Push notification via ntfy.sh (topic loaded from .env at top — secret, not in repo) ──
 
-# Extract the dedicated notification block from Claude's output
-SUMMARY=$(echo "$OUTPUT" | sed -n '/^--- NOTIFICATION ---$/,/^--- NOTIFICATION ---$/p' | sed '1d;$d' | head -c 4096)
+# Extract the dedicated notification block from Claude's output. Claude
+# sometimes emits the marker pair more than once (e.g. a throwaway recap
+# sentence wrapped first, then the real detailed summary) — take the LAST
+# complete START/END block rather than the first, and drop any trailing
+# block that never closes.
+SUMMARY=$(echo "$OUTPUT" | awk '
+    /^--- NOTIFICATION START ---$/ { capturing=1; buf=""; next }
+    /^--- NOTIFICATION END ---$/ { if (capturing) { last=buf }; capturing=0; next }
+    { if (capturing) { buf = buf $0 "\n" } }
+    END { printf "%s", last }
+' | head -c 4096)
 if [ -z "$SUMMARY" ]; then
     if [ $EXIT_CODE -eq 0 ]; then
         SUMMARY="Cycle $CYCLE ($TIMESTAMP) completed. No notification block found — check dashboard."
