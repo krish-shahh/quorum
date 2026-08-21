@@ -9,22 +9,10 @@ lives outside decision_log.py despite sharing its DB file.
 from __future__ import annotations
 
 import json
-import threading
 import uuid
 from typing import Any, Dict, List, Optional
 
 from . import db
-
-# quorum/execution/db.py hands out ONE sqlite3.Connection shared across every
-# Flask request thread (check_same_thread=False, no per-call serialization).
-# The Header's open-thread badge plus one CommentButton per KPI/row/chart
-# series means a single page render fires a burst of concurrent
-# list_annotations calls on that shared connection/cursor, which corrupts
-# in-flight statement state and raises "sqlite3.InterfaceError: bad
-# parameter or other API misuse". Serialize this module's own DB access
-# rather than every module's (out of scope here) since annotations is the
-# call site that actually produces a concurrent burst.
-_lock = threading.Lock()
 
 
 def _new_id() -> str:
@@ -55,25 +43,24 @@ def create_annotation(
 ) -> Dict[str, Any]:
     """Start a new thread on an anchor, seeded with its first comment."""
     ann_id = _new_id()
-    with _lock:
-        thread = [{"author": author, "body": body, "ts": _now_locked(config)}]
-        conn = db.get_db(config)
-        with conn:
-            conn.execute(
-                "INSERT INTO dashboard_annotation "
-                "(id, anchor_type, anchor_key, anchor_json, status, thread_json) "
-                "VALUES (?, ?, ?, ?, 'open', ?)",
-                (ann_id, anchor_type, _anchor_key(anchor), json.dumps(anchor, default=str), json.dumps(thread)),
-            )
-        return _get_annotation_locked(config, ann_id)
+    thread = [{"author": author, "body": body, "ts": _now(config)}]
+    conn = db.get_db(config)
+    with conn:
+        conn.execute(
+            "INSERT INTO dashboard_annotation "
+            "(id, anchor_type, anchor_key, anchor_json, status, thread_json) "
+            "VALUES (?, ?, ?, ?, 'open', ?)",
+            (ann_id, anchor_type, _anchor_key(anchor), json.dumps(anchor, default=str), json.dumps(thread)),
+        )
+    return _get_annotation(config, ann_id)
 
 
-def _now_locked(config: Dict[str, Any]) -> str:
+def _now(config: Dict[str, Any]) -> str:
     row = db.get_db(config).execute("SELECT datetime('now') AS now").fetchone()
     return row["now"]
 
 
-def _get_annotation_locked(config: Dict[str, Any], annotation_id: str) -> Optional[Dict[str, Any]]:
+def _get_annotation(config: Dict[str, Any], annotation_id: str) -> Optional[Dict[str, Any]]:
     row = db.get_db(config).execute(
         "SELECT * FROM dashboard_annotation WHERE id = ?", (annotation_id,)
     ).fetchone()
@@ -100,38 +87,35 @@ def list_annotations(
         clauses.append("status = ?")
         params.append(status)
     where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
-    with _lock:
-        rows = conn.execute(
-            # Secondary sort on rowid: created_at is second-resolution, so two
-            # threads started within the same second would otherwise tie and
-            # fall back to SQLite's unspecified order for equal keys.
-            f"SELECT * FROM dashboard_annotation {where} ORDER BY created_at DESC, rowid DESC", params,
-        ).fetchall()
+    rows = conn.execute(
+        # Secondary sort on rowid: created_at is second-resolution, so two
+        # threads started within the same second would otherwise tie and
+        # fall back to SQLite's unspecified order for equal keys.
+        f"SELECT * FROM dashboard_annotation {where} ORDER BY created_at DESC, rowid DESC", params,
+    ).fetchall()
     return [_row_to_dict(row) for row in rows]
 
 
 def add_reply(config: Dict[str, Any], annotation_id: str, *, author: str, body: str) -> Optional[Dict[str, Any]]:
-    with _lock:
-        annotation = _get_annotation_locked(config, annotation_id)
-        if annotation is None:
-            return None
-        annotation["thread"].append({"author": author, "body": body, "ts": _now_locked(config)})
-        conn = db.get_db(config)
-        with conn:
-            conn.execute(
-                "UPDATE dashboard_annotation SET thread_json = ? WHERE id = ?",
-                (json.dumps(annotation["thread"]), annotation_id),
-            )
-        return _get_annotation_locked(config, annotation_id)
+    annotation = _get_annotation(config, annotation_id)
+    if annotation is None:
+        return None
+    annotation["thread"].append({"author": author, "body": body, "ts": _now(config)})
+    conn = db.get_db(config)
+    with conn:
+        conn.execute(
+            "UPDATE dashboard_annotation SET thread_json = ? WHERE id = ?",
+            (json.dumps(annotation["thread"]), annotation_id),
+        )
+    return _get_annotation(config, annotation_id)
 
 
 def resolve_annotation(config: Dict[str, Any], annotation_id: str) -> Optional[Dict[str, Any]]:
-    with _lock:
-        conn = db.get_db(config)
-        with conn:
-            cur = conn.execute(
-                "UPDATE dashboard_annotation SET status = 'resolved' WHERE id = ?", (annotation_id,)
-            )
-        if cur.rowcount == 0:
-            return None
-        return _get_annotation_locked(config, annotation_id)
+    conn = db.get_db(config)
+    with conn:
+        cur = conn.execute(
+            "UPDATE dashboard_annotation SET status = 'resolved' WHERE id = ?", (annotation_id,)
+        )
+    if cur.rowcount == 0:
+        return None
+    return _get_annotation(config, annotation_id)

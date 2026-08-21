@@ -27,9 +27,18 @@ logger = logging.getLogger(__name__)
 
 _DB_PATH_DEFAULT = "~/.quorum/quorum.db"
 
-# Module-level lock so ``get_db`` is safe to call from multiple threads.
+# check_same_thread=False only disables sqlite3's own thread-affinity
+# assertion -- it does NOT make a single sqlite3.Connection safe to share
+# across threads. Concurrent execute()/fetch() calls on one connection from
+# different threads corrupt in-flight statement state (sqlite3.InterfaceError:
+# bad parameter or other API misuse), which is exactly what hit
+# annotations.list_annotations() in production. The actual fix is to never
+# share a Connection across threads: each thread gets its own connection to
+# the same DB file, serialized only during the one-time schema/migration
+# setup. WAL mode (set below) lets SQLite itself arbitrate concurrent access
+# between those connections at the file level.
 _init_lock = threading.Lock()
-_connections: Dict[str, sqlite3.Connection] = {}
+_local = threading.local()
 
 # ──────────────────────────────────────────────────────────────────────
 # Schema
@@ -394,23 +403,26 @@ def get_db(config: Optional[Dict[str, Any]] = None) -> sqlite3.Connection:
 
     * Creates the DB file and tables on first call.
     * Runs the one-time JSON migration when a fresh DB is detected.
-    * Thread-safe (``check_same_thread=False``).
-    * Connections are cached per resolved path so repeated calls are cheap.
+    * Thread-safe: each calling thread gets its own connection to the same
+      DB path (a raw sqlite3.Connection must never be shared across threads,
+      even with ``check_same_thread=False`` -- see the module-level comment
+      above ``_init_lock``). Connections are cached per (thread, resolved
+      path) so repeated calls from the same thread are cheap.
     """
     path = _db_path(config)
     key = str(path)
 
-    # Fast path – connection already open.
-    conn = _connections.get(key)
+    thread_connections = getattr(_local, "connections", None)
+    if thread_connections is None:
+        thread_connections = {}
+        _local.connections = thread_connections
+
+    # Fast path – this thread's connection is already open.
+    conn = thread_connections.get(key)
     if conn is not None:
         return conn
 
     with _init_lock:
-        # Double-check after acquiring the lock.
-        conn = _connections.get(key)
-        if conn is not None:
-            return conn
-
         path.parent.mkdir(parents=True, exist_ok=True)
         fresh = not path.exists()
 
@@ -435,7 +447,7 @@ def get_db(config: Optional[Dict[str, Any]] = None) -> sqlite3.Connection:
             except sqlite3.OperationalError:
                 pass  # Column already exists
 
-        _connections[key] = conn
+        thread_connections[key] = conn
 
         if fresh:
             migrate(config, conn)
@@ -444,9 +456,10 @@ def get_db(config: Optional[Dict[str, Any]] = None) -> sqlite3.Connection:
 
 
 def close_db(config: Optional[Dict[str, Any]] = None) -> None:
-    """Close and remove the cached connection (useful in tests)."""
+    """Close and remove this thread's cached connection (useful in tests)."""
     key = str(_db_path(config))
-    conn = _connections.pop(key, None)
+    thread_connections = getattr(_local, "connections", None)
+    conn = thread_connections.pop(key, None) if thread_connections else None
     if conn is not None:
         try:
             conn.close()
